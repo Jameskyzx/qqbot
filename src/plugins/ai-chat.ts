@@ -1,6 +1,7 @@
 import { Plugin, AIConfig, GroupMessageEvent, MessageSegment } from '../types';
 import { Bot } from '../bot';
 import { webSearch, shouldSearch } from './web-search';
+import { generateVoice } from './tts';
 import * as https from 'https';
 import * as http from 'http';
 
@@ -572,10 +573,29 @@ export const aiChatPlugin: Plugin = {
 
       // 发送回复
       const useQuote = ctx.isReplyToBot || isAtBot(ctx.event) || Math.random() < 0.2;
-      if (useQuote && cleaned.length <= 200) {
-        ctx.replyQuote(cleaned);
-      } else {
-        ctx.reply(cleaned);
+
+      // 一定概率发语音（短回复+随机概率）
+      let sentVoice = false;
+      if (config.enable_tts && cleaned.length >= 4 && cleaned.length <= 100 && Math.random() < (config.tts_probability || 0.15)) {
+        try {
+          const voicePath = await generateVoice(config, cleaned);
+          if (voicePath) {
+            // 发送语音消息
+            const voiceMsg: MessageSegment[] = [
+              { type: 'record', data: { file: `file://${voicePath}` } },
+            ];
+            ctx.reply(voiceMsg);
+            sentVoice = true;
+          }
+        } catch { /* 语音生成失败就用文字 */ }
+      }
+
+      if (!sentVoice) {
+        if (useQuote && cleaned.length <= 200) {
+          ctx.replyQuote(cleaned);
+        } else {
+          ctx.reply(cleaned);
+        }
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);

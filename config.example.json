@@ -21,6 +21,8 @@
     "cooldown_seconds": 1,
     "context_expire_minutes": 120,
     "enable_vision": true,
+    "enable_tts": true,
+    "tts_probability": 0.15,
 
     "presets": {
       "wanjier": {

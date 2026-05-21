@@ -40,6 +40,10 @@ export interface AIConfig {
   context_expire_minutes: number;
   /** 是否启用识图 */
   enable_vision: boolean;
+  /** 是否启用TTS语音回复 */
+  enable_tts: boolean;
+  /** TTS触发概率 (0-1) */
+  tts_probability: number;
 }
 
 export interface PresetConfig {
@@ -74,7 +78,12 @@ export interface ReplySegment {
   data: { id: string };
 }
 
-export type MessageSegment = TextSegment | FaceSegment | ImageSegment | AtSegment | ReplySegment;
+export interface RecordSegment {
+  type: 'record';
+  data: { file: string; url?: string };
+}
+
+export type MessageSegment = TextSegment | FaceSegment | ImageSegment | AtSegment | ReplySegment | RecordSegment;
 
 // ============ 发送者信息 ============
 export interface Sender {
