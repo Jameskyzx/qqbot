@@ -2,7 +2,7 @@
   "ws_url": "ws://127.0.0.1:3001",
   "bot_name": "玩机器",
   "command_prefix": "/",
-  "admin_qq": [],
+  "admin_qq": [2711944586],
   "enabled_groups": [],
 
   "ai": {
