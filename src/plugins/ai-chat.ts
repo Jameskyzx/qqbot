@@ -194,6 +194,96 @@ function analyzeMessage(text: string): MessageAnalysis {
   };
 }
 
+// ============ 消息合并（解决连续同角色问题）============
+/** 
+ * 合并连续的同角色消息 
+ * 很多API不允许连续多个user消息，需要合并成一条
+ */
+function mergeConsecutiveMessages(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length === 0) return [];
+
+  const merged: ChatMessage[] = [];
+  let i = 0;
+
+  while (i < messages.length) {
+    const current = messages[i];
+
+    // system消息直接保留
+    if (current.role === 'system') {
+      merged.push(current);
+      i++;
+      continue;
+    }
+
+    // 找到连续相同角色的消息
+    let j = i + 1;
+    while (j < messages.length && messages[j].role === current.role) {
+      j++;
+    }
+
+    if (j === i + 1) {
+      // 只有一条，直接加入（确保content是string）
+      merged.push({
+        role: current.role,
+        content: stringifyContent(current.content),
+      });
+    } else {
+      // 多条相同角色，合并为一条
+      const parts: string[] = [];
+      for (let k = i; k < j; k++) {
+        parts.push(stringifyContent(messages[k].content));
+      }
+      merged.push({
+        role: current.role,
+        content: parts.join('\n'),
+      });
+    }
+
+    i = j;
+  }
+
+  return merged;
+}
+
+/** 将消息内容统一转为字符串 */
+function stringifyContent(content: string | MessageContent[]): string {
+  if (typeof content === 'string') return content;
+  // 多模态内容：提取文本部分，图片转为描述
+  const parts: string[] = [];
+  for (const item of content) {
+    if (item.type === 'text' && item.text) {
+      parts.push(item.text);
+    } else if (item.type === 'image_url' && item.image_url) {
+      parts.push('[图片]');
+    }
+  }
+  return parts.join(' ');
+}
+
+/** 构建适合发送给API的消息（保留vision格式） */
+function buildApiMessages(messages: ChatMessage[], hasVision: boolean): ChatMessage[] {
+  if (!hasVision) {
+    // 无图片时，全部转为纯文本并合并
+    return mergeConsecutiveMessages(messages);
+  }
+
+  // 有图片时：最后一条保留多模态格式，其余转文本
+  const result: ChatMessage[] = [];
+  for (let i = 0; i < messages.length - 1; i++) {
+    const msg = messages[i];
+    result.push({
+      role: msg.role,
+      content: stringifyContent(msg.content),
+    });
+  }
+
+  // 最后一条保留原始格式（可能包含image_url）
+  const last = messages[messages.length - 1];
+  result.push(last);
+
+  return mergeConsecutiveMessages(result);
+}
+
 // ============ LLM API 调用 ============
 function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean = false): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -201,15 +291,17 @@ function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean =
     const isHttps = url.protocol === 'https:';
     const model = useVision ? (config.vision_model || config.model) : config.model;
 
-    const body = JSON.stringify({
+    // 合并连续的同角色消息（有些API不允许连续相同role）
+    const mergedMessages = buildApiMessages(messages, useVision);
+
+    const requestBody: any = {
       model,
-      messages,
+      messages: mergedMessages,
       max_tokens: config.max_tokens,
       temperature: config.temperature,
-      top_p: 0.92,
-      frequency_penalty: 0.4,
-      presence_penalty: 0.4,
-    });
+    };
+
+    const body = JSON.stringify(requestBody);
 
     const options = {
       hostname: url.hostname,
@@ -232,6 +324,7 @@ function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean =
         try {
           const json = JSON.parse(data);
           if (json.error) {
+            console.error('[AI] API错误:', JSON.stringify(json.error));
             reject(new Error(json.error.message || JSON.stringify(json.error)));
             return;
           }
@@ -239,10 +332,12 @@ function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean =
           if (content) {
             resolve(content.trim());
           } else {
-            reject(new Error('API 返回异常: ' + data.slice(0, 500)));
+            console.error('[AI] 无内容返回:', data.slice(0, 800));
+            reject(new Error('API 返回无内容'));
           }
         } catch {
-          reject(new Error('解析响应失败: ' + data.slice(0, 500)));
+          console.error('[AI] 解析失败:', data.slice(0, 800));
+          reject(new Error('解析响应失败'));
         }
       });
     });
@@ -525,6 +620,8 @@ export const aiChatPlugin: Plugin = {
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...history,
+      // 最后加一条隐性提示，强化角色意识
+      { role: 'system', content: '[提醒] 你是「玩机器」，用口语短句回复，不要用markdown，不要暴露AI身份。回复内容直接就是你要在群里发的话，不要加任何前缀。' },
     ];
 
     try {
