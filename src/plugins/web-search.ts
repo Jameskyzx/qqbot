@@ -1,0 +1,73 @@
+import * as https from 'https';
+
+/**
+ * 轻量级联网搜索能力
+ * 当检测到群友在问时事/热点/最新信息时，可以先搜索再回复
+ */
+
+interface SearchResult {
+  title: string;
+  snippet: string;
+}
+
+/** 使用DuckDuckGo Instant Answer API（无需key） */
+export function webSearch(query: string): Promise<string> {
+  return new Promise((resolve) => {
+    const encodedQuery = encodeURIComponent(query);
+    const url = `https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1&skip_disambig=1`;
+
+    const req = https.get(url, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const results: string[] = [];
+
+          // Abstract（主要摘要）
+          if (json.Abstract) {
+            results.push(json.Abstract);
+          }
+
+          // Answer（直接答案）
+          if (json.Answer) {
+            results.push(json.Answer);
+          }
+
+          // RelatedTopics（相关话题）
+          if (json.RelatedTopics && json.RelatedTopics.length > 0) {
+            const topics = json.RelatedTopics.slice(0, 3);
+            for (const topic of topics) {
+              if (topic.Text) {
+                results.push(topic.Text);
+              }
+            }
+          }
+
+          if (results.length > 0) {
+            resolve(results.join('\n'));
+          } else {
+            resolve('');
+          }
+        } catch {
+          resolve('');
+        }
+      });
+    });
+
+    req.on('error', () => resolve(''));
+    req.setTimeout(5000, () => { req.destroy(); resolve(''); });
+  });
+}
+
+/** 检测是否需要搜索（时事/热点/最新信息类问题） */
+export function shouldSearch(text: string): boolean {
+  const patterns = [
+    /最新|最近|今天.*新闻|现在.*情况/,
+    /谁赢了|比分|结果|战绩/,
+    /什么时候.*比赛|下一场|赛程/,
+    /发布|更新|版本|patch/i,
+    /怎么评价.+事件/,
+  ];
+  return patterns.some((p) => p.test(text));
+}

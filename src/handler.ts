@@ -1,5 +1,5 @@
 import { Bot } from './bot';
-import { GroupMessageEvent, OneBotEvent, Plugin, PluginContext, MessageSegment } from './types';
+import { BotConfig, GroupMessageEvent, OneBotEvent, Plugin, PluginContext, MessageSegment } from './types';
 
 export class MessageHandler {
   private bot: Bot;
@@ -27,7 +27,7 @@ export class MessageHandler {
     }
   }
 
-  /** 处理事件 */
+  /** 处理事件（非阻塞，每个群并行处理） */
   async handleEvent(event: OneBotEvent): Promise<void> {
     // 只处理群消息
     if (event.post_type !== 'message') return;
@@ -43,6 +43,15 @@ export class MessageHandler {
 
     // 忽略自己发的消息
     if (groupEvent.user_id === groupEvent.self_id) return;
+
+    // 非阻塞处理：不await，让每条消息独立处理
+    this.processMessage(groupEvent, config).catch((err) => {
+      console.error('[Handler] 消息处理异常:', err);
+    });
+  }
+
+  /** 实际处理消息 */
+  private async processMessage(groupEvent: GroupMessageEvent, config: BotConfig): Promise<void> {
 
     // 提取纯文本
     const rawText = this.extractText(groupEvent.message).trim();

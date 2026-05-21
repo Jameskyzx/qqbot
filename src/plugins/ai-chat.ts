@@ -1,5 +1,6 @@
 import { Plugin, AIConfig, GroupMessageEvent, MessageSegment } from '../types';
 import { Bot } from '../bot';
+import { webSearch, shouldSearch } from './web-search';
 import * as https from 'https';
 import * as http from 'http';
 
@@ -619,10 +620,21 @@ export const aiChatPlugin: Plugin = {
     // ===== 构建消息 & 调用 AI =====
     const history = cm.getMessages(sessionId);
 
+    // 联网搜索：如果问的是时事/最新信息，先搜索
+    let searchContext = '';
+    if (shouldSearch(ctx.rawText) && ctx.rawText.length > 4) {
+      try {
+        const searchResult = await webSearch(ctx.rawText);
+        if (searchResult) {
+          searchContext = `\n(搜索参考信息: ${searchResult.slice(0, 500)})`;
+        }
+      } catch { /* 搜索失败静默 */ }
+    }
+
     // 构建额外上下文提示（极简，不要啰嗦）
-    let extraContext = '';
+    let extraContext = searchContext;
     if (ctx.isReplyToBot) {
-      extraContext = '\n(对方在回复你之前说的话)';
+      extraContext += '\n(对方在回复你之前说的话)';
     }
 
     const systemPrompt = buildSystemPrompt(config, ctx.event.group_id, extraContext);
