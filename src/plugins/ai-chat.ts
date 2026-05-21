@@ -267,13 +267,17 @@ function stringifyContent(content: string | MessageContent[]): string {
   return parts.join(' ');
 }
 
-/** 构建适合发送给API的消息（保留vision格式） */
-function buildApiMessages(messages: ChatMessage[], hasVision: boolean): ChatMessage[] {
-  if (!hasVision) {
-    return mergeConsecutiveMessages(messages);
+/** 构建适合发送给API的消息（只保留当前消息的vision格式） */
+function buildApiMessages(messages: ChatMessage[], currentMessageHasVision: boolean): ChatMessage[] {
+  // 当前消息没有图片时，把历史图片全部转成文本占位，避免@纯文本时被历史图片拖进视觉请求。
+  if (!currentMessageHasVision) {
+    return mergeConsecutiveMessages(messages.map((message) => ({
+      role: message.role,
+      content: stringifyContent(message.content),
+    })));
   }
 
-  // 有图片时：找到最后一条包含image_url的消息保留原始格式
+  // 当前消息有图片时：只保留最后一条包含image_url的消息，历史图片转为[图片]占位
   const result: ChatMessage[] = [];
   let lastVisionIdx = -1;
 
@@ -324,7 +328,7 @@ function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean =
     const isHttps = url.protocol === 'https:';
     const model = useVision ? (config.vision_model || config.model) : config.model;
 
-    // 合并连续的同角色消息（有些API不允许连续相同role）
+    // 合并连续的同角色消息；只有当前消息有图时才保留vision格式。
     const mergedMessages = buildApiMessages(messages, useVision);
 
     const requestBody: any = {
