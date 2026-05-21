@@ -54,14 +54,31 @@ npm install -g pm2
 curl -fsSL https://get.docker.com | bash
 ```
 
+**1G内存服务器必做：开启 Swap（虚拟内存）**
+
+```bash
+# 创建2G swap文件
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+# 验证
+free -h
+```
+
 ### 二、部署 NapCatQQ
 
 ```bash
 mkdir -p /opt/napcat/config
 
+# 1G/1核服务器版本（限制NapCat最多用350MB）
 docker run -d \
   --name napcat \
   --restart=always \
+  --memory=350m \
+  --memory-swap=400m \
   -e ACCOUNT=3853043835 \
   -e NAPCAT_GID=0 \
   -e NAPCAT_UID=0 \
@@ -128,7 +145,8 @@ nano config.json
 
 ```bash
 npm run build
-pm2 start dist/index.js --name wanjier
+# 用ecosystem配置启动（自动限制内存防OOM）
+pm2 start ecosystem.config.js
 pm2 save && pm2 startup
 ```
 

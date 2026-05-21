@@ -169,7 +169,7 @@ function fetchImageAsDataUrl(imageUrl: string): Promise<string | null> {
 
         const chunks: Buffer[] = [];
         let totalSize = 0;
-        const MAX_SIZE = 2 * 1024 * 1024; // 2MB限制
+        const MAX_SIZE = 1 * 1024 * 1024; // 1MB限制（节省内存）
 
         res.on('data', (chunk) => {
           totalSize += chunk.length;
@@ -468,9 +468,12 @@ export const aiChatPlugin: Plugin = {
 
     if (hasImages) {
       // 下载图片转DataURL（仅本次使用）
+      // 内存优化：只处理第一张图，多图按顺序串行处理避免并发占用
       const dataUrls: string[] = [];
-      const downloadResults = await Promise.all(imageUrls.map(url => fetchImageAsDataUrl(url)));
-      for (const d of downloadResults) {
+      // 限制只处理最多2张图（防止刷屏炸内存）
+      const limitedUrls = imageUrls.slice(0, 2);
+      for (const url of limitedUrls) {
+        const d = await fetchImageAsDataUrl(url);
         if (d) dataUrls.push(d);
       }
 
