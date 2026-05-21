@@ -316,8 +316,7 @@ async function callLLMWithRetry(config: AIConfig, messages: ChatMessage[], useVi
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < maxRetries) {
-        // 等一下再重试
-        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
       }
     }
   }
@@ -383,7 +382,7 @@ function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean =
     });
 
     req.on('error', (err) => reject(new Error('网络错误: ' + err.message)));
-    req.setTimeout(60000, () => { req.destroy(); reject(new Error('请求超时(60s)')); });
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('请求超时')); });
     req.write(body);
     req.end();
   });
@@ -592,16 +591,18 @@ export const aiChatPlugin: Plugin = {
     const allHistory = cm.getMessages(sessionId);
     const history = allHistory.slice(-60); // 只取最近60条发给API
 
-    // 联网搜索：只在有明确搜索需求时才搜（不再每条消息都搜，避免拖慢响应）
+    // 联网搜索：按需触发，不阻塞主流程（给2秒，超时就不等了）
     let searchContext = '';
-    const needSearch = /最新|最近|现在|今天|谁赢|比分|赛程|更新|版本|发布|新闻|热搜/.test(ctx.rawText);
-    if (needSearch && ctx.rawText.length > 4) {
+    const needSearch = /最新|最近|现在|今天|谁赢|比分|赛程|更新|版本|发布|新闻|热搜|多少钱|价格|天气/.test(ctx.rawText);
+    if (needSearch && ctx.rawText.length > 3) {
       try {
-        const searchResult = await webSearch(ctx.rawText);
+        const searchPromise = webSearch(ctx.rawText);
+        const timeoutPromise = new Promise<string>((r) => setTimeout(() => r(''), 2000));
+        const searchResult = await Promise.race([searchPromise, timeoutPromise]);
         if (searchResult) {
-          searchContext = `\n(参考: ${searchResult.slice(0, 400)})`;
+          searchContext = `\n(搜索结果供参考: ${searchResult.slice(0, 300)})`;
         }
-      } catch { /* 搜索失败静默继续 */ }
+      } catch { /* 静默 */ }
     }
 
     // 额外上下文
