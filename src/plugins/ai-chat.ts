@@ -169,7 +169,7 @@ function fetchImageAsDataUrl(imageUrl: string): Promise<string | null> {
 
         const chunks: Buffer[] = [];
         let totalSize = 0;
-        const MAX_SIZE = 5 * 1024 * 1024; // 最大5MB
+        const MAX_SIZE = 2 * 1024 * 1024; // 2MB限制
 
         res.on('data', (chunk) => {
           totalSize += chunk.length;
@@ -460,30 +460,47 @@ export const aiChatPlugin: Plugin = {
     const imageUrls = extractImageUrls(ctx.event.message);
     const hasImages = imageUrls.length > 0 && config.enable_vision;
 
-    // ===== 构建当前消息（含图片下载为DataURL）=====
-    let currentContent: string | MessageContent[];
+    // ===== 构建当前消息 =====
+    // 关键优化：图片DataURL只在当次API调用时用，不存到上下文
+    // 上下文里只保留文字描述（节省token和内存）
+    let apiCurrentContent: string | MessageContent[];  // 发给API的（含图片）
+    let storedContent: string;                          // 存到上下文的（纯文字）
+
     if (hasImages) {
-      // 下载图片转dataurl
-      const parts: MessageContent[] = [];
+      // 下载图片转DataURL（仅本次使用）
+      const dataUrls: string[] = [];
+      const downloadResults = await Promise.all(imageUrls.map(url => fetchImageAsDataUrl(url)));
+      for (const d of downloadResults) {
+        if (d) dataUrls.push(d);
+      }
+
       const textPart = ctx.rawText.trim()
         ? `${senderName}: ${ctx.rawText.trim()}`
         : `${senderName}: [发了图片]`;
-      parts.push({ type: 'text', text: textPart });
 
-      // 并发下载所有图片
-      const dataUrls = await Promise.all(imageUrls.map(url => fetchImageAsDataUrl(url)));
-      for (const dataUrl of dataUrls) {
-        if (dataUrl) {
+      if (dataUrls.length > 0) {
+        // 当次API调用：完整多模态
+        const parts: MessageContent[] = [{ type: 'text', text: textPart }];
+        for (const dataUrl of dataUrls) {
           parts.push({ type: 'image_url', image_url: { url: dataUrl, detail: 'high' } });
         }
+        apiCurrentContent = parts;
+      } else {
+        // 图片下载失败 退化为文字
+        apiCurrentContent = `${textPart} (图片加载失败)`;
       }
-      currentContent = parts;
+
+      // 存到上下文：只保留文字描述，加[图x]标记
+      storedContent = `${textPart} ${dataUrls.length > 0 ? `(包含${dataUrls.length}张图)` : ''}`.trim();
     } else {
-      currentContent = `${senderName}: ${ctx.rawText || '[表情/贴纸]'}`;
+      const text = `${senderName}: ${ctx.rawText || '[表情/贴纸]'}`;
+      apiCurrentContent = text;
+      storedContent = text;
     }
 
     // ===== 追加到上下文（只追加不修改）=====
-    cm.appendMessage(sessionId, { role: 'user', content: currentContent });
+    // 注意：存到上下文的是纯文字版本，不含图片DataURL
+    cm.appendMessage(sessionId, { role: 'user', content: storedContent });
 
     // ===== 检查是否需要压缩历史 =====
     if (cm.needsCompression(sessionId)) {
@@ -512,13 +529,23 @@ export const aiChatPlugin: Plugin = {
     }
 
     // ===== 构建发给API的消息 =====
+    // 关键：history是纯文字版的（节省token），只有最后一条用图片版的
     const { summary, messages: history } = cm.getFullContext(sessionId);
     let systemPrompt = buildSystemPrompt(config);
     if (searchInfo) {
       systemPrompt += `\n\n[实时参考信息]\n${searchInfo}`;
     }
 
-    const apiMessages = buildApiMessages(systemPrompt, summary, history);
+    // 如果当前消息有图片，把history的最后一条（刚刚追加的纯文字）替换成多模态
+    let apiMessages: ChatMessage[];
+    if (hasImages && Array.isArray(apiCurrentContent)) {
+      // 最后一条纯文字版的换成多模态
+      const historyWithoutLast = history.slice(0, -1);
+      const multimodalLast: ChatMessage = { role: 'user', content: apiCurrentContent };
+      apiMessages = buildApiMessages(systemPrompt, summary, [...historyWithoutLast, multimodalLast]);
+    } else {
+      apiMessages = buildApiMessages(systemPrompt, summary, history);
+    }
 
     // ===== 调用 AI =====
     try {
