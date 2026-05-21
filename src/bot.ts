@@ -81,20 +81,30 @@ export class Bot {
   }
 
   /** 发送群消息（追踪消息ID用于回复检测） */
-  sendGroupMessage(groupId: number, message: string | MessageSegment[], onMessageId?: (id: number) => void): void {
+  sendGroupMessage(groupId: number, message: string | MessageSegment[], onMessageId?: (id: number) => void): Promise<boolean> {
     const msg = typeof message === 'string'
       ? [{ type: 'text', data: { text: message } }]
       : message;
 
-    this.callApiAsync('send_group_msg', {
+    return this.callApiAsync('send_group_msg', {
       group_id: groupId,
       message: msg,
     }).then((res: any) => {
+      if (typeof res?.retcode === 'number' && res.retcode !== 0) {
+        console.error(`[Bot] 发送群消息失败: 群${groupId} retcode=${res.retcode} ${res.message || res.wording || ''}`);
+        return false;
+      }
+
       const msgId = res?.data?.message_id;
       if (msgId && onMessageId) {
-        onMessageId(msgId);
+        onMessageId(Number(msgId));
       }
-    }).catch(() => { /* 静默忽略发送失败 */ });
+      return true;
+    }).catch((err) => {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[Bot] 发送群消息异常: 群${groupId} ${errMsg}`);
+      return false;
+    });
   }
 
   /** 发送私聊消息 */

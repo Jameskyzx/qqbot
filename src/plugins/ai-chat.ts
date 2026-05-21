@@ -7,6 +7,8 @@ import * as http from 'http';
 
 const DEFAULT_CONTEXT_SEND_MESSAGES = 45;
 const DEFAULT_SEARCH_TIMEOUT_MS = 800;
+const DEFAULT_API_TIMEOUT_MS = 20000;
+const DEFAULT_MUST_REPLY_TIMEOUT_MS = 4500;
 const DEFAULT_SEARCH_KEYWORDS = [
   '最新', '最近', '现在', '今天', '今晚', '昨天', '明天',
   '谁赢', '比分', '赛程', '战报', '更新', '版本', '发布',
@@ -321,6 +323,32 @@ async function callLLMWithRetry(config: AIConfig, messages: ChatMessage[], useVi
   throw lastError;
 }
 
+async function callLLMForReply(
+  config: AIConfig,
+  messages: ChatMessage[],
+  useVision: boolean,
+  mustReply: boolean,
+): Promise<string> {
+  const llmPromise = callLLMWithRetry(config, messages, useVision);
+  if (!mustReply) return llmPromise;
+
+  let timedOut = false;
+  const timeoutPromise = new Promise<string>((_, reject) => {
+    setTimeout(() => {
+      timedOut = true;
+      reject(new Error('MUST_REPLY_TIMEOUT'));
+    }, getMustReplyTimeoutMs(config));
+  });
+
+  llmPromise.catch((err) => {
+    if (!timedOut) return;
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('[AI] @兜底后模型请求仍失败:', errMsg);
+  });
+
+  return Promise.race([llmPromise, timeoutPromise]);
+}
+
 // ============ LLM API 调用 ============
 function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean = false): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -381,7 +409,7 @@ function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean =
     });
 
     req.on('error', (err) => reject(new Error('网络错误: ' + err.message)));
-    req.setTimeout(30000, () => { req.destroy(); reject(new Error('请求超时')); });
+    req.setTimeout(getApiTimeoutMs(config), () => { req.destroy(); reject(new Error('请求超时')); });
     req.write(body);
     req.end();
   });
@@ -415,9 +443,10 @@ function extractImageUrls(message: MessageSegment[]): string[] {
 
 /** 检测是否@了bot */
 function isAtBot(event: GroupMessageEvent): boolean {
+  const selfId = String(event.self_id);
   return event.message.some(
-    (seg) => seg.type === 'at' && seg.data.qq === String(event.self_id)
-  );
+    (seg) => seg.type === 'at' && String(seg.data.qq) === selfId
+  ) || event.raw_message.includes(`[CQ:at,qq=${selfId}]`);
 }
 
 function isBotNameMentioned(text: string): boolean {
@@ -430,6 +459,14 @@ function getContextSendCount(config: AIConfig): number {
 
 function getSearchTimeoutMs(config: AIConfig): number {
   return Math.max(100, config.search_timeout_ms || DEFAULT_SEARCH_TIMEOUT_MS);
+}
+
+function getApiTimeoutMs(config: AIConfig): number {
+  return Math.max(3000, config.api_timeout_ms || DEFAULT_API_TIMEOUT_MS);
+}
+
+function getMustReplyTimeoutMs(config: AIConfig): number {
+  return Math.max(1200, config.must_reply_timeout_ms || DEFAULT_MUST_REPLY_TIMEOUT_MS);
 }
 
 function shouldRunSearch(text: string, config: AIConfig): boolean {
@@ -508,6 +545,17 @@ function sendPrimaryReply(
   sendSmartReply(ctx, text);
 }
 
+function buildMustReplyFallback(
+  ctx: { isReplyToBot: boolean },
+  hasVisionContent: boolean,
+  asksForVoice: boolean,
+): string {
+  if (hasVisionContent) return '图我看到了 但我这边识图接口刚卡了一下，你再发一句我继续接';
+  if (asksForVoice) return '语音这下没转出来，我先文字接住';
+  if (ctx.isReplyToBot) return '我在 刚才那下接口慢了点，你接着说';
+  return '我在 刚才接口抽了一下，你再说';
+}
+
 function maybeSendVoice(
   ctx: { reply: (msg: string | MessageSegment[]) => void },
   config: AIConfig,
@@ -550,6 +598,12 @@ async function sendVoiceReply(
   } catch {
     return false;
   }
+}
+
+function trimHistoryForApi(history: ChatMessage[]): ChatMessage[] {
+  const firstUserIndex = history.findIndex((message) => message.role === 'user');
+  if (firstUserIndex <= 0) return history;
+  return history.slice(firstUserIndex);
 }
 
 /** 智能触发判断 — 核心逻辑 */
@@ -701,7 +755,7 @@ export const aiChatPlugin: Plugin = {
     // ===== 构建消息 & 调用 AI =====
     // 取最近的上下文（不要全部发给API，太长会超时）
     const allHistory = cm.getMessages(sessionId);
-    const history = allHistory.slice(-getContextSendCount(config));
+    const history = trimHistoryForApi(allHistory.slice(-getContextSendCount(config)));
 
     // 联网搜索：@/回复时遇到问题更积极，普通群聊按关键词触发，快速超时
     const searchText = promptText || ctx.rawText;
@@ -734,10 +788,17 @@ export const aiChatPlugin: Plugin = {
     ];
 
     try {
-      const reply = await callLLMWithRetry(config, messages, hasVisionContent);
+      const reply = await callLLMForReply(config, messages, hasVisionContent, mustReply);
       const cleaned = postProcessReply(reply);
 
-      if (!cleaned) return true;
+      if (!cleaned) {
+        if (mustReply) {
+          const fallback = buildMustReplyFallback(ctx, hasVisionContent, asksForVoice);
+          cm.addMessage(sessionId, { role: 'assistant', content: fallback });
+          sendPrimaryReply(ctx, fallback, config.must_reply_quote !== false);
+        }
+        return true;
+      }
 
       // 保存回复到上下文
       cm.addMessage(sessionId, { role: 'assistant', content: cleaned });
@@ -754,7 +815,11 @@ export const aiChatPlugin: Plugin = {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[AI][群${ctx.event.group_id}] 最终失败(已重试):`, errMsg);
-      // 完全静默 不回复任何东西
+      if (mustReply) {
+        const fallback = buildMustReplyFallback(ctx, hasVisionContent, asksForVoice);
+        cm.addMessage(sessionId, { role: 'assistant', content: fallback });
+        sendPrimaryReply(ctx, fallback, config.must_reply_quote !== false);
+      }
     }
 
     return true;

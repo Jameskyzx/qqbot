@@ -44,6 +44,10 @@ export interface AIConfig {
   enable_search?: boolean;
   /** 搜索最多等待毫秒数 */
   search_timeout_ms?: number;
+  /** 单次模型请求最多等待毫秒数 */
+  api_timeout_ms?: number;
+  /** @/回复/点名消息最多等待模型毫秒数，超时先兜底回复 */
+  must_reply_timeout_ms?: number;
   /** 搜索触发关键词 */
   search_keywords?: string[];
   /** 是否对风格/切片/名场面查询也触发搜索 */
