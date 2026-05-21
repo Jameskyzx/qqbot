@@ -32,6 +32,7 @@ export function generateVoice(config: AIConfig, text: string): Promise<string | 
     const body = JSON.stringify({
       model: 'mimo-v2.5-tts',
       messages: [
+        { role: 'system', content: '用年轻男性的声音，语气随意放松，像在跟朋友聊天，语速偏快，带点不正经的感觉' },
         { role: 'user', content: '请说' },
         { role: 'assistant', content: text },
       ],
