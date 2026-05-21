@@ -222,21 +222,32 @@ function mergeConsecutiveMessages(messages: ChatMessage[]): ChatMessage[] {
     }
 
     if (j === i + 1) {
-      // 只有一条，直接加入（确保content是string）
-      merged.push({
-        role: current.role,
-        content: stringifyContent(current.content),
-      });
+      // 只有一条，直接保留原始格式
+      merged.push(current);
     } else {
-      // 多条相同角色，合并为一条
-      const parts: string[] = [];
-      for (let k = i; k < j; k++) {
-        parts.push(stringifyContent(messages[k].content));
+      // 多条相同角色：检查是否有多模态内容
+      const hasMultimodal = messages.slice(i, j).some(m => Array.isArray(m.content));
+      
+      if (hasMultimodal) {
+        // 如果包含多模态内容，合并为一个数组
+        const parts: MessageContent[] = [];
+        for (let k = i; k < j; k++) {
+          const content = messages[k].content;
+          if (Array.isArray(content)) {
+            parts.push(...content);
+          } else {
+            parts.push({ type: 'text', text: content });
+          }
+        }
+        merged.push({ role: current.role, content: parts });
+      } else {
+        // 纯文本合并
+        const texts: string[] = [];
+        for (let k = i; k < j; k++) {
+          texts.push(messages[k].content as string);
+        }
+        merged.push({ role: current.role, content: texts.join('\n') });
       }
-      merged.push({
-        role: current.role,
-        content: parts.join('\n'),
-      });
     }
 
     i = j;
@@ -263,23 +274,33 @@ function stringifyContent(content: string | MessageContent[]): string {
 /** 构建适合发送给API的消息（保留vision格式） */
 function buildApiMessages(messages: ChatMessage[], hasVision: boolean): ChatMessage[] {
   if (!hasVision) {
-    // 无图片时，全部转为纯文本并合并
     return mergeConsecutiveMessages(messages);
   }
 
-  // 有图片时：最后一条保留多模态格式，其余转文本
+  // 有图片时：找到最后一条包含image_url的消息保留原始格式
   const result: ChatMessage[] = [];
-  for (let i = 0; i < messages.length - 1; i++) {
-    const msg = messages[i];
-    result.push({
-      role: msg.role,
-      content: stringifyContent(msg.content),
-    });
+  let lastVisionIdx = -1;
+
+  // 找最后一条含有图片的消息
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const content = messages[i].content;
+    if (Array.isArray(content) && content.some(c => c.type === 'image_url')) {
+      lastVisionIdx = i;
+      break;
+    }
   }
 
-  // 最后一条保留原始格式（可能包含image_url）
-  const last = messages[messages.length - 1];
-  result.push(last);
+  for (let i = 0; i < messages.length; i++) {
+    if (i === lastVisionIdx) {
+      // 保留多模态格式
+      result.push(messages[i]);
+    } else {
+      result.push({
+        role: messages[i].role,
+        content: stringifyContent(messages[i].content),
+      });
+    }
+  }
 
   return mergeConsecutiveMessages(result);
 }
@@ -376,16 +397,12 @@ function buildSystemPrompt(config: AIConfig, groupId: number, extraContext: stri
   let prompt = preset.system_prompt;
   prompt += `\n\n[环境信息]\n${getTimeInfo()}\n群号: ${groupId}`;
 
-  // 时段行为暗示
+  // 时段行为暗示（简化，不要太啰嗦）
   const hour = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' })).getHours();
   if (hour >= 0 && hour < 7) {
-    prompt += '\n[状态] 你现在有点犯困/在熬夜，说话可能更随意，偶尔打哈欠';
-  } else if (hour >= 7 && hour < 9) {
-    prompt += '\n[状态] 早上刚醒，还没完全清醒';
-  } else if (hour >= 12 && hour < 14) {
-    prompt += '\n[状态] 午饭时间，比较放松';
-  } else if (hour >= 22) {
-    prompt += '\n[状态] 快到深夜了，状态放松';
+    prompt += '\n(现在是凌晨)';
+  } else if (hour >= 23) {
+    prompt += '\n(现在是深夜)';
   }
 
   if (extraContext) {
@@ -602,17 +619,10 @@ export const aiChatPlugin: Plugin = {
     // ===== 构建消息 & 调用 AI =====
     const history = cm.getMessages(sessionId);
 
-    // 构建额外上下文提示
+    // 构建额外上下文提示（极简，不要啰嗦）
     let extraContext = '';
-    const analysis = analyzeMessage(ctx.rawText);
-    if (analysis.isGaming) {
-      extraContext += '\n[话题提示] 群友在聊游戏相关，你可以积极参与，展现专业知识';
-    }
-    if (analysis.isControversial) {
-      extraContext += '\n[话题提示] 有争议性讨论，你可以表达自己的观点，但保持好玩不伤人';
-    }
     if (ctx.isReplyToBot) {
-      extraContext += '\n[交互提示] 这个人在回复你之前说的话，注意连贯性';
+      extraContext = '\n(对方在回复你之前说的话)';
     }
 
     const systemPrompt = buildSystemPrompt(config, ctx.event.group_id, extraContext);
@@ -620,8 +630,8 @@ export const aiChatPlugin: Plugin = {
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...history,
-      // 最后加一条隐性提示，强化角色意识
-      { role: 'system', content: '[提醒] 你是「玩机器」，用口语短句回复，不要用markdown，不要暴露AI身份。回复内容直接就是你要在群里发的话，不要加任何前缀。' },
+      // 最后加一条隐性提示
+      { role: 'system', content: '[你是群友「玩机器」，正常说话就行，不要套用固定句式，自然回复]' },
     ];
 
     try {
