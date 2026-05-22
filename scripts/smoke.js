@@ -7,6 +7,8 @@ const kb = require('../dist/plugins/knowledge-base');
 const { configureGates, getGateStats, withGate } = require('../dist/plugins/concurrency');
 const search = require('../dist/plugins/web-search');
 const tts = require('../dist/plugins/tts');
+const aiChat = require('../dist/plugins/ai-chat');
+const { MessageHandler } = require('../dist/handler');
 
 const SOURCE_STATE_PATH = path.resolve(__dirname, '..', 'knowledge', 'source-state.json');
 
@@ -150,6 +152,169 @@ async function testSearchSingleFlight() {
   }
 }
 
+function makeEvent(messageId, userId, text, extraSegments = [], groupId = 6657) {
+  return {
+    time: Math.floor(Date.now() / 1000),
+    self_id: 3853043835,
+    post_type: 'message',
+    message_type: 'group',
+    sub_type: 'normal',
+    message_id: messageId,
+    group_id: groupId,
+    user_id: userId,
+    anonymous: null,
+    message: [
+      ...extraSegments,
+      { type: 'at', data: { qq: '3853043835' } },
+      { type: 'text', data: { text } },
+    ],
+    raw_message: `[CQ:at,qq=3853043835]${text}`,
+    font: 0,
+    sender: { user_id: userId, nickname: `user${userId}` },
+  };
+}
+
+function makeConfigForHandler() {
+  const config = readConfig();
+  config.bot_qq = 3853043835;
+  config.ai.api_key = 'sk-live-test-key-1234567890';
+  config.ai.api_url = 'https://example.com/v1/chat/completions';
+  config.ai.model = 'smoke-model';
+  config.ai.vision_model = 'smoke-vision-model';
+  config.ai.enable_search = false;
+  config.ai.enable_tts = false;
+  config.ai.enable_vision = false;
+  config.ai.enable_knowledge = false;
+  config.ai.max_context_messages = 20;
+  config.ai.context_send_messages = 10;
+  config.ai.max_group_queue = 10;
+  config.ai.ai_global_concurrency = 2;
+  config.ai.search_global_concurrency = 2;
+  config.ai.vision_global_concurrency = 1;
+  config.ai.tts_global_concurrency = 1;
+  config.enabled_groups = [];
+  config.admin_qq = [1];
+  return config;
+}
+
+async function waitFor(condition, label, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timeout waiting for ${label}`);
+}
+
+async function testMessageReplyTargeting() {
+  const config = makeConfigForHandler();
+  const sent = [];
+  const getMsgCalls = [];
+  const bot = {
+    getConfig: () => config,
+    sendGroupMessage: async (groupId, message, onMessageId) => {
+      sent.push({ groupId, message });
+      if (onMessageId) onMessageId(90_000 + sent.length);
+      return true;
+    },
+    callApiAsync: async (action, params) => {
+      getMsgCalls.push({ action, params });
+      if (action === 'get_msg') {
+        return { retcode: 0, data: { sender: { user_id: 3853043835 } } };
+      }
+      return { retcode: 0, data: {} };
+    },
+  };
+  const handler = new MessageHandler(bot);
+  handler.use(aiChat.aiChatPlugin);
+  const prompts = [];
+
+  aiChat.__setLLMCallerForTests(async (_config, messages) => {
+    const current = messages[messages.length - 1];
+    const content = typeof current.content === 'string'
+      ? current.content
+      : current.content.map((item) => item.text || '').join('\n');
+    prompts.push(content);
+    const id = (content.match(/message_id: (\d+)/) || [])[1] || 'unknown';
+    return `reply-${id}`;
+  });
+
+  try {
+    handler.handleEvent(makeEvent(101, 11, ' 第一条'));
+    handler.handleEvent(makeEvent(102, 12, ' 第二条'));
+    handler.handleEvent(makeEvent(103, 13, ' 第三条'));
+    await waitFor(() => sent.length === 3, 'three forced replies');
+
+    assert.deepStrictEqual(
+      sent.map((item) => item.message.find((seg) => seg.type === 'reply')?.data.id),
+      ['101', '102', '103'],
+      'forced replies should quote the matching original message ids',
+    );
+    assert.deepStrictEqual(
+      sent.map((item) => item.message.find((seg) => seg.type === 'text')?.data.text),
+      ['reply-101', 'reply-102', 'reply-103'],
+      'LLM should receive each current message snapshot in FIFO order',
+    );
+    assert.ok(prompts.every((prompt, index) => prompt.includes(`message_id: ${101 + index}`)));
+
+    const before = sent.length;
+    handler.handleEvent(makeEvent(201, 21, ' 回复旧消息', [{ type: 'reply', data: { id: '77777' } }]));
+    await waitFor(() => sent.length === before + 1, 'reply-to-bot forced reply');
+    assert.strictEqual(getMsgCalls.some((call) => call.action === 'get_msg' && call.params.message_id === 77777), true);
+    assert.strictEqual(sent.at(-1).message.find((seg) => seg.type === 'reply')?.data.id, '201');
+  } finally {
+    aiChat.__setLLMCallerForTests();
+    aiChat.shutdownAiChat();
+  }
+}
+
+async function testCrossGroupAiConcurrency() {
+  const config = makeConfigForHandler();
+  config.ai.ai_global_concurrency = 2;
+  const sent = [];
+  const bot = {
+    getConfig: () => config,
+    sendGroupMessage: async (groupId, message, onMessageId) => {
+      sent.push({ groupId, message });
+      if (onMessageId) onMessageId(80_000 + sent.length);
+      return true;
+    },
+    callApiAsync: async () => ({ retcode: 0, data: {} }),
+  };
+  const handler = new MessageHandler(bot);
+  handler.use(aiChat.aiChatPlugin);
+  let active = 0;
+  let maxActive = 0;
+
+  aiChat.__setLLMCallerForTests(async (_config, messages) => {
+    active++;
+    maxActive = Math.max(maxActive, active);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    active--;
+    const current = messages[messages.length - 1];
+    const content = typeof current.content === 'string'
+      ? current.content
+      : current.content.map((item) => item.text || '').join('\n');
+    const id = (content.match(/message_id: (\d+)/) || [])[1] || 'unknown';
+    return `concurrent-${id}`;
+  });
+
+  try {
+    for (let i = 0; i < 5; i++) {
+      handler.handleEvent(makeEvent(300 + i, 30 + i, ` 多群${i}`, [], 7000 + i));
+    }
+    await waitFor(() => sent.length === 5, 'five cross-group replies', 5000);
+    assert.ok(maxActive <= 2, `cross-group AI concurrency exceeded gate: ${maxActive}`);
+    assert.deepStrictEqual(
+      sent.map((item) => item.message.find((seg) => seg.type === 'reply')?.data.id).sort(),
+      ['300', '301', '302', '303', '304'],
+    );
+  } finally {
+    aiChat.__setLLMCallerForTests();
+    aiChat.shutdownAiChat();
+  }
+}
+
 async function main() {
   await testConfig();
   await testKnowledge();
@@ -157,6 +322,8 @@ async function main() {
   await testVoiceStats();
   await testGates();
   await testSearchSingleFlight();
+  await testMessageReplyTargeting();
+  await testCrossGroupAiConcurrency();
   console.log('smoke ok');
 }
 

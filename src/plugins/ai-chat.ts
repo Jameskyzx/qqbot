@@ -50,6 +50,8 @@ interface MessageContent {
   image_url?: { url: string; detail?: string };
 }
 
+type LLMCaller = (config: AIConfig, messages: ChatMessage[], useVision?: boolean) => Promise<string>;
+
 interface SessionContext {
   summary: string;
   /** 纯文字消息（不含图片DataURL，节省内存） */
@@ -347,11 +349,13 @@ function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean =
   });
 }
 
+let llmCaller: LLMCaller = callLLM;
+
 async function callLLMWithRetry(config: AIConfig, messages: ChatMessage[], useVision: boolean = false, maxAttempts: number = 3): Promise<string> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await callLLM(config, messages, useVision);
+      return await llmCaller(config, messages, useVision);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < maxAttempts - 1) await delay(500 * (attempt + 1));
@@ -378,6 +382,10 @@ async function summarizeMessages(config: AIConfig, oldMessages: ChatMessage[]): 
   } catch {
     return `[较早的对话片段，共${oldMessages.length}条]`;
   }
+}
+
+export function __setLLMCallerForTests(caller?: LLMCaller): void {
+  llmCaller = caller || callLLM;
 }
 
 // ============ 构建发送给API的消息（KV cache友好）============

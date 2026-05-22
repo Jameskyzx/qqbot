@@ -92,25 +92,29 @@ function main(): void {
 
   // 优雅退出
   let shuttingDown = false;
-  const shutdown = () => {
+  const shutdown = (exitCode = 0) => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log('\n[Bot] 正在关闭...');
     bot.close();
     shutdownAiChat();
-    const timer = setTimeout(() => process.exit(0), 500);
-    timer.unref();
+    const timer = setTimeout(() => process.exit(exitCode), 500);
+    if (exitCode === 0) timer.unref();
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown(0));
+  process.on('SIGTERM', () => shutdown(0));
 
-  // 防止未捕获异常导致崩溃
-  process.on('uncaughtException', (err) => {
-    console.error('[Fatal] 未捕获异常:', err.message);
-  });
-  process.on('unhandledRejection', (reason) => {
-    console.error('[Fatal] 未处理的Promise拒绝:', reason);
-  });
+  const fatalShutdown = (label: string, reason: unknown) => {
+    const message = reason instanceof Error
+      ? (reason.stack || reason.message)
+      : String(reason);
+    console.error(`[Fatal] ${label}:`, message);
+    shutdown(1);
+  };
+
+  // 致命异常后退出，让 PM2 拉起干净进程，避免半坏状态假活着。
+  process.on('uncaughtException', (err) => fatalShutdown('未捕获异常', err));
+  process.on('unhandledRejection', (reason) => fatalShutdown('未处理的Promise拒绝', reason));
 }
 
 main();
