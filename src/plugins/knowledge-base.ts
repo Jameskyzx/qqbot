@@ -102,6 +102,9 @@ const BASE_KEYWORDS = [
   '置信度', '原话', '拟态', '转写', 'inbox', '公式解说', '老板大气',
   '语音', '克隆语音', 'voice', 'tts', 'voice_sample', 'voiceclone', '授权样本',
   '样本', '语音缓存', 'voice status', 'voice test', '声音克隆',
+  '小众宝藏', '结晶', '百事通', '弹幕版', '烂梗大赏', '年度烂梗',
+  '管控', 'mygo', 'sora', '喵', '关注', '留学', '第一个观众',
+  '雷达图', 'top20', '上海major', 'magixx', 'hltv颁奖', '玩评',
 ];
 
 let cachedMtime = 0;
@@ -134,6 +137,11 @@ function defaultSources(): KnowledgeSource[] {
     { id: 'hltv-top20', query: 'HLTV Top 20 players 2025 ZywOo donk ropz m0NESY sh1ro', sourceType: 'public_fact', trusted: true, autoCommitEligible: true, intervalMinutes: 1440 },
     { id: 'cs2-team-rankings', query: 'HLTV Valve ranking 2026 CS2 Vitality Spirit Falcons MOUZ NAVI G2', sourceType: 'public_fact', trusted: true, autoCommitEligible: true, intervalMinutes: 1440 },
     { id: 'gift-lines-risky', query: '玩机器 6657 斗鱼 礼物 感谢 老板大气', sourceType: 'unknown', trusted: false, autoCommitEligible: false, intervalMinutes: 1440 },
+    { id: 'bilibili-6657-danmaku-top10', query: '6657直播间烂梗top10 玩机器直播间 被发送次数最多 弹幕', sourceType: 'public_summary', trusted: false, autoCommitEligible: false, intervalMinutes: 1440 },
+    { id: 'bilibili-machine-hltv-awards-donk', query: '玩机器 HLTV颁奖复盘 donk magixx NiKo ZywOo Top20', sourceType: 'public_summary', trusted: false, autoCommitEligible: false, intervalMinutes: 1440 },
+    { id: 'bilibili-machine-shanghai-major-data', query: '玩机器 上海Major 数据雷达图 donk MVP 6657', sourceType: 'public_summary', trusted: false, autoCommitEligible: false, intervalMinutes: 1440 },
+    { id: 'bilibili-machine-replay-index', query: '玩机器 Machine 直播回放 小众宝藏结晶直播间 4K弹幕版 6657', sourceType: 'public_summary', trusted: false, autoCommitEligible: false, intervalMinutes: 1440 },
+    { id: 'cs2-active-map-pool-2026', query: 'Counter-Strike 2 active duty map pool 2026 Anubis Train Overpass Dust2 Ancient', sourceType: 'public_fact', trusted: true, autoCommitEligible: true, intervalMinutes: 1440 },
   ];
 }
 

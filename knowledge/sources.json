@@ -150,5 +150,101 @@
     "trusted": false,
     "autoCommitEligible": false,
     "intervalMinutes": 1440
+  },
+  {
+    "id": "bilibili-6657-danmaku-top10",
+    "query": "6657直播间烂梗top10 玩机器直播间 被发送次数最多 弹幕",
+    "sourceType": "public_summary",
+    "trusted": false,
+    "autoCommitEligible": false,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "bilibili-machine-annual-meme-control",
+    "query": "玩机器 年度烂梗 2025 管控 弹幕 6657 切片",
+    "sourceType": "public_summary",
+    "trusted": false,
+    "autoCommitEligible": false,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "bangumi-6657-mygo-meme-index",
+    "query": "6657 mygo 烂梗合集 玩机器 弹幕 二次元",
+    "sourceType": "unknown",
+    "trusted": false,
+    "autoCommitEligible": false,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "bilibili-machine-hltv-awards-donk",
+    "query": "玩机器 HLTV颁奖复盘 donk magixx NiKo ZywOo Top20",
+    "sourceType": "public_summary",
+    "trusted": false,
+    "autoCommitEligible": false,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "bilibili-machine-shanghai-major-data",
+    "query": "玩机器 上海Major 数据雷达图 donk MVP 6657",
+    "sourceType": "public_summary",
+    "trusted": false,
+    "autoCommitEligible": false,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "bilibili-machine-replay-index",
+    "query": "玩机器 Machine 直播回放 小众宝藏结晶直播间 4K弹幕版 6657",
+    "sourceType": "public_summary",
+    "trusted": false,
+    "autoCommitEligible": false,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "bilibili-machine-study-abroad-first-viewer",
+    "query": "玩机器 回忆留学往事 6657 第一个观众 切片",
+    "sourceType": "public_summary",
+    "trusted": false,
+    "autoCommitEligible": false,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "bilibili-machine-donk-niko-handshake",
+    "query": "玩机器 Donk Niko 握手 G2 Spirit 切片",
+    "sourceType": "public_summary",
+    "trusted": false,
+    "autoCommitEligible": false,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "hltv-top20-2025-full",
+    "query": "HLTV Top 20 2025 ZywOo donk ropz m0NESY sh1ro NiKo b1t",
+    "sourceType": "public_fact",
+    "trusted": true,
+    "autoCommitEligible": true,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "hltv-team-ranking-2026-current",
+    "query": "HLTV team ranking May 2026 Vitality NAVI Spirit Falcons FURIA Aurora MongolZ MOUZ",
+    "sourceType": "public_fact",
+    "trusted": true,
+    "autoCommitEligible": true,
+    "intervalMinutes": 720
+  },
+  {
+    "id": "liquipedia-machinewjq-profile",
+    "query": "MachineWJQ Liquipedia Counter-Strike 玩机器 6657",
+    "sourceType": "public_fact",
+    "trusted": true,
+    "autoCommitEligible": true,
+    "intervalMinutes": 1440
+  },
+  {
+    "id": "cs2-active-map-pool-2026-crosscheck",
+    "query": "Counter-Strike 2 active duty map pool 2026 Anubis Train Overpass Dust2 Ancient official",
+    "sourceType": "public_fact",
+    "trusted": true,
+    "autoCommitEligible": true,
+    "intervalMinutes": 1440
   }
 ]
