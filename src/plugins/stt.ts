@@ -12,6 +12,8 @@ let cacheMisses = 0;
 let downloadMisses = 0;
 let transcriptMisses = 0;
 let lastSttError = '';
+let localSttRuns = 0;
+let apiSttRuns = 0;
 
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -25,6 +27,8 @@ function cacheKey(input: string, config: AIConfig): string {
       config.stt_model || '',
       config.model || '',
       config.api_url || '',
+      config.stt_provider || 'api',
+      config.stt_local_command || '',
     ].join('\n'))
     .digest('hex')
     .slice(0, 24);
@@ -158,6 +162,17 @@ function convertAudioToMp3(buffer: Buffer, source: string, timeoutMs: number): P
 
 function setSttError(message: string): void {
   lastSttError = message.slice(0, 180);
+}
+
+function normalizeLocalTranscript(stdout: string, outputPath: string): string {
+  try {
+    if (fs.existsSync(outputPath)) {
+      const text = fs.readFileSync(outputPath, 'utf-8');
+      const normalized = normalizeTranscript(text);
+      if (normalized) return normalized;
+    }
+  } catch { /* */ }
+  return normalizeTranscript(stdout);
 }
 
 function readLocalRecord(input: string, maxBytes: number): Buffer | null {
@@ -379,6 +394,7 @@ function postAudioPayload(config: AIConfig, requestBody: unknown): Promise<strin
 }
 
 async function callAudioModel(config: AIConfig, buffer: Buffer, mime: string, source: string): Promise<string> {
+  apiSttRuns++;
   const base64 = buffer.toString('base64');
   const dataUrl = `data:${mime};base64,${base64}`;
   const model = config.stt_model || config.vision_model || config.model;
@@ -426,6 +442,101 @@ async function callAudioModel(config: AIConfig, buffer: Buffer, mime: string, so
   return '';
 }
 
+function callLocalAudioModel(config: AIConfig, buffer: Buffer, mime: string, source: string): Promise<string> {
+  return new Promise((resolve) => {
+    const command = (config.stt_local_command || '').trim();
+    if (!command) {
+      setSttError('local stt command missing');
+      resolve('');
+      return;
+    }
+
+    let dir = '';
+    let settled = false;
+    const finish = (value: string): void => {
+      if (settled) return;
+      settled = true;
+      if (dir) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* */ }
+      }
+      resolve(value);
+    };
+
+    try {
+      dir = fs.mkdtempSync(path.join(CACHE_DIR, 'local-stt-'));
+      const inputPath = path.join(dir, `input.${audioFormat(mime, source)}`);
+      const outputPath = path.join(dir, 'output.txt');
+      fs.writeFileSync(inputPath, buffer);
+
+      localSttRuns++;
+      const child = spawn(command, {
+        cwd: path.resolve(__dirname, '..', '..'),
+        env: {
+          ...process.env,
+          QQBOT_STT_INPUT: inputPath,
+          QQBOT_STT_OUTPUT: outputPath,
+          QQBOT_STT_MIME: mime,
+          QQBOT_STT_SOURCE: source,
+        },
+        shell: true,
+        windowsHide: true,
+      });
+
+      let stdout = '';
+      let stderr = '';
+      const maxLogChars = 4000;
+      child.stdout?.on('data', (chunk: Buffer) => {
+        stdout = (stdout + chunk.toString()).slice(-maxLogChars);
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString()).slice(-maxLogChars);
+      });
+
+      const timer = setTimeout(() => {
+        try { child.kill(); } catch { /* */ }
+        setSttError('local stt timeout');
+        finish('');
+      }, Math.max(3000, config.stt_local_timeout_ms || config.stt_timeout_ms || 15000));
+      timer.unref();
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        setSttError(`local stt: ${err.message}`);
+        finish('');
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (settled) return;
+        const text = normalizeLocalTranscript(stdout, outputPath);
+        if (code === 0 && text) {
+          lastSttError = '';
+          finish(text);
+          return;
+        }
+        const detail = (stderr || stdout || `exit ${code}`).replace(/\s+/g, ' ').slice(0, 140);
+        setSttError(`local stt failed: ${detail}`);
+        finish('');
+      });
+    } catch (err) {
+      setSttError(`local stt setup: ${err instanceof Error ? err.message : String(err)}`);
+      finish('');
+    }
+  });
+}
+
+async function transcribeWithProvider(config: AIConfig, buffer: Buffer, mime: string, source: string): Promise<string> {
+  const provider = config.stt_provider || 'api';
+  if (provider === 'local') return callLocalAudioModel(config, buffer, mime, source);
+  if (provider === 'auto') {
+    const local = await callLocalAudioModel(config, buffer, mime, source);
+    if (local) return local;
+    if (!config.api_url || !config.api_key) return '';
+    return callAudioModel(config, buffer, mime, source);
+  }
+  return callAudioModel(config, buffer, mime, source);
+}
+
 export async function transcribeRecord(config: AIConfig, input: string): Promise<string> {
   if (!config.enable_stt || !input) return '';
   const key = cacheKey(input, config);
@@ -448,7 +559,7 @@ export async function transcribeRecord(config: AIConfig, input: string): Promise
       mime = 'audio/mpeg';
     }
   }
-  const transcript = await callAudioModel(config, buffer, mime, input);
+  const transcript = await transcribeWithProvider(config, buffer, mime, input);
   if (!transcript) {
     transcriptMisses++;
     return '';
@@ -487,6 +598,11 @@ cleanupTimer.unref();
 export function getSttStats(config?: AIConfig): {
   enabled: boolean;
   model: string;
+  provider: string;
+  localReady: boolean;
+  localCommand: string;
+  localRuns: number;
+  apiRuns: number;
   cacheFiles: number;
   sizeMB: number;
   hits: number;
@@ -512,6 +628,11 @@ export function getSttStats(config?: AIConfig): {
   return {
     enabled: config?.enable_stt === true,
     model: config?.stt_model || config?.vision_model || config?.model || '',
+    provider: config?.stt_provider || 'api',
+    localReady: !!(config?.stt_local_command || '').trim() && (config?.stt_provider === 'local' || config?.stt_provider === 'auto'),
+    localCommand: (config?.stt_local_command || '').trim(),
+    localRuns: localSttRuns,
+    apiRuns: apiSttRuns,
     cacheFiles: files,
     sizeMB: Math.round(size / 1024 / 1024 * 10) / 10,
     hits: cacheHits,

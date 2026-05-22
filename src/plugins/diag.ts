@@ -23,8 +23,10 @@ export const diagPlugin: Plugin = {
     const suggestions: string[] = [];
     const ok: string[] = [];
 
+    const ttsCanRunLocal = ai.enable_tts && (ai.tts_provider === 'local' || ai.tts_provider === 'auto') && !!(ai.tts_local_command || '').trim();
+    const sttCanRunLocal = ai.enable_stt && (ai.stt_provider === 'local' || ai.stt_provider === 'auto') && !!(ai.stt_local_command || '').trim();
     if (hasUsableApiKey(ai.api_key)) ok.push('AI接口已配置');
-    else hard.push('AI接口未配置或仍是占位值，/ai、识图、TTS不可用');
+    else hard.push(`AI接口未配置或仍是占位值，/ai和识图不可用${ttsCanRunLocal || sttCanRunLocal ? '；本地语音链路可单独工作' : '，远端TTS/STT不可用'}`);
 
     if (ai.enable_search) ok.push('联网搜索已开启');
     else risk.push('联网搜索未开启，实时赛果/阵容/价格会不准');
@@ -37,10 +39,16 @@ export const diagPlugin: Plugin = {
 
     const voice = getVoiceStats(ai);
     const stt = getSttStats(ai);
-    if (ai.enable_tts) ok.push(`语音已开启(${voice.cloneReady ? 'clone' : 'tts'})`);
+    if (ai.enable_tts) ok.push(`语音已开启(${voice.provider}${voice.localReady ? '/local' : voice.cloneReady ? '/clone' : ''})`);
     else suggestions.push('语音未开启，/tts 会不可用');
-    if (ai.enable_stt) ok.push(`语音听写已开启(${stt.model || '未配置模型'})`);
+    if (ai.enable_stt) ok.push(`语音听写已开启(${stt.provider}${stt.localReady ? '/local' : ''} ${stt.model || '未配置模型'})`);
     else suggestions.push('语音听写未开启，收到语音只能按占位和文字上下文回复');
+    if ((ai.tts_provider === 'local' || ai.tts_provider === 'auto') && !voice.localReady) {
+      risk.push('TTS配置了本地/自动模式，但本地命令为空');
+    }
+    if ((ai.stt_provider === 'local' || ai.stt_provider === 'auto') && !stt.localReady) {
+      risk.push('STT配置了本地/自动模式，但本地命令为空');
+    }
     if (ai.enable_tts && ai.tts_clone_enabled !== false && !voice.cloneReady) {
       suggestions.push(`克隆样本不可用: ${voice.sampleReason || 'unknown'} (${voice.samplePath})`);
     }
@@ -116,9 +124,9 @@ export const diagPlugin: Plugin = {
       `搜索缓存: ${search.cacheEntries}/${search.maxEntries}条 空${search.negativeEntries} ${search.hits}/${search.misses} 飞行${search.inFlight}`,
       `图片缓存: ${image.count}张 ${image.sizeMB}/${image.maxSizeMB}MB 单图${image.maxFileMB}MB ${image.hits}/${image.misses} 失败${image.downloadFailures}`,
       ...(image.lastError ? [`图片最近错误: ${image.lastError}`] : []),
-      `听写: ${stt.enabled ? 'on' : 'off'} 缓存${stt.cacheFiles}条 ${stt.hits}/${stt.misses} 下载失败${stt.downloadMisses} 空转写${stt.transcriptMisses}`,
+      `听写: ${stt.enabled ? 'on' : 'off'} ${stt.provider}${stt.localReady ? '/local' : ''} 缓存${stt.cacheFiles}条 ${stt.hits}/${stt.misses} 本地${stt.localRuns} API${stt.apiRuns} 下载失败${stt.downloadMisses} 空转写${stt.transcriptMisses}`,
       ...(stt.lastError ? [`听写最近错误: ${stt.lastError}`] : []),
-      `语音: 缓存${voice.cacheFiles}条 ${voice.hits}/${voice.misses} 克隆${voice.cloneEnabled ? (voice.cloneReady ? 'ready' : 'missing') : 'off'} 样本${voice.sampleSizeMB}MB`,
+      `语音: ${voice.provider}${voice.localReady ? '/local' : ''} 缓存${voice.cacheFiles}条 ${voice.hits}/${voice.misses} 本地${voice.localRuns} API${voice.apiRuns} 克隆${voice.cloneEnabled ? (voice.cloneReady ? 'ready' : 'missing') : 'off'} 样本${voice.sampleSizeMB}MB`,
       ...(voice.lastError ? [`语音最近错误: ${voice.lastError}`] : []),
       ...liveLines,
     ].join('\n'));

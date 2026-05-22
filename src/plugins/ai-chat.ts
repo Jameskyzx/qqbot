@@ -33,6 +33,7 @@ import {
   rollbackKnowledgeBatch,
   searchKnowledge,
   selectKnowledge,
+  selectStyleKnowledge,
   setKnowledgeAutoEnabled,
 } from './knowledge-base';
 import { loadContext, writeSession, deleteSession, markDirty, setFlushHandler, getDirtySessions, listAllSessions, clearDirtySession, flushNow } from './context-store';
@@ -47,9 +48,11 @@ interface ChatMessage {
 }
 
 interface MessageContent {
-  type: 'text' | 'image_url';
+  type: string;
   text?: string;
-  image_url?: { url: string; detail?: string };
+  image_url?: { url: string; detail?: string } | string;
+  image?: string;
+  input_image?: { image_url?: string; url?: string; detail?: string };
 }
 
 type LLMCaller = (config: AIConfig, messages: ChatMessage[], useVision?: boolean) => Promise<string>;
@@ -268,8 +271,42 @@ function delay(ms: number): Promise<void> {
   });
 }
 
+function extractImagePartUrl(part: MessageContent): { url: string; detail?: string } {
+  if (typeof part.image_url === 'string') return { url: part.image_url };
+  if (part.image_url?.url) return { url: part.image_url.url, detail: part.image_url.detail };
+  if (part.input_image?.image_url) return { url: part.input_image.image_url, detail: part.input_image.detail };
+  if (part.input_image?.url) return { url: part.input_image.url, detail: part.input_image.detail };
+  if (part.image) return { url: part.image };
+  return { url: '' };
+}
+
+function convertVisionPart(part: MessageContent, mode: NonNullable<AIConfig['vision_payload_mode']>): MessageContent {
+  if (part.type === 'text') return { type: 'text', text: part.text || '' };
+  const image = extractImagePartUrl(part);
+  if (!image.url) return part;
+  if (mode === 'image_url_string') return { type: 'image_url', image_url: image.url };
+  if (mode === 'input_image') return { type: 'input_image', image_url: image.url };
+  if (mode === 'image_base64') return { type: 'image', image: image.url };
+  return { type: 'image_url', image_url: { url: image.url, detail: image.detail || 'low' } };
+}
+
+function buildVisionMessageVariants(messages: ChatMessage[], mode: AIConfig['vision_payload_mode']): Array<{ label: string; messages: ChatMessage[] }> {
+  const modes: NonNullable<AIConfig['vision_payload_mode']>[] = mode && mode !== 'auto'
+    ? [mode]
+    : ['image_url_object', 'image_url_string', 'input_image', 'image_base64'];
+  return modes.map((visionMode) => ({
+    label: visionMode,
+    messages: messages.map((message) => ({
+      role: message.role,
+      content: typeof message.content === 'string'
+        ? message.content
+        : message.content.map((part) => convertVisionPart(part, visionMode)),
+    })),
+  }));
+}
+
 // ============ LLM API 调用 ============
-function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean = false): Promise<string> {
+function postLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean = false, label: string = 'chat'): Promise<string> {
   return new Promise((resolve, reject) => {
     let url: URL;
     try {
@@ -347,21 +384,36 @@ function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean =
           }
           const content = json.choices?.[0]?.message?.content;
           if (content) finish(String(content).trim());
-          else fail(new Error('无内容返回'));
+          else fail(new Error(`${label}: 无内容返回`));
         } catch {
-          fail(new Error('解析失败'));
+          fail(new Error(`${label}: 解析失败`));
         }
       });
     });
 
-    req.on('error', (err) => fail(new Error('网络: ' + err.message)));
+    req.on('error', (err) => fail(new Error(`${label}: 网络: ` + err.message)));
     req.setTimeout(timeoutMs, () => {
-      fail(new Error('超时'));
+      fail(new Error(`${label}: 超时`));
       req.destroy();
     });
     req.write(body);
     req.end();
   });
+}
+
+async function callLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean = false): Promise<string> {
+  if (!useVision) return postLLM(config, messages, false);
+  const variants = buildVisionMessageVariants(messages, config.vision_payload_mode || 'auto');
+  let lastError: Error | null = null;
+  for (const variant of variants) {
+    try {
+      return await postLLM(config, variant.messages, true, `vision:${variant.label}`);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (config.vision_payload_mode && config.vision_payload_mode !== 'auto') break;
+    }
+  }
+  throw lastError || new Error('视觉模型调用失败');
 }
 
 let llmCaller: LLMCaller = callLLM;
@@ -1411,6 +1463,7 @@ export const aiChatPlugin: Plugin = {
           '识图状态',
           `开关: ${config.enable_vision ? 'on' : 'off'}`,
           `模型: ${config.vision_model || config.model || '未配置'}`,
+          `格式: ${config.vision_payload_mode || 'auto'}`,
           `单次图片: ${config.vision_max_images || 2}`,
           `缓存: ${stats.count}张 ${stats.sizeMB}/${stats.maxSizeMB}MB 命中${stats.hits}/${stats.misses} 失败${stats.downloadFailures}`,
           `单图上限: ${stats.maxFileMB}MB`,
@@ -1471,9 +1524,13 @@ export const aiChatPlugin: Plugin = {
           '语音状态',
           `TTS: ${config.enable_tts ? 'on' : 'off'}`,
           `STT: ${config.enable_stt ? 'on' : 'off'}`,
+          `TTS提供方: ${stats.provider}${stats.localReady ? ' local-ready' : ''}`,
+          `STT提供方: ${sttStats.provider}${sttStats.localReady ? ' local-ready' : ''}`,
           `普通模型: ${stats.model}`,
           `克隆模型: ${stats.cloneModel}`,
           `听写模型: ${sttStats.model || '未配置'}`,
+          ...(stats.provider !== 'api' ? [`本地TTS命令: ${stats.localCommand || '未配置'}`] : []),
+          ...(sttStats.provider !== 'api' ? [`本地STT命令: ${sttStats.localCommand || '未配置'}`] : []),
           `克隆: ${stats.cloneEnabled ? (stats.cloneReady ? 'ready' : 'missing') : 'off'}`,
           `样本: ${stats.samplePath}`,
           `样本大小: ${stats.sampleSizeMB}MB`,
@@ -1504,7 +1561,8 @@ export const aiChatPlugin: Plugin = {
           ctx.reply('听写没开，先把 enable_stt 打开。');
           return true;
         }
-        if (!apiReady) {
+        const sttNeedsApi = (config.stt_provider || 'api') === 'api' || ((config.stt_provider || 'api') === 'auto' && !(config.stt_local_command || '').trim());
+        if (sttNeedsApi && !apiReady) {
           ctx.reply('AI接口没配，听写模型现在打不出去。');
           return true;
         }
@@ -1527,7 +1585,8 @@ export const aiChatPlugin: Plugin = {
         ctx.reply('语音没开');
         return true;
       }
-      if (!apiReady) {
+      const ttsNeedsApi = (config.tts_provider || 'api') === 'api' || ((config.tts_provider || 'api') === 'auto' && !(config.tts_local_command || '').trim());
+      if (ttsNeedsApi && !apiReady) {
         ctx.reply('AI接口没配，语音也就别想了。');
         return true;
       }
@@ -1769,9 +1828,15 @@ export const aiChatPlugin: Plugin = {
           const budget = config.knowledge_max_chars || 1800;
           const styleBudget = Math.max(600, Math.floor(budget * (hasKnowledgeTopic ? 0.35 : 0.75)));
           const topicBudget = Math.max(600, budget - styleBudget);
-          const styleKnowledge = selectKnowledge(styleQuery, styleBudget);
+          const styleKnowledge = config.knowledge_force_style === false
+            ? selectKnowledge(styleQuery, styleBudget)
+            : (selectKnowledge(styleQuery, styleBudget) || selectStyleKnowledge(styleBudget));
           const topicKnowledge = hasKnowledgeTopic ? selectKnowledge(knowledgeQuery, topicBudget) : '';
-          knowledgeInfo = [styleKnowledge, topicKnowledge]
+          knowledgeInfo = [
+            styleKnowledge ? '【知识库调用铁律】本次回复必须优先参考下方知识库的语态、反应强度、选手/队伍倾向；没有命中的内容不要编成真实原话。' : '',
+            styleKnowledge,
+            topicKnowledge,
+          ]
             .filter(Boolean)
             .join('\n\n')
             .slice(0, budget);

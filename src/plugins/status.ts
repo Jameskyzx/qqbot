@@ -50,8 +50,8 @@ export const statusPlugin: Plugin = {
         `🧾 自动批次: ${knowledgeStats.batches}个 可回滚${knowledgeStats.rollbackableBatches}`,
         `🖼 图片缓存: ${imageStats.count}张 ${imageStats.sizeMB}/${imageStats.maxSizeMB}MB 单图${imageStats.maxFileMB}MB ${imageStats.maxAgeHours}h 命中${imageStats.hits}/${imageStats.misses} 失败${imageStats.downloadFailures}`,
         ...(imageStats.lastError ? [`图片最近错误: ${imageStats.lastError}`] : []),
-        `🎧 语音听写: ${sttStats.enabled ? 'on' : 'off'} 缓存${sttStats.cacheFiles}条 ${sttStats.sizeMB}MB 命中${sttStats.hits}/${sttStats.misses} 下载失败${sttStats.downloadMisses} 空转写${sttStats.transcriptMisses}`,
-        `🔊 语音: 缓存${voiceStats.cacheFiles}条 ${voiceStats.sizeMB}MB 命中${voiceStats.hits}/${voiceStats.misses} 克隆${voiceStats.cloneEnabled ? (voiceStats.cloneReady ? 'ready' : 'missing') : 'off'}`,
+        `🎧 语音听写: ${sttStats.enabled ? 'on' : 'off'} ${sttStats.provider}${sttStats.localReady ? '/local' : ''} 缓存${sttStats.cacheFiles}条 ${sttStats.sizeMB}MB 命中${sttStats.hits}/${sttStats.misses} 本地${sttStats.localRuns} API${sttStats.apiRuns} 下载失败${sttStats.downloadMisses} 空转写${sttStats.transcriptMisses}`,
+        `🔊 语音: ${voiceStats.provider}${voiceStats.localReady ? '/local' : ''} 缓存${voiceStats.cacheFiles}条 ${voiceStats.sizeMB}MB 命中${voiceStats.hits}/${voiceStats.misses} 本地${voiceStats.localRuns} API${voiceStats.apiRuns} 克隆${voiceStats.cloneEnabled ? (voiceStats.cloneReady ? 'ready' : 'missing') : 'off'}`,
         `📦 Node ${process.version}`,
       ].join('\n');
 

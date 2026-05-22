@@ -37,6 +37,7 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   ai_reply_cache_seconds: 180,
   enable_knowledge: true,
   knowledge_max_chars: 2600,
+  knowledge_force_style: true,
   related_reply_probability: 0.65,
   persona_mode: 'first_person_bot',
   aggression_level: 'low',
@@ -60,6 +61,7 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   forced_reply_quote: true,
   must_reply_quote: true,
   enable_vision: false,
+  vision_payload_mode: 'auto',
   vision_max_images: 2,
   image_cache_max_mb: 512,
   image_cache_max_file_mb: 2,
@@ -67,11 +69,18 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   enable_tts: false,
   enable_stt: false,
   stt_model: '',
+  stt_provider: 'api',
+  stt_local_command: '',
+  stt_local_timeout_ms: 15000,
   stt_max_records: 1,
   stt_max_file_mb: 4,
   stt_timeout_ms: 20000,
   stt_cache_hours: 24,
   tts_model: 'mimo-v2.5-tts',
+  tts_provider: 'api',
+  tts_local_command: '',
+  tts_local_output_dir: 'voice_cache/local',
+  tts_local_timeout_ms: 15000,
   tts_clone_model: 'mimo-v2.5-tts-voiceclone',
   tts_clone_enabled: true,
   tts_sample_path: 'voice_sample.mp3',
@@ -171,6 +180,11 @@ function normalizeAiConfig(value: unknown): AIConfig {
   const validAggressionLevels = new Set(['low', 'medium', 'analysis']);
   const knowledgeUpdateMode = asString(raw.knowledge_update_mode, DEFAULT_AI_CONFIG.knowledge_update_mode || 'reviewed_command');
   const validKnowledgeUpdateModes = new Set(['reviewed_command', 'static']);
+  const visionPayloadMode = asString(raw.vision_payload_mode, DEFAULT_AI_CONFIG.vision_payload_mode || 'auto');
+  const validVisionPayloadModes = new Set(['auto', 'image_url_object', 'image_url_string', 'input_image', 'image_base64']);
+  const ttsProvider = asString(raw.tts_provider, DEFAULT_AI_CONFIG.tts_provider || 'api');
+  const sttProvider = asString(raw.stt_provider, DEFAULT_AI_CONFIG.stt_provider || 'api');
+  const validAudioProviders = new Set(['api', 'local', 'auto']);
 
   return {
     api_url: asString(raw.api_url, DEFAULT_AI_CONFIG.api_url),
@@ -203,6 +217,7 @@ function normalizeAiConfig(value: unknown): AIConfig {
     ai_reply_cache_seconds: Math.floor(asNumber(raw.ai_reply_cache_seconds, DEFAULT_AI_CONFIG.ai_reply_cache_seconds || 180, 0, 3600)),
     enable_knowledge: asBoolean(raw.enable_knowledge, DEFAULT_AI_CONFIG.enable_knowledge || true),
     knowledge_max_chars: Math.floor(asNumber(raw.knowledge_max_chars, DEFAULT_AI_CONFIG.knowledge_max_chars || 2200, 0, 6000)),
+    knowledge_force_style: asBoolean(raw.knowledge_force_style, DEFAULT_AI_CONFIG.knowledge_force_style !== false),
     related_reply_probability: asNumber(raw.related_reply_probability, DEFAULT_AI_CONFIG.related_reply_probability || 0.65, 0, 1),
     persona_mode: validPersonaModes.has(personaMode) ? personaMode as AIConfig['persona_mode'] : 'first_person_bot',
     aggression_level: validAggressionLevels.has(aggressionLevel) ? aggressionLevel as AIConfig['aggression_level'] : 'low',
@@ -226,6 +241,7 @@ function normalizeAiConfig(value: unknown): AIConfig {
     forced_reply_quote: asBoolean(raw.forced_reply_quote, DEFAULT_AI_CONFIG.forced_reply_quote || true),
     must_reply_quote: asBoolean(raw.must_reply_quote, DEFAULT_AI_CONFIG.must_reply_quote || false),
     enable_vision: asBoolean(raw.enable_vision, DEFAULT_AI_CONFIG.enable_vision),
+    vision_payload_mode: validVisionPayloadModes.has(visionPayloadMode) ? visionPayloadMode as AIConfig['vision_payload_mode'] : 'auto',
     vision_max_images: Math.floor(asNumber(raw.vision_max_images, DEFAULT_AI_CONFIG.vision_max_images || 2, 0, 4)),
     image_cache_max_mb: Math.floor(asNumber(raw.image_cache_max_mb, DEFAULT_AI_CONFIG.image_cache_max_mb || 512, 20, 4096)),
     image_cache_max_file_mb: asNumber(raw.image_cache_max_file_mb, DEFAULT_AI_CONFIG.image_cache_max_file_mb || 2, 0.5, 8),
@@ -233,11 +249,18 @@ function normalizeAiConfig(value: unknown): AIConfig {
     enable_tts: asBoolean(raw.enable_tts, DEFAULT_AI_CONFIG.enable_tts),
     enable_stt: asBoolean(raw.enable_stt, DEFAULT_AI_CONFIG.enable_stt || false),
     stt_model: asString(raw.stt_model, DEFAULT_AI_CONFIG.stt_model || asString(raw.vision_model, asString(raw.model, ''))),
+    stt_provider: validAudioProviders.has(sttProvider) ? sttProvider as AIConfig['stt_provider'] : 'api',
+    stt_local_command: asString(raw.stt_local_command, DEFAULT_AI_CONFIG.stt_local_command || ''),
+    stt_local_timeout_ms: Math.floor(asNumber(raw.stt_local_timeout_ms, DEFAULT_AI_CONFIG.stt_local_timeout_ms || 15000, 3000, 120000)),
     stt_max_records: Math.floor(asNumber(raw.stt_max_records, DEFAULT_AI_CONFIG.stt_max_records || 1, 1, 4)),
     stt_max_file_mb: asNumber(raw.stt_max_file_mb, DEFAULT_AI_CONFIG.stt_max_file_mb || 4, 0.5, 16),
     stt_timeout_ms: Math.floor(asNumber(raw.stt_timeout_ms, DEFAULT_AI_CONFIG.stt_timeout_ms || 20000, 3000, 120000)),
     stt_cache_hours: Math.floor(asNumber(raw.stt_cache_hours, DEFAULT_AI_CONFIG.stt_cache_hours || 24, 1, 720)),
     tts_model: asString(raw.tts_model, DEFAULT_AI_CONFIG.tts_model || 'mimo-v2.5-tts'),
+    tts_provider: validAudioProviders.has(ttsProvider) ? ttsProvider as AIConfig['tts_provider'] : 'api',
+    tts_local_command: asString(raw.tts_local_command, DEFAULT_AI_CONFIG.tts_local_command || ''),
+    tts_local_output_dir: asString(raw.tts_local_output_dir, DEFAULT_AI_CONFIG.tts_local_output_dir || 'voice_cache/local'),
+    tts_local_timeout_ms: Math.floor(asNumber(raw.tts_local_timeout_ms, DEFAULT_AI_CONFIG.tts_local_timeout_ms || 15000, 3000, 120000)),
     tts_clone_model: asString(raw.tts_clone_model, DEFAULT_AI_CONFIG.tts_clone_model || 'mimo-v2.5-tts-voiceclone'),
     tts_clone_enabled: asBoolean(raw.tts_clone_enabled, DEFAULT_AI_CONFIG.tts_clone_enabled !== false),
     tts_sample_path: asString(raw.tts_sample_path, DEFAULT_AI_CONFIG.tts_sample_path || 'voice_sample.mp3'),

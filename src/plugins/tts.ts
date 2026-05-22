@@ -3,6 +3,7 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { spawn } from 'child_process';
 import { AIConfig } from '../types';
 
 /**
@@ -15,6 +16,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 let cacheHits = 0;
 let cacheMisses = 0;
 let lastVoiceError = '';
+let localTtsRuns = 0;
+let apiTtsRuns = 0;
 
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -91,6 +94,52 @@ function getVoiceCacheBase(text: string, config: AIConfig, useClone: boolean, sa
     .digest('hex')
     .slice(0, 20);
   return path.join(CACHE_DIR, hash);
+}
+
+function getLocalVoiceCacheBase(text: string, config: AIConfig, sampleKey: string): string {
+  const dir = localOutputDir(config);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const hash = crypto
+    .createHash('sha1')
+    .update([
+      'local',
+      config.tts_local_command || '',
+      config.tts_voice_prompt || '',
+      sampleKey,
+      text,
+    ].join('\n'))
+    .digest('hex')
+    .slice(0, 20);
+  return path.join(dir, hash);
+}
+
+function validGeneratedAudioPath(filepath: string): boolean {
+  try {
+    if (!filepath) return false;
+    const resolved = filepath.startsWith('file://') ? filepath.slice('file://'.length) : filepath;
+    if (!fs.existsSync(resolved)) return false;
+    const stat = fs.statSync(resolved);
+    return stat.isFile() && stat.size > 200 && /\.(wav|mp3|ogg|m4a)$/i.test(resolved);
+  } catch {
+    return false;
+  }
+}
+
+function localOutputDir(config: AIConfig): string {
+  return resolveProjectPath(config.tts_local_output_dir, 'voice_cache/local');
+}
+
+function normalizeLocalOutputPath(stdout: string, fallbackPath: string): string {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const line = lines.length > 0 ? lines[lines.length - 1] : '';
+  const candidate = line.startsWith('file://') ? line.slice('file://'.length) : line;
+  if (candidate && /\.(wav|mp3|ogg|m4a)$/i.test(candidate)) {
+    return path.isAbsolute(candidate) ? candidate : path.resolve(PROJECT_ROOT, candidate);
+  }
+  return fallbackPath;
 }
 
 function maxCacheAgeMs(config: AIConfig): number {
@@ -173,8 +222,121 @@ function extractAudioBase64(json: any): string {
   );
 }
 
-/** 调用TTS生成语音，返回本地WAV文件路径 */
-export function generateVoice(config: AIConfig, text: string): Promise<string | null> {
+function generateLocalVoice(config: AIConfig, text: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const command = (config.tts_local_command || '').trim();
+    if (!command) {
+      setVoiceError('local tts command missing');
+      resolve(null);
+      return;
+    }
+
+    const maxChars = Math.max(10, config.tts_max_chars || 120);
+    if (text.length < 2 || text.length > maxChars) {
+      setVoiceError(`text length out of range: ${text.length}/${maxChars}`);
+      resolve(null);
+      return;
+    }
+
+    const sample = getVoiceSample(config);
+    const sampleKey = sample.ready ? `${sample.filepath}:${sample.size}:${sample.mime}` : 'no-sample';
+    const cacheBase = getLocalVoiceCacheBase(text, config, sampleKey);
+    const cachedPath = findCachedVoice(cacheBase, config);
+    if (cachedPath) {
+      cacheHits++;
+      resolve(cachedPath);
+      return;
+    }
+    cacheMisses++;
+
+    let tempDir = '';
+    let settled = false;
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      if (tempDir) {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* */ }
+      }
+      resolve(value);
+    };
+
+    try {
+      tempDir = fs.mkdtempSync(path.join(CACHE_DIR, 'local-tts-'));
+      const textFile = path.join(tempDir, 'input.txt');
+      const fallbackOutput = `${cacheBase}.wav`;
+      fs.writeFileSync(textFile, text, 'utf-8');
+
+      localTtsRuns++;
+      const child = spawn(command, {
+        cwd: PROJECT_ROOT,
+        env: {
+          ...process.env,
+          QQBOT_TTS_TEXT: text,
+          QQBOT_TTS_TEXT_FILE: textFile,
+          QQBOT_TTS_OUTPUT: fallbackOutput,
+          QQBOT_TTS_VOICE_SAMPLE: sample.ready ? sample.filepath : '',
+          QQBOT_TTS_PROMPT: config.tts_voice_prompt || '',
+          QQBOT_TTS_FORMAT: 'wav',
+        },
+        shell: true,
+        windowsHide: true,
+      });
+
+      let stdout = '';
+      let stderr = '';
+      const maxLogChars = 4000;
+      child.stdout?.on('data', (chunk: Buffer) => {
+        stdout = (stdout + chunk.toString()).slice(-maxLogChars);
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString()).slice(-maxLogChars);
+      });
+
+      const timer = setTimeout(() => {
+        try { child.kill(); } catch { /* */ }
+        setVoiceError('local tts timeout');
+        finish(null);
+      }, Math.max(3000, config.tts_local_timeout_ms || config.tts_timeout_ms || 15000));
+      timer.unref();
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        setVoiceError(`local tts: ${err.message}`);
+        finish(null);
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (settled) return;
+        const outputPath = normalizeLocalOutputPath(stdout, fallbackOutput);
+        if (code === 0 && validGeneratedAudioPath(outputPath)) {
+          const ext = (path.extname(outputPath).replace('.', '').toLowerCase() || 'wav') as 'wav' | 'mp3' | 'ogg' | 'm4a';
+          const cachedOutput = `${cacheBase}.${ext}`;
+          try {
+            if (path.resolve(outputPath) !== path.resolve(cachedOutput)) {
+              fs.copyFileSync(outputPath, cachedOutput);
+            }
+            lastVoiceError = '';
+            finish(cachedOutput);
+          } catch (err) {
+            setVoiceError(`local tts copy: ${err instanceof Error ? err.message : String(err)}`);
+            finish(null);
+          }
+          return;
+        }
+        const detail = (stderr || stdout || `exit ${code}`).replace(/\s+/g, ' ').slice(0, 140);
+        setVoiceError(`local tts failed: ${detail}`);
+        finish(null);
+      });
+    } catch (err) {
+      setVoiceError(`local tts setup: ${err instanceof Error ? err.message : String(err)}`);
+      finish(null);
+    }
+  });
+}
+
+/** 调用远端TTS生成语音，返回本地WAV/MP3文件路径 */
+function generateApiVoice(config: AIConfig, text: string): Promise<string | null> {
   return new Promise((resolve) => {
     let settled = false;
     const safeResolve = (value: string | null): void => {
@@ -216,6 +378,7 @@ export function generateVoice(config: AIConfig, text: string): Promise<string | 
       return;
     }
     cacheMisses++;
+    apiTtsRuns++;
 
     const requestBody: any = {
       model,
@@ -321,6 +484,21 @@ export function generateVoice(config: AIConfig, text: string): Promise<string | 
   });
 }
 
+/** 调用TTS生成语音，返回本地音频文件路径 */
+export async function generateVoice(config: AIConfig, text: string): Promise<string | null> {
+  const provider = config.tts_provider || 'api';
+  if (provider === 'local') {
+    return generateLocalVoice(config, text);
+  }
+  if (provider === 'auto') {
+    const local = await generateLocalVoice(config, text);
+    if (local) return local;
+    if (!config.api_url || !config.api_key) return null;
+    return generateApiVoice(config, text);
+  }
+  return generateApiVoice(config, text);
+}
+
 function pcmToWav(pcmData: Buffer, sampleRate: number, bitsPerSample: number, channels: number): Buffer {
   const byteRate = sampleRate * channels * bitsPerSample / 8;
   const blockAlign = channels * bitsPerSample / 8;
@@ -345,11 +523,9 @@ function pcmToWav(pcmData: Buffer, sampleRate: number, bitsPerSample: number, ch
 export function cleanVoiceCache(config?: AIConfig): void {
   try {
     if (!fs.existsSync(CACHE_DIR)) return;
-    const files = fs.readdirSync(CACHE_DIR);
     const now = Date.now();
     const maxAge = config ? maxCacheAgeMs(config) : 24 * 60 * 60 * 1000;
-    for (const file of files) {
-      const filepath = path.join(CACHE_DIR, file);
+    for (const filepath of listVoiceFiles(CACHE_DIR)) {
       const stat = fs.statSync(filepath);
       if (now - stat.mtimeMs > maxAge) fs.unlinkSync(filepath);
     }
@@ -359,11 +535,34 @@ export function cleanVoiceCache(config?: AIConfig): void {
 const cleanupTimer = setInterval(cleanVoiceCache, 30 * 60 * 1000);
 cleanupTimer.unref();
 
+function listVoiceFiles(dir: string): string[] {
+  const result: string[] = [];
+  try {
+    if (!fs.existsSync(dir)) return result;
+    for (const item of fs.readdirSync(dir)) {
+      const filepath = path.join(dir, item);
+      const stat = fs.statSync(filepath);
+      if (stat.isDirectory()) {
+        result.push(...listVoiceFiles(filepath));
+      } else if (/\.(wav|mp3|ogg|m4a)$/i.test(filepath)) {
+        result.push(filepath);
+      }
+    }
+  } catch { /* */ }
+  return result;
+}
+
 export function getVoiceStats(config?: AIConfig): {
   cacheFiles: number;
   sizeMB: number;
   hits: number;
   misses: number;
+  provider: string;
+  localReady: boolean;
+  localCommand: string;
+  localOutputDir: string;
+  localRuns: number;
+  apiRuns: number;
   cloneEnabled: boolean;
   cloneReady: boolean;
   samplePath: string;
@@ -375,63 +574,56 @@ export function getVoiceStats(config?: AIConfig): {
   lastError: string;
 } {
   const sample = getVoiceSample(config);
+  const provider = config?.tts_provider || 'api';
+  const localCommand = (config?.tts_local_command || '').trim();
+  const localReady = !!localCommand && (provider === 'local' || provider === 'auto');
+  const localDir = config ? localOutputDir(config) : path.join(CACHE_DIR, 'local');
+  const baseStats = {
+    hits: cacheHits,
+    misses: cacheMisses,
+    provider,
+    localReady,
+    localCommand,
+    localOutputDir: localDir,
+    localRuns: localTtsRuns,
+    apiRuns: apiTtsRuns,
+    cloneEnabled: config?.tts_clone_enabled !== false,
+    cloneReady: sample.ready,
+    samplePath: sample.filepath,
+    sampleSizeMB: Math.round(sample.size / 1024 / 1024 * 10) / 10,
+    sampleReason: sample.reason || '',
+    model: config?.tts_model || 'mimo-v2.5-tts',
+    cloneModel: config?.tts_clone_model || 'mimo-v2.5-tts-voiceclone',
+    maxChars: config?.tts_max_chars || 120,
+    lastError: lastVoiceError,
+  };
   try {
     if (!fs.existsSync(CACHE_DIR)) {
       return {
         cacheFiles: 0,
         sizeMB: 0,
-        hits: cacheHits,
-        misses: cacheMisses,
-        cloneEnabled: config?.tts_clone_enabled !== false,
-        cloneReady: sample.ready,
-        samplePath: sample.filepath,
-        sampleSizeMB: Math.round(sample.size / 1024 / 1024 * 10) / 10,
-        sampleReason: sample.reason || '',
-        model: config?.tts_model || 'mimo-v2.5-tts',
-        cloneModel: config?.tts_clone_model || 'mimo-v2.5-tts-voiceclone',
-        maxChars: config?.tts_max_chars || 120,
-        lastError: lastVoiceError,
+        ...baseStats,
       };
     }
 
-    const files = fs.readdirSync(CACHE_DIR).filter((file) => /\.(wav|mp3|ogg|m4a)$/i.test(file));
+    const files = listVoiceFiles(CACHE_DIR);
     let size = 0;
-    for (const file of files) {
+    for (const filepath of files) {
       try {
-        size += fs.statSync(path.join(CACHE_DIR, file)).size;
+        size += fs.statSync(filepath).size;
       } catch { /* */ }
     }
 
     return {
       cacheFiles: files.length,
       sizeMB: Math.round(size / 1024 / 1024 * 10) / 10,
-      hits: cacheHits,
-      misses: cacheMisses,
-      cloneEnabled: config?.tts_clone_enabled !== false,
-      cloneReady: sample.ready,
-      samplePath: sample.filepath,
-      sampleSizeMB: Math.round(sample.size / 1024 / 1024 * 10) / 10,
-      sampleReason: sample.reason || '',
-      model: config?.tts_model || 'mimo-v2.5-tts',
-      cloneModel: config?.tts_clone_model || 'mimo-v2.5-tts-voiceclone',
-      maxChars: config?.tts_max_chars || 120,
-      lastError: lastVoiceError,
+      ...baseStats,
     };
   } catch {
     return {
       cacheFiles: 0,
       sizeMB: 0,
-      hits: cacheHits,
-      misses: cacheMisses,
-      cloneEnabled: config?.tts_clone_enabled !== false,
-      cloneReady: sample.ready,
-      samplePath: sample.filepath,
-      sampleSizeMB: Math.round(sample.size / 1024 / 1024 * 10) / 10,
-      sampleReason: sample.reason || '',
-      model: config?.tts_model || 'mimo-v2.5-tts',
-      cloneModel: config?.tts_clone_model || 'mimo-v2.5-tts-voiceclone',
-      maxChars: config?.tts_max_chars || 120,
-      lastError: lastVoiceError,
+      ...baseStats,
     };
   }
 }

@@ -57,6 +57,7 @@ async function testConfig() {
   assert.strictEqual(config.ai.passive_random_min_chars, 4);
   assert.strictEqual(config.ai.passive_random_allow_numeric, false);
   assert.strictEqual(config.ai.knowledge_max_chars, 2600);
+  assert.strictEqual(config.ai.knowledge_force_style, true);
   assert.strictEqual(config.ai.aggression_level, 'low');
   assert.strictEqual(config.ai.poke_reply_probability, 1);
   assert.strictEqual(config.ai.ai_global_concurrency, 3);
@@ -68,7 +69,12 @@ async function testConfig() {
   assert.strictEqual(config.ai.image_cache_max_mb, 512);
   assert.strictEqual(config.ai.image_cache_max_file_mb, 2);
   assert.strictEqual(config.ai.image_cache_max_age_hours, 72);
+  assert.strictEqual(config.ai.vision_payload_mode, 'auto');
   assert.strictEqual(config.ai.tts_model, 'mimo-v2.5-tts');
+  assert.strictEqual(config.ai.tts_provider, 'auto');
+  assert.strictEqual(config.ai.tts_local_command, '');
+  assert.strictEqual(config.ai.tts_local_output_dir, 'voice_cache/local');
+  assert.strictEqual(config.ai.tts_local_timeout_ms, 15000);
   assert.strictEqual(config.ai.tts_clone_model, 'mimo-v2.5-tts-voiceclone');
   assert.strictEqual(config.ai.tts_clone_enabled, true);
   assert.strictEqual(config.ai.tts_sample_path, 'voice_sample.mp3');
@@ -78,6 +84,9 @@ async function testConfig() {
   assert.strictEqual(config.ai.tts_sample_max_mb, 8);
   assert.strictEqual(config.ai.enable_stt, true);
   assert.strictEqual(config.ai.stt_model, 'mimo-v2.5-pro');
+  assert.strictEqual(config.ai.stt_provider, 'auto');
+  assert.strictEqual(config.ai.stt_local_command, '');
+  assert.strictEqual(config.ai.stt_local_timeout_ms, 15000);
   assert.strictEqual(config.ai.stt_max_records, 1);
   assert.strictEqual(config.ai.stt_max_file_mb, 4);
   assert.strictEqual(config.ai.stt_timeout_ms, 20000);
@@ -141,10 +150,56 @@ async function testVoiceStats() {
   const config = readConfig();
   const stats = tts.getVoiceStats(config.ai);
   assert.strictEqual(stats.model, 'mimo-v2.5-tts');
+  assert.strictEqual(stats.provider, 'auto');
+  assert.strictEqual(stats.localReady, false);
   assert.strictEqual(stats.cloneModel, 'mimo-v2.5-tts-voiceclone');
   assert.strictEqual(stats.cloneEnabled, true);
   assert.strictEqual(stats.maxChars, 120);
   assert.ok(stats.samplePath.endsWith('voice_sample.mp3'), 'sample path should default to voice_sample.mp3');
+}
+
+async function testLocalTtsProvider() {
+  const config = readConfig();
+  const tempDir = fs.mkdtempSync(path.join(__dirname, 'local-tts-'));
+  const scriptPath = path.join(tempDir, 'tts-smoke.js');
+  fs.writeFileSync(scriptPath, `
+const fs = require('fs');
+const out = process.env.QQBOT_TTS_OUTPUT;
+if (!out) process.exit(2);
+const header = Buffer.alloc(44);
+header.write('RIFF', 0);
+header.writeUInt32LE(36 + 220, 4);
+header.write('WAVE', 8);
+header.write('fmt ', 12);
+header.writeUInt32LE(16, 16);
+header.writeUInt16LE(1, 20);
+header.writeUInt16LE(1, 22);
+header.writeUInt32LE(16000, 24);
+header.writeUInt32LE(32000, 28);
+header.writeUInt16LE(2, 32);
+header.writeUInt16LE(16, 34);
+header.write('data', 36);
+header.writeUInt32LE(220, 40);
+fs.mkdirSync(require('path').dirname(out), { recursive: true });
+fs.writeFileSync(out, Buffer.concat([header, Buffer.alloc(220)]));
+console.log(out);
+`, 'utf-8');
+  config.ai.enable_tts = true;
+  config.ai.tts_provider = 'local';
+  config.ai.tts_local_command = `"${process.execPath}" "${scriptPath}"`;
+  config.ai.tts_max_chars = 120;
+  config.ai.tts_cache_hours = 1;
+  try {
+    const output = await tts.generateVoice(config.ai, '本地语音 smoke');
+    assert.ok(output && fs.existsSync(output), 'local tts should produce an audio file');
+    assert.ok(fs.statSync(output).size > 200, 'local tts output should be non-empty');
+    const stats = tts.getVoiceStats(config.ai);
+    assert.strictEqual(stats.provider, 'local');
+    assert.strictEqual(stats.localReady, true);
+    assert.ok(stats.localRuns >= 1, 'local tts run counter should increase');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 async function testImageStats() {
@@ -708,6 +763,7 @@ async function main() {
   await testKnowledge();
   await testKnowledgeSourceState();
   await testVoiceStats();
+  await testLocalTtsProvider();
   await testImageStats();
   await testGates();
   await testSearchSingleFlight();

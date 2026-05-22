@@ -70,6 +70,8 @@ export interface AIConfig {
   enable_knowledge?: boolean;
   /** 单次注入知识库最大字符数 */
   knowledge_max_chars?: number;
+  /** 是否强制注入直播语态/回复铁律类知识块 */
+  knowledge_force_style?: boolean;
   /** smart模式下相关话题主动回复概率 */
   related_reply_probability?: number;
   /** 人格模式 */
@@ -116,6 +118,8 @@ export interface AIConfig {
   must_reply_quote?: boolean;
   /** 是否启用识图 */
   enable_vision: boolean;
+  /** 识图payload兼容模式 */
+  vision_payload_mode?: 'auto' | 'image_url_object' | 'image_url_string' | 'input_image' | 'image_base64';
   /** 单次最多处理图片数量 */
   vision_max_images?: number;
   /** 图片缓存最大MB */
@@ -130,6 +134,12 @@ export interface AIConfig {
   enable_stt?: boolean;
   /** 语音听写模型 */
   stt_model?: string;
+  /** 语音听写提供方 */
+  stt_provider?: 'api' | 'local' | 'auto';
+  /** 本地语音听写命令，使用环境变量QQBOT_STT_INPUT/QQBOT_STT_OUTPUT */
+  stt_local_command?: string;
+  /** 本地语音听写命令超时毫秒 */
+  stt_local_timeout_ms?: number;
   /** 单次最多听写语音条数 */
   stt_max_records?: number;
   /** 单条语音下载最大MB */
@@ -140,6 +150,14 @@ export interface AIConfig {
   stt_cache_hours?: number;
   /** 普通TTS模型 */
   tts_model?: string;
+  /** TTS提供方 */
+  tts_provider?: 'api' | 'local' | 'auto';
+  /** 本地TTS命令，使用环境变量QQBOT_TTS_TEXT/QQBOT_TTS_TEXT_FILE/QQBOT_TTS_OUTPUT */
+  tts_local_command?: string;
+  /** 本地TTS输出目录，相对项目根目录或绝对路径 */
+  tts_local_output_dir?: string;
+  /** 本地TTS命令超时毫秒 */
+  tts_local_timeout_ms?: number;
   /** 克隆TTS模型 */
   tts_clone_model?: string;
   /** 是否启用授权样本克隆 */

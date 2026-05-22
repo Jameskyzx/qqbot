@@ -19,8 +19,9 @@
 - 联网搜索：DuckDuckGo Instant、DuckDuckGo HTML、Bing RSS 兜底，带 single-flight、正/负缓存和磁盘缓存。
 - 上下文记忆：每群持久化到 `context_store/`，旧消息异步压缩，不阻塞回复。
 - 图片识别缓存：图片下载后缓存到 `image_cache/`，减少重复识图成本。
-- STT 语音听写缓存：语音输入缓存到 `stt_cache/`，供应商支持音频输入时可把 QQ 语音转成当前消息文本。
-- TTS 语音缓存：语音输出缓存到 `voice_cache/`，有授权样本时尝试声音克隆，支持 `/voice status` 自检。
+- 识图自动兼容多种 payload：`image_url` 对象、`image_url` 字符串、`input_image`、`image` 四种格式自动重试。
+- STT 语音听写缓存：语音输入缓存到 `stt_cache/`，支持 API、本地命令、自动兜底三种模式。
+- TTS 语音缓存：语音输出缓存到 `voice_cache/`，支持 API、本地授权语音引擎、自动兜底三种模式；有授权样本时可尝试供应商 voiceclone。
 - 统一发送出口允许 emoji，但会过滤 `😂`、`🤣` 和“笑哭”，避免回复里出现固定笑哭表情。
 - `/status` 和 `/diag` 提供队列、缓存、知识库、并发、内存和配置状态。
 
@@ -109,6 +110,107 @@ npm start
 /status
 /diag
 ```
+
+## 最终推荐配置和预设
+
+仓库里的 `config.example.json` 就是当前最新推荐模板。VPS 上不要直接编辑示例文件，按下面流程复制：
+
+```bash
+cd /opt/wanjier-bot
+cp config.example.json config.json
+nano config.json
+```
+
+至少替换这些值：
+
+- `bot_qq`：NapCat 实际登录的机器人 QQ。
+- `admin_qq`：你的管理员 QQ。
+- `api_url`、`api_key`、`model`、`vision_model`：你的 OpenAI 兼容接口和模型。
+- 如果要先走本地语音，把 `tts_provider`、`stt_provider` 保持 `auto`，再填 `tts_local_command`、`stt_local_command`。
+
+当前推荐 `ai` 核心配置如下，完整文件以 `config.example.json` 为准：
+
+```json
+{
+  "ai": {
+    "api_url": "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
+    "api_key": "在这里填入你的API密钥",
+    "model": "mimo-v2.5-pro",
+    "vision_model": "mimo-v2.5-pro",
+    "active_preset": "wanjier",
+    "max_context_messages": 50,
+    "context_send_messages": 30,
+    "max_tokens": 400,
+    "temperature": 0.85,
+    "trigger_mode": "smart",
+    "trigger_probability": 0.12,
+    "passive_random_min_chars": 4,
+    "passive_random_allow_numeric": false,
+    "poke_reply_probability": 1,
+    "cooldown_seconds": 0,
+    "enable_search": true,
+    "search_timeout_ms": 1200,
+    "api_timeout_ms": 15000,
+    "enable_knowledge": true,
+    "knowledge_max_chars": 2600,
+    "knowledge_force_style": true,
+    "persona_mode": "first_person_bot",
+    "aggression_level": "low",
+    "max_group_queue": 5,
+    "ai_global_concurrency": 3,
+    "search_global_concurrency": 3,
+    "vision_global_concurrency": 1,
+    "tts_global_concurrency": 1,
+    "stt_global_concurrency": 1,
+    "forced_reply_quote": true,
+    "must_reply_quote": true,
+    "enable_vision": true,
+    "vision_payload_mode": "auto",
+    "vision_max_images": 2,
+    "enable_stt": true,
+    "stt_model": "mimo-v2.5-pro",
+    "stt_provider": "auto",
+    "stt_local_command": "",
+    "stt_local_timeout_ms": 15000,
+    "enable_tts": true,
+    "tts_model": "mimo-v2.5-tts",
+    "tts_provider": "auto",
+    "tts_local_command": "",
+    "tts_local_output_dir": "voice_cache/local",
+    "tts_local_timeout_ms": 15000,
+    "tts_clone_model": "mimo-v2.5-tts-voiceclone",
+    "tts_clone_enabled": true,
+    "tts_sample_path": "voice_sample.mp3",
+    "tts_max_chars": 120,
+    "tts_timeout_ms": 20000,
+    "tts_cache_hours": 24,
+    "tts_probability": 0.1
+  }
+}
+```
+
+当前 `wanjier` 预设提示词在 `config.example.json` 的 `ai.presets.wanjier.system_prompt`，核心要求是：
+
+```text
+你在群里按第一人称「玩机器 / 6657」直播间语感说话，像正在接弹幕：随性、直接、会吐槽，也会认真分析。日常不要主动说自己是bot，也不要解释口吻，直接像正常群友一样回。
+
+边界只有一条：如果有人明确问你是不是现实主播本人、是否代表本人、是否授权发言，才说明这是群里的风格bot，不是现实主播本人，不代表本人。
+
+说话质感看知识库，不靠固定口头禅硬撑。口癖可以有，但不能公式化：同一个开头不要连续使用，不要每条都「不是哥们」，要先看当前消息到底问什么。
+
+回复节奏：先短反应，再补判断。能一句说清就一句；聊CS2、选手、队伍、比赛时再多说两三句，抓经济、道具、timing、补枪、角色和近期状态。
+
+看图时先说看到了什么，再给短评；看不清就说看不清，别硬编。语音有听写就接听写，没有听写就承认只收到语音。
+
+铁律：
+1. 当前消息永远优先，上下文只辅助，不回答历史里其他人的旧问题。
+2. @、回复、/ai 必须接话，不能因为冷却、普通概率或队列限制丢掉。
+3. 不用markdown，不加「玩机器:」前缀，不输出括号舞台说明。
+4. 嘴硬但不追着骂人，攻击性点到为止，少点火多分析。
+5. 知识库里标为拟态模板的内容不能当真实原话；实时比分、阵容、转会、排名要联网确认。
+```
+
+知识库一定会被调用：`enable_knowledge=true` 且 `knowledge_force_style=true` 时，每次 AI 回复都会强制注入 `knowledge/wanjier.md` 里的直播语态、回复铁律、反应强度等知识块；遇到 CS2、选手、队伍、语录、礼物、切片等关键词时，再额外注入相关片段。用 `/kb stats` 看 `注入命中`，用 `/status` 看知识库命中计数。
 
 ## 从零部署总流程
 
@@ -540,6 +642,7 @@ AI 核心字段：
 |---|---:|---|
 | `enable_knowledge` | `true` | 是否注入 `knowledge/wanjier.md` |
 | `knowledge_max_chars` | `2600` | 2G1C 推荐单次注入最大字符数 |
+| `knowledge_force_style` | `true` | 每次 AI 回复强制注入直播语态/回复铁律知识块 |
 | `knowledge_update_mode` | `reviewed_command` | 允许管理员命令更新 |
 | `knowledge_auto_update` | `true` | 后台低频自动刷新 |
 | `knowledge_auto_interval_minutes` | `180` | 自动刷新间隔，最低 30 |
@@ -569,18 +672,26 @@ AI 核心字段：
 | 字段 | 推荐值 | 说明 |
 |---|---:|---|
 | `enable_vision` | `true` | 开启图片识别 |
+| `vision_payload_mode` | `auto` | 自动尝试多种识图请求格式 |
 | `vision_max_images` | `2` | 单次最多处理图片数 |
 | `image_cache_max_mb` | `512` | 图片缓存上限，70GB 存储推荐值 |
 | `image_cache_max_file_mb` | `2` | 单图下载最大大小 |
 | `image_cache_max_age_hours` | `72` | 图片缓存过期时间 |
 | `enable_stt` | `true` | 开启 QQ 语音输入听写 |
 | `stt_model` | 按供应商填写 | 支持音频输入/听写的模型 |
+| `stt_provider` | `auto` | `api`、`local` 或 `auto` |
+| `stt_local_command` | 空或本地命令 | 本地听写命令，读取 `QQBOT_STT_INPUT`，输出文本 |
+| `stt_local_timeout_ms` | `15000` | 本地听写超时 |
 | `stt_max_records` | `1` | 单条消息最多听写几段语音 |
 | `stt_max_file_mb` | `4` | 单段语音下载最大大小 |
 | `stt_timeout_ms` | `20000` | 听写 API 超时 |
 | `stt_cache_hours` | `24` | 听写文本缓存保留时间 |
 | `enable_tts` | `true` | 开启语音命令和随机语音 |
 | `tts_model` | `mimo-v2.5-tts` | 普通 TTS 模型 |
+| `tts_provider` | `auto` | `api`、`local` 或 `auto` |
+| `tts_local_command` | 空或本地命令 | 本地 TTS 命令，读取 `QQBOT_TTS_TEXT`，写入 `QQBOT_TTS_OUTPUT` |
+| `tts_local_output_dir` | `voice_cache/local` | 本地 TTS 输出缓存目录 |
+| `tts_local_timeout_ms` | `15000` | 本地 TTS 超时 |
 | `tts_clone_model` | `mimo-v2.5-tts-voiceclone` | 克隆 TTS 模型 |
 | `tts_clone_enabled` | `true` | 是否尝试使用授权样本克隆 |
 | `tts_sample_path` | `voice_sample.mp3` | 授权样本路径，相对项目根目录或绝对路径 |
@@ -594,6 +705,26 @@ AI 核心字段：
 ## 克隆语音配置
 
 语音克隆只适合使用你有权使用的参考音频。不要把生成结果声称为现实主播本人语音，也不要用未经授权的素材做公开分发。
+
+推荐路线是“本地授权语音引擎优先，API 兜底”：你先在 VPS 或另一台机器上用有权使用的声音样本训练/准备本地 TTS 模型，再让 bot 调用本地命令。这样速度更快，失败点更清楚，也不会每次都把语音请求发到远端接口。
+
+当前支持三种提供方：
+
+| 字段值 | 行为 |
+|---|---|
+| `tts_provider: "api"` | 只走远端 TTS / voiceclone API |
+| `tts_provider: "local"` | 只走本地 TTS 命令 |
+| `tts_provider: "auto"` | 先走本地 TTS 命令；本地失败后走远端 API |
+
+STT 听写同理：
+
+| 字段值 | 行为 |
+|---|---|
+| `stt_provider: "api"` | 只走远端音频输入/听写模型 |
+| `stt_provider: "local"` | 只走本地听写命令 |
+| `stt_provider: "auto"` | 先走本地听写命令；本地失败后走远端 API |
+
+本地模式不要求 TTS/STT API 可用，但普通 AI 对话和识图仍然需要 `api_url`、`api_key`、`model`。
 
 ### 1. 准备样本
 
@@ -660,7 +791,137 @@ ffmpeg -i input.wav -vn -ac 1 -ar 24000 -b:a 96k voice_sample.mp3
 pm2 restart wanjier
 ```
 
-### 3. 语音输入听写
+### 3. 本地授权 TTS 引擎接入
+
+先在外部语音引擎里完成授权声音模型的准备。本项目不绑定某个训练框架，只要求你的本地命令满足一个简单协议：
+
+- 输入文本在环境变量 `QQBOT_TTS_TEXT`。
+- 输入文本文件路径在 `QQBOT_TTS_TEXT_FILE`。
+- 目标输出文件路径在 `QQBOT_TTS_OUTPUT`。
+- 授权参考样本路径在 `QQBOT_TTS_VOICE_SAMPLE`，没有样本时为空。
+- 命令成功后必须生成 `wav`、`mp3`、`ogg` 或 `m4a` 文件，路径可以写到 `QQBOT_TTS_OUTPUT`，也可以把最终路径打印到 stdout 最后一行。
+
+示例 wrapper：
+
+```bash
+cd /opt/wanjier-bot
+cp scripts/local-tts.example.sh local-tts.sh
+nano local-tts.sh
+chmod +x local-tts.sh
+```
+
+`local-tts.sh` 示例：
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+TEXT_FILE="${QQBOT_TTS_TEXT_FILE:?missing text file}"
+OUT="${QQBOT_TTS_OUTPUT:?missing output path}"
+SAMPLE="${QQBOT_TTS_VOICE_SAMPLE:-}"
+
+# 这里换成你已经训练好的、且有权使用的本地语音引擎命令。
+# 下面只是形状示例，不同引擎参数名不一样。
+python3 /opt/local-tts/infer.py \
+  --text-file "$TEXT_FILE" \
+  --voice-sample "$SAMPLE" \
+  --out "$OUT"
+
+echo "$OUT"
+```
+
+`config.json`：
+
+```json
+{
+  "ai": {
+    "enable_tts": true,
+    "tts_provider": "auto",
+    "tts_local_command": "/opt/wanjier-bot/local-tts.sh",
+    "tts_local_output_dir": "voice_cache/local",
+    "tts_local_timeout_ms": 15000,
+    "tts_probability": 0.10
+  }
+}
+```
+
+测试：
+
+```bash
+pm2 restart wanjier --update-env
+pm2 logs wanjier --lines 80 --nostream
+```
+
+群里：
+
+```text
+/voice status
+/voice test 这波本地语音先跑一下
+```
+
+`/voice status` 里如果看到 `TTS提供方: auto local-ready`，说明 bot 已经识别到本地命令。`最近错误` 如果出现 `local tts failed`，优先检查 wrapper 的路径、权限、Python 环境、模型路径和输出文件。
+
+### 4. 本地 STT 听写接入
+
+本地听写命令协议：
+
+- 输入音频文件路径在 `QQBOT_STT_INPUT`。
+- 输出文本文件路径在 `QQBOT_STT_OUTPUT`。
+- 音频 MIME 在 `QQBOT_STT_MIME`。
+- 原始来源在 `QQBOT_STT_SOURCE`。
+- 命令成功后可以写 `QQBOT_STT_OUTPUT`，也可以把听写文本打印到 stdout。
+
+示例 wrapper：
+
+```bash
+cd /opt/wanjier-bot
+cp scripts/local-stt.example.sh local-stt.sh
+nano local-stt.sh
+chmod +x local-stt.sh
+```
+
+`local-stt.sh` 示例：
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+IN="${QQBOT_STT_INPUT:?missing input}"
+OUT="${QQBOT_STT_OUTPUT:?missing output}"
+
+# 这里换成你的本地听写引擎，例如 whisper.cpp、FunASR、sherpa-onnx 等。
+# 下面只是形状示例。
+python3 /opt/local-stt/transcribe.py \
+  --input "$IN" \
+  --output "$OUT"
+
+cat "$OUT"
+```
+
+`config.json`：
+
+```json
+{
+  "ai": {
+    "enable_stt": true,
+    "stt_provider": "auto",
+    "stt_local_command": "/opt/wanjier-bot/local-stt.sh",
+    "stt_local_timeout_ms": 15000,
+    "stt_max_records": 1
+  }
+}
+```
+
+测试：
+
+```text
+/voice status
+/voice stt <语音URL>
+```
+
+`/voice status` 里如果看到 `STT提供方: auto local-ready`，说明本地听写命令已被识别。
+
+### 5. 语音输入听写
 
 语音输入是“收到 QQ 语音后先尝试听写，再把听写结果塞进当前消息快照”。它只影响理解语音内容，不影响强触发必回。
 
@@ -671,6 +932,7 @@ pm2 restart wanjier
 - QQ 语音常见是 `amr` 或 `silk`。如果服务器安装了 `ffmpeg`，bot 会尝试转成 mp3 再听写。
 - 如果供应商不支持当前音频请求格式，`@` 仍会引用原消息回复，只是不会假装听懂语音内容。
 - 2G1C 推荐 `stt_global_concurrency=1`、`stt_max_records=1`，避免多人同时发语音把队列堵死。
+- 如果配置了 `stt_provider=auto` 且 `stt_local_command` 有效，会先走本地听写，本地失败再走远端 API。
 
 安装转码工具：
 
@@ -694,7 +956,7 @@ apt install -y ffmpeg
 - `听写最近错误`：供应商格式不兼容、下载失败、超时等都会显示在这里。
 - `/voice stt <语音URL>` 会单独测试下载、转码、API、解析整条听写链路；也可以把语音和 `/voice stt` 发在同一条消息里。
 
-### 4. 测试语音输出链路
+### 6. 测试语音输出链路
 
 群里发送：
 
@@ -707,11 +969,12 @@ apt install -y ffmpeg
 `/voice status` 里重点看：
 
 - `TTS: on`：语音功能开启。
+- `TTS提供方`：当前走 `api`、`local` 还是 `auto`。
 - `克隆: ready`：样本可用，会走克隆模型。
 - `克隆: missing`：样本缺失、太小、太大或路径错误，会降级普通 TTS。
 - `最近错误`：最近一次 API、网络、解析或长度错误。
 
-### 5. 常见语音问题
+### 7. 常见语音问题
 
 - `sample missing`：检查 `tts_sample_path`，相对路径从项目根目录算。
 - `sample too small`：样本小于 1KB，通常是空文件或复制失败。
@@ -719,12 +982,17 @@ apt install -y ffmpeg
 - `text length out of range`：语音文本超过 `tts_max_chars`。
 - `HTTP 401/403`：API key 或供应商权限不对。
 - `empty audio response`：模型不支持当前 TTS 请求格式。
+- `local tts command missing`：`tts_provider` 是 `local/auto`，但 `tts_local_command` 没填。
+- `local tts timeout`：本地语音引擎太慢或模型没加载好，提高 `tts_local_timeout_ms`，或让引擎常驻服务再用 wrapper 调 HTTP。
+- `local tts failed`：wrapper 退出码非 0 或没有生成音频，直接在 VPS 上手动执行 wrapper 看 stderr。
 - QQ 不显示语音：确认 OneBot/NapCat 支持本地 `file://` 语音发送，查看 PM2 日志。
 - `听写 HTTP 400/422`：多数是供应商不支持当前音频输入格式，换 `stt_model` 或关闭 `enable_stt`。
+- `local stt command missing`：`stt_provider` 是 `local/auto`，但 `stt_local_command` 没填。
+- `local stt failed`：本地听写脚本没有输出文本，检查模型路径、音频格式和脚本权限。
 - `download too large`：语音超过 `stt_max_file_mb`。
 - `empty transcript`：模型没听出来或接口返回格式不是当前兼容格式。
 
-### 6. 语音使用建议
+### 8. 语音使用建议
 
 - 强触发默认优先文字引用，保证回复定位准确。
 - 随机语音只用于普通主动接话，避免多人 @ 时语音串台。
