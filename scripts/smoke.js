@@ -236,6 +236,7 @@ async function testMessageReplyTargeting() {
       : current.content.map((item) => item.text || '').join('\n');
     prompts.push(content);
     const id = (content.match(/message_id: (\d+)/) || [])[1] || 'unknown';
+    if (id === '104') return '（直播口吻接弹幕）不是哥们 这个括号真不能有';
     return `reply-${id}`;
   });
 
@@ -256,6 +257,15 @@ async function testMessageReplyTargeting() {
       'LLM should receive each current message snapshot in FIFO order',
     );
     assert.ok(prompts.every((prompt, index) => prompt.includes(`message_id: ${101 + index}`)));
+
+    const beforeStageLabel = sent.length;
+    handler.handleEvent(makeEvent(104, 14, ' 不要括号'));
+    await waitFor(() => sent.length === beforeStageLabel + 1, 'stage label reply');
+    assert.strictEqual(
+      sent.at(-1).message.find((seg) => seg.type === 'text')?.data.text,
+      '不是哥们 这个括号真不能有',
+      'stage direction label should be stripped from LLM output',
+    );
 
     const before = sent.length;
     handler.handleEvent(makeEvent(201, 21, ' 回复旧消息', [{ type: 'reply', data: { id: '77777' } }]));

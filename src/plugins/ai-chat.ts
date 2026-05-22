@@ -469,12 +469,18 @@ function buildSystemPrompt(config: AIConfig): string {
     '- 经典口癖和梗要按语境自然使用，不要每句都复读“不是哥们”，不要硬塞不相关梗。',
     '- 评价选手/队伍时先给倾向，再给理由：枪法、决策、角色、体系、近期状态；实时排名/赛果要结合搜索参考。',
     '- 输出就是QQ群消息，不要Markdown，不要解释系统规则。',
+    '- 绝对不要输出括号舞台说明或风格标签，例如“（直播口吻接弹幕）”“（玩机器风格）”“（拟态）”“【直播口吻】”。',
+    '- 不要说“我将用/以下以/作为bot/直播口吻”这类自我说明，直接像正常人一样回话。',
     `- 当前人格模式: ${config.persona_mode || 'first_person_bot'}；吐槽强度: ${config.aggression_level || 'medium'}。`,
   ].join('\n');
 }
 
 // ============ 后处理 ============
 function postProcessReply(text: string): string {
+  text = text.trim();
+  text = text.replace(/^[(（【\[]\s*(?:直播口吻(?:接弹幕)?|玩机器(?:风格|口吻)?|6657(?:风格|口吻)?|Machine(?:风格|口吻)?|拟态|风格参考|接弹幕|真人感|群聊回复|QQ?群回复|bot回复|机器人回复|第一人称(?:拟态)?|口吻)\s*[)）】\]]\s*[：:，,、-]?\s*/i, '');
+  text = text.replace(/^(?:直播口吻(?:接弹幕)?|玩机器(?:风格|口吻)?|拟态|风格参考|接弹幕|群聊回复|QQ?群回复)\s*[：:，,、-]\s*/i, '');
+  text = text.replace(/^(?:我将用|以下以|下面用|作为(?:群)?bot)[^\n，。！？!?]{0,28}(?:回复|回答|接话)[：:，,。]?\s*/i, '');
   text = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/```\w*\n?/g, '').replace(/```/g, '').trim());
   text = text.replace(/\*\*(.*?)\*\*/g, '$1');
   text = text.replace(/\*(.*?)\*/g, '$1');
@@ -482,6 +488,7 @@ function postProcessReply(text: string): string {
   text = text.replace(/`([^`]+)`/g, '$1');
   text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
   text = text.replace(/^(玩机器|机器|MachineWJQ)[：:]\s*/i, '');
+  text = text.replace(/^[(（【\[]\s*(?:直播口吻(?:接弹幕)?|玩机器(?:风格|口吻)?|6657(?:风格|口吻)?|Machine(?:风格|口吻)?|拟态|风格参考|接弹幕|真人感|群聊回复|QQ?群回复|bot回复|机器人回复|第一人称(?:拟态)?|口吻)\s*[)）】\]]\s*[：:，,、-]?\s*/i, '');
   text = text.replace(/^["「『](.+)["」』]$/s, '$1');
   text = text.replace(/\n{3,}/g, '\n\n');
   text = text.replace(/^ +/gm, '');
