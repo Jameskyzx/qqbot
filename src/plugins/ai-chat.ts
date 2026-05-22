@@ -243,7 +243,7 @@ function isAtBot(event: GroupMessageEvent): boolean {
   const selfId = String(event.self_id);
   return event.message.some(
     (seg) => seg.type === 'at' && String(seg.data.qq) === selfId
-  );
+  ) || event.raw_message.includes(`[CQ:at,qq=${selfId}]`);
 }
 
 function delay(ms: number): Promise<void> {
@@ -1384,7 +1384,7 @@ export const aiChatPlugin: Plugin = {
     const senderName = ctx.event.sender.card || ctx.event.sender.nickname;
     const imageUrls = extractImageUrls(ctx.event.message);
     const hasImages = imageUrls.length > 0 && config.enable_vision;
-    const atBot = isAtBot(ctx.event);
+    const atBot = ctx.isAtBot || isAtBot(ctx.event);
     const effectiveText = ctx.command && directAiCommands.has(ctx.command)
       ? ctx.args.join(' ').trim()
       : ctx.rawText.trim();

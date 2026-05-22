@@ -8,6 +8,7 @@ export class MessageHandler {
   private botMessageIds: Set<number> = new Set();
   private activeMessages = 0;
   private warnedSelfIdMismatch = false;
+  private warnedNonArrayMessage = false;
 
   constructor(bot: Bot) {
     this.bot = bot;
@@ -35,7 +36,7 @@ export class MessageHandler {
     if (event.post_type !== 'message') return;
     if (event.message_type !== 'group') return;
 
-    const groupEvent = event as GroupMessageEvent;
+    const groupEvent = this.normalizeGroupMessage(event as GroupMessageEvent);
     const config = this.bot.getConfig();
     if (
       config.bot_qq &&
@@ -67,6 +68,75 @@ export class MessageHandler {
     });
   }
 
+  private normalizeGroupMessage(event: GroupMessageEvent): GroupMessageEvent {
+    const runtimeEvent = event as GroupMessageEvent & { message: MessageSegment[] | string };
+    if (Array.isArray(runtimeEvent.message)) return event;
+
+    if (!this.warnedNonArrayMessage) {
+      this.warnedNonArrayMessage = true;
+      console.warn('[Handler] OneBot message 不是array格式，已尝试兼容CQ码；建议在NapCat里设置 messagePostFormat=array。');
+    }
+
+    const raw = typeof runtimeEvent.message === 'string'
+      ? runtimeEvent.message
+      : (event.raw_message || '');
+    runtimeEvent.message = this.parseCqMessage(raw);
+    if (!event.raw_message) event.raw_message = raw;
+    return event;
+  }
+
+  private parseCqMessage(raw: string): MessageSegment[] {
+    const segments: MessageSegment[] = [];
+    const pattern = /\[CQ:([^,\]]+)((?:,[^\]]*)?)\]/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    const pushText = (text: string) => {
+      if (!text) return;
+      segments.push({ type: 'text', data: { text: this.decodeCqText(text) } });
+    };
+
+    while ((match = pattern.exec(raw))) {
+      pushText(raw.slice(lastIndex, match.index));
+      const type = match[1];
+      const data = this.parseCqData(match[2] || '');
+      if (type === 'at' && data.qq) {
+        segments.push({ type: 'at', data: { qq: String(data.qq) } });
+      } else if (type === 'reply' && data.id) {
+        segments.push({ type: 'reply', data: { id: String(data.id) } });
+      } else if (type === 'image') {
+        segments.push({ type: 'image', data: { file: String(data.file || data.url || ''), url: data.url ? String(data.url) : undefined } });
+      } else if (type === 'record') {
+        segments.push({ type: 'record', data: { file: String(data.file || data.url || ''), url: data.url ? String(data.url) : undefined } });
+      } else if (type === 'face' && data.id) {
+        segments.push({ type: 'face', data: { id: String(data.id) } });
+      }
+      lastIndex = pattern.lastIndex;
+    }
+    pushText(raw.slice(lastIndex));
+    return segments.length > 0 ? segments : [{ type: 'text', data: { text: raw } }];
+  }
+
+  private parseCqData(raw: string): Record<string, string> {
+    const data: Record<string, string> = {};
+    for (const part of raw.replace(/^,/, '').split(',')) {
+      const index = part.indexOf('=');
+      if (index <= 0) continue;
+      const key = part.slice(0, index);
+      const value = part.slice(index + 1);
+      data[key] = this.decodeCqText(value);
+    }
+    return data;
+  }
+
+  private decodeCqText(text: string): string {
+    return text
+      .replace(/&#44;/g, ',')
+      .replace(/&#91;/g, '[')
+      .replace(/&#93;/g, ']')
+      .replace(/&amp;/g, '&');
+  }
+
   /** 实际处理消息 */
   private async processMessage(
     groupEvent: GroupMessageEvent,
@@ -87,6 +157,7 @@ export class MessageHandler {
       rawText,
       command,
       args,
+      isAtBot,
       isReplyToBot,
       bot: this.bot,
       reply: (message: string | MessageSegment[]) => {

@@ -246,6 +246,8 @@ export interface PluginContext {
   rawText: string;
   command: string | null;
   args: string[];
+  /** 是否@了Bot */
+  isAtBot: boolean;
   /** 是否是回复Bot消息 */
   isReplyToBot: boolean;
   reply: (message: string | MessageSegment[]) => void;
