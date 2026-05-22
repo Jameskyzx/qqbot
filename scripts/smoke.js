@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const http = require('http');
 
 const { hasUsableApiKey, normalizeConfig } = require('../dist/config');
 const kb = require('../dist/plugins/knowledge-base');
@@ -96,8 +97,25 @@ async function testConfig() {
   assert.strictEqual(config.ai.knowledge_auto_batch_max_sources, 6);
   assert.ok(config.ai.trigger_keywords.includes('抽道具'), 'example trigger keywords should include daily CS utility');
   assert.ok(config.ai.trigger_keywords.includes('今日套餐'), 'example trigger keywords should include daily CS loadout');
-  assert.strictEqual(hasUsableApiKey(config.ai.api_key), false, 'example placeholder key should not be treated as usable');
+  assert.strictEqual(hasUsableApiKey('在这里填入你的API密钥'), false, 'example placeholder key should not be treated as usable');
   assert.strictEqual(hasUsableApiKey('sk-live-test-key-1234567890'), true, 'real-looking key should be treated as usable');
+}
+
+async function testConfigEnvApiKeyOverride() {
+  const oldWanjier = process.env.WANJIER_API_KEY;
+  const oldOpenAi = process.env.OPENAI_API_KEY;
+  try {
+    process.env.WANJIER_API_KEY = 'sk-env-wanjier-key-1234567890';
+    delete process.env.OPENAI_API_KEY;
+    const config = readConfig();
+    assert.strictEqual(config.ai.api_key, 'sk-env-wanjier-key-1234567890');
+    assert.strictEqual(hasUsableApiKey(config.ai.api_key), true);
+  } finally {
+    if (typeof oldWanjier === 'string') process.env.WANJIER_API_KEY = oldWanjier;
+    else delete process.env.WANJIER_API_KEY;
+    if (typeof oldOpenAi === 'string') process.env.OPENAI_API_KEY = oldOpenAi;
+    else delete process.env.OPENAI_API_KEY;
+  }
 }
 
 async function testKnowledge() {
@@ -199,6 +217,59 @@ console.log(out);
     assert.ok(stats.localRuns >= 1, 'local tts run counter should increase');
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function testApiTtsProvider() {
+  const config = readConfig();
+  const responseAudio = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(240)]).toString('base64');
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      const json = JSON.parse(body);
+      requests.push(json);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        choices: [
+          {
+            message: {
+              audio: {
+                data: responseAudio,
+              },
+            },
+          },
+        ],
+      }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  try {
+    config.ai.api_url = `http://127.0.0.1:${address.port}/v1/chat/completions`;
+    config.ai.api_key = 'sk-live-test-key-1234567890';
+    config.ai.enable_tts = true;
+    config.ai.tts_provider = 'api';
+    config.ai.tts_clone_enabled = false;
+    config.ai.tts_cache_hours = 1;
+    const output = await tts.generateVoice(config.ai, `远端语音 smoke ${Date.now()}`);
+    assert.ok(output && fs.existsSync(output), 'api tts should produce an audio file');
+    assert.ok(fs.statSync(output).size > 200, 'api tts output should be non-empty');
+    assert.strictEqual(requests.length, 1, 'api tts should call mock server once');
+    assert.deepStrictEqual(
+      requests[0].messages.map((item) => item.role),
+      ['user', 'assistant'],
+      'MiMo v2.5 TTS payload should put prompt in user and spoken text in assistant',
+    );
+    assert.strictEqual(requests[0].audio.format, 'mp3', 'api tts should request mp3 audio');
+    const stats = tts.getVoiceStats(config.ai);
+    assert.strictEqual(stats.provider, 'api');
+    assert.strictEqual(stats.lastMode, 'mimo-tts-chat-v25');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 }
 
@@ -461,6 +532,45 @@ async function testMessageReplyTargeting() {
     await waitFor(() => sent.length === before + 1, 'reply-to-bot forced reply');
     assert.strictEqual(getMsgCalls.some((call) => call.action === 'get_msg' && call.params.message_id === 77777), true);
     assert.strictEqual(sent.at(-1).message.find((seg) => seg.type === 'reply')?.data.id, '201');
+  } finally {
+    aiChat.__setLLMCallerForTests();
+    aiChat.shutdownAiChat();
+  }
+}
+
+async function testExplicitVoiceReply() {
+  const config = makeConfigForHandler();
+  config.ai.enable_tts = true;
+  config.ai.tts_provider = 'local';
+  config.ai.tts_local_command = `"${process.execPath}" -e "const fs=require('fs');const out=process.env.QQBOT_TTS_OUTPUT;const h=Buffer.alloc(44);h.write('RIFF',0);h.writeUInt32LE(256,4);h.write('WAVE',8);h.write('fmt ',12);h.writeUInt32LE(16,16);h.writeUInt16LE(1,20);h.writeUInt16LE(1,22);h.writeUInt32LE(16000,24);h.writeUInt32LE(32000,28);h.writeUInt16LE(2,32);h.writeUInt16LE(16,34);h.write('data',36);h.writeUInt32LE(220,40);fs.mkdirSync(require('path').dirname(out),{recursive:true});fs.writeFileSync(out,Buffer.concat([h,Buffer.alloc(220)]));console.log(out);"`;
+  config.ai.tts_max_chars = 120;
+  const sent = [];
+  const bot = {
+    getConfig: () => config,
+    sendGroupMessage: async (groupId, message, onMessageId) => {
+      sent.push({ groupId, message });
+      if (onMessageId) onMessageId(91_000 + sent.length);
+      return true;
+    },
+    callApiAsync: async () => ({ retcode: 0, data: {} }),
+  };
+  const handler = new MessageHandler(bot);
+  handler.use(aiChat.aiChatPlugin);
+
+  aiChat.__setLLMCallerForTests(async (_config, messages) => {
+    const current = messages[messages.length - 1];
+    const content = typeof current.content === 'string'
+      ? current.content
+      : current.content.map((item) => item.text || '').join('\n');
+    assert.ok(content.includes('用户明确要求语音回复: 是'), 'prompt should mark explicit voice request');
+    return '可以 这句我直接给你念出来';
+  });
+
+  try {
+    handler.handleEvent(makePlainEvent(901, 91, '用语音回复 今天NAVI咋样'));
+    await waitFor(() => sent.length === 1, 'explicit voice reply');
+    assert.strictEqual(sent[0].message.find((seg) => seg.type === 'reply')?.data.id, '901');
+    assert.ok(sent[0].message.some((seg) => seg.type === 'record'), 'explicit voice request should send record segment');
   } finally {
     aiChat.__setLLMCallerForTests();
     aiChat.shutdownAiChat();
@@ -760,14 +870,17 @@ async function testCrossGroupAiConcurrency() {
 async function main() {
   await testOutgoingSanitize();
   await testConfig();
+  await testConfigEnvApiKeyOverride();
   await testKnowledge();
   await testKnowledgeSourceState();
   await testVoiceStats();
   await testLocalTtsProvider();
+  await testApiTtsProvider();
   await testImageStats();
   await testGates();
   await testSearchSingleFlight();
   await testMessageReplyTargeting();
+  await testExplicitVoiceReply();
   await testPassiveTriggerFiltering();
   await testPrivateMessages();
   await testRepeaterAndPoke();

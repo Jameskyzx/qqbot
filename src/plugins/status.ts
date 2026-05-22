@@ -52,6 +52,8 @@ export const statusPlugin: Plugin = {
         ...(imageStats.lastError ? [`图片最近错误: ${imageStats.lastError}`] : []),
         `🎧 语音听写: ${sttStats.enabled ? 'on' : 'off'} ${sttStats.provider}${sttStats.localReady ? '/local' : ''} 缓存${sttStats.cacheFiles}条 ${sttStats.sizeMB}MB 命中${sttStats.hits}/${sttStats.misses} 本地${sttStats.localRuns} API${sttStats.apiRuns} 下载失败${sttStats.downloadMisses} 空转写${sttStats.transcriptMisses}`,
         `🔊 语音: ${voiceStats.provider}${voiceStats.localReady ? '/local' : ''} 缓存${voiceStats.cacheFiles}条 ${voiceStats.sizeMB}MB 命中${voiceStats.hits}/${voiceStats.misses} 本地${voiceStats.localRuns} API${voiceStats.apiRuns} 克隆${voiceStats.cloneEnabled ? (voiceStats.cloneReady ? 'ready' : 'missing') : 'off'}`,
+        ...(voiceStats.lastMode ? [`🔊 最近TTS模式: ${voiceStats.lastMode}`] : []),
+        ...(voiceStats.lastError ? [`🔊 语音最近错误: ${voiceStats.lastError}`] : []),
         `📦 Node ${process.version}`,
       ].join('\n');
 

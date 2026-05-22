@@ -128,6 +128,19 @@ nano config.json
 - `api_url`、`api_key`、`model`、`vision_model`：你的 OpenAI 兼容接口和模型。
 - 如果要先走本地语音，把 `tts_provider`、`stt_provider` 保持 `auto`，再填 `tts_local_command`、`stt_local_command`。
 
+推荐不要把真实密钥写进 `config.json`。程序会按下面顺序读取密钥：
+
+1. `WANJIER_API_KEY`
+2. `OPENAI_API_KEY`
+3. `config.json` 里的 `ai.api_key`
+
+VPS 上建议这样注入，命令里的值替换成你自己的真实密钥：
+
+```bash
+export WANJIER_API_KEY='替换成你的真实API密钥'
+pm2 restart wanjier --update-env
+```
+
 当前推荐 `ai` 核心配置如下，完整文件以 `config.example.json` 为准：
 
 ```json
@@ -726,6 +739,15 @@ STT 听写同理：
 
 本地模式不要求 TTS/STT API 可用，但普通 AI 对话和识图仍然需要 `api_url`、`api_key`、`model`。
 
+远端 MiMo TTS 当前按官方 OpenAI 兼容接口发送：
+
+- 普通模型：`mimo-v2.5-tts`，默认内置音色。
+- 克隆模型：`mimo-v2.5-tts-voiceclone`，当 `voice_sample.mp3` 可读时把样本以 `data:audio/...;base64,...` 放到 `audio.voice`。
+- 输出格式：默认请求 `audio.format=mp3`，bot 会把返回音频保存到 `voice_cache/` 再用 OneBot 的 `record` 段发送。
+- 兼容兜底：如果供应商兼容层调整，bot 会依次尝试 v2.5 官方格式、无 `format` 格式、旧 `system/user/assistant` 格式，并在 `/voice status` 显示 `最近TTS模式`。
+
+参考官方文档：`https://platform.xiaomimimo.com/docs/en-US/api/chat/openai-api?target=request-body`
+
 ### 1. 准备样本
 
 推荐样本：
@@ -743,6 +765,8 @@ cd /opt/wanjier-bot
 cp /path/to/your-authorized-sample.mp3 voice_sample.mp3
 ls -lh voice_sample.mp3
 ```
+
+本仓库根目录默认读取 `voice_sample.mp3`，这个文件已被 `.gitignore` 忽略，不会被推送到 GitHub。
 
 如果样本很大，先用 `ffmpeg` 压到 64k 到 128k：
 
@@ -851,6 +875,16 @@ echo "$OUT"
 pm2 restart wanjier --update-env
 pm2 logs wanjier --lines 80 --nostream
 ```
+
+也可以不进 QQ，直接在 VPS 上跑一次真实 TTS：
+
+```bash
+cd /opt/wanjier-bot
+npm run build
+WANJIER_API_KEY='替换成你的真实API密钥' npm run voice:test -- "不是哥们 这波语音链路测试一下"
+```
+
+成功时会输出生成的音频路径、大小、提供方、克隆样本状态和最近 TTS 模式。失败时会输出 `lastError`，优先按下面“常见语音问题”排查。
 
 群里：
 
@@ -964,6 +998,8 @@ apt install -y ffmpeg
 /voice status
 /voice test
 /voice test 不是哥们，这波语音测试有点东西
+@bot 用语音回复 今天NAVI咋样
+用语音回一下 这波怎么说
 ```
 
 `/voice status` 里重点看：
@@ -972,7 +1008,10 @@ apt install -y ffmpeg
 - `TTS提供方`：当前走 `api`、`local` 还是 `auto`。
 - `克隆: ready`：样本可用，会走克隆模型。
 - `克隆: missing`：样本缺失、太小、太大或路径错误，会降级普通 TTS。
+- `最近TTS模式`：最近一次远端请求采用的 payload 格式，例如 `mimo-voiceclone-chat-v25`。
 - `最近错误`：最近一次 API、网络、解析或长度错误。
+
+明确说“用语音回复 / 发语音 / voice / tts / say / 念出来 / 读出来”时，会被当成强触发：必须入队、必须尝试发语音，并且群聊里会把 `reply` 段和 `record` 段一起发送，定位到原消息。如果语音生成失败，会引用原消息退回文字，开头会说明这次语音没生成出来。
 
 ### 7. 常见语音问题
 
@@ -981,7 +1020,8 @@ apt install -y ffmpeg
 - `sample too large`：超过 `tts_sample_max_mb`，压缩样本或提高限制。
 - `text length out of range`：语音文本超过 `tts_max_chars`。
 - `HTTP 401/403`：API key 或供应商权限不对。
-- `empty audio response`：模型不支持当前 TTS 请求格式。
+- `HTTP 400`：通常是模型名、权限或供应商 TTS payload 不兼容。先看 `/voice status` 的 `最近TTS模式`，再确认 `tts_model`、`tts_clone_model` 和 `voice_sample.mp3`。
+- `empty audio response`：接口返回了 JSON 但没有可解析的音频字段，模型可能不支持当前 TTS 请求格式。
 - `local tts command missing`：`tts_provider` 是 `local/auto`，但 `tts_local_command` 没填。
 - `local tts timeout`：本地语音引擎太慢或模型没加载好，提高 `tts_local_timeout_ms`，或让引擎常驻服务再用 wrapper 调 HTTP。
 - `local tts failed`：wrapper 退出码非 0 或没有生成音频，直接在 VPS 上手动执行 wrapper 看 stderr。
@@ -1012,6 +1052,8 @@ apt install -y ffmpeg
 | 私聊 bot | 独立私聊上下文，默认必回，不占群上下文 |
 | `/search <关键词>` | 联网搜索 |
 | `/voice <内容>` | 生成语音 |
+| `用语音回复 <内容>` | 模糊触发语音回复，群聊里会引用原消息发 record |
+| `发语音 / 念出来 / 读出来 / voice / tts / say` | 模糊触发语音回复 |
 | `/voice status` | 查看 TTS、克隆样本和缓存状态 |
 | `/voice test [内容]` | 生成测试语音 |
 | `/voice stt <语音URL>` | 测试语音听写链路，也可同一条消息带语音 |

@@ -16,8 +16,19 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 let cacheHits = 0;
 let cacheMisses = 0;
 let lastVoiceError = '';
+let lastVoiceMode = '';
 let localTtsRuns = 0;
 let apiTtsRuns = 0;
+
+class TtsRequestError extends Error {
+  statusCode?: number;
+
+  constructor(message: string, statusCode?: number) {
+    super(message);
+    this.name = 'TtsRequestError';
+    this.statusCode = statusCode;
+  }
+}
 
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -173,6 +184,28 @@ function setVoiceError(message: string): void {
   lastVoiceError = message.slice(0, 160);
 }
 
+function setVoiceMode(mode: string): void {
+  lastVoiceMode = mode.slice(0, 80);
+}
+
+function safeApiError(data: string): string {
+  try {
+    const json = JSON.parse(data);
+    const message = json.error?.message || json.message || json.msg || json.error || data;
+    return String(message)
+      .replace(/data:audio\/[^;]+;base64,[A-Za-z0-9+/_=-]+/g, '[audio-data]')
+      .replace(/[A-Za-z0-9+/_=-]{160,}/g, '[long-data]')
+      .replace(/\s+/g, ' ')
+      .slice(0, 140);
+  } catch {
+    return data
+      .replace(/data:audio\/[^;]+;base64,[A-Za-z0-9+/_=-]+/g, '[audio-data]')
+      .replace(/[A-Za-z0-9+/_=-]{160,}/g, '[long-data]')
+      .replace(/\s+/g, ' ')
+      .slice(0, 140);
+  }
+}
+
 function normalizeAudioCandidate(item: string): string {
   const value = item.trim();
   if (!value) return '';
@@ -210,6 +243,7 @@ function firstAudioString(...items: any[]): string {
 function extractAudioBase64(json: any): string {
   return firstAudioString(
     json.choices?.[0]?.message?.audio?.data,
+    json.choices?.[0]?.message?.audio?.transcript,
     json.choices?.[0]?.message?.content,
     json.audio?.data,
     json.audio,
@@ -220,6 +254,178 @@ function extractAudioBase64(json: any): string {
     json.output?.[0]?.content,
     json.response?.audio,
   );
+}
+
+function ttsPrompt(config: AIConfig): string {
+  return config.tts_voice_prompt || '用年轻男性声音，语气随意放松，像直播间接弹幕，语速偏快但吐字清楚。不要端播音腔，短句有停顿感。';
+}
+
+function buildTtsPayloadVariants(
+  config: AIConfig,
+  text: string,
+  model: string,
+  sample: { dataUrl: string; ready: boolean },
+  useClone: boolean,
+): Array<{ label: string; body: any }> {
+  const prompt = ttsPrompt(config);
+  const audio = useClone
+    ? { voice: sample.dataUrl, format: 'mp3' }
+    : { format: 'mp3' };
+
+  const variants: Array<{ label: string; body: any }> = [
+    {
+      label: useClone ? 'mimo-voiceclone-chat-v25' : 'mimo-tts-chat-v25',
+      body: {
+        model,
+        messages: [
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: text },
+        ],
+        audio,
+      },
+    },
+    {
+      label: useClone ? 'mimo-voiceclone-chat-v25-no-format' : 'mimo-tts-chat-v25-no-format',
+      body: {
+        model,
+        messages: [
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: text },
+        ],
+        audio: useClone ? { voice: sample.dataUrl } : {},
+      },
+    },
+    {
+      label: useClone ? 'mimo-voiceclone-legacy-system' : 'mimo-tts-legacy-system',
+      body: {
+        model,
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: '请说' },
+          { role: 'assistant', content: text },
+        ],
+        audio,
+      },
+    },
+  ];
+
+  if (useClone) {
+    variants.push(
+      {
+        label: 'openai-style-input-reference-audio',
+        body: {
+          model,
+          input: text,
+          instructions: prompt,
+          response_format: 'mp3',
+          reference_audio: sample.dataUrl,
+        },
+      },
+      {
+        label: 'openai-style-input-voice-sample',
+        body: {
+          model,
+          input: text,
+          instructions: prompt,
+          response_format: 'mp3',
+          voice_sample: sample.dataUrl,
+        },
+      },
+    );
+  }
+
+  return variants;
+}
+
+function postTtsRequest(config: AIConfig, url: URL, bodyObject: any, label: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const isHttps = url.protocol === 'https:';
+    const body = JSON.stringify(bodyObject);
+
+    const options = {
+      hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.api_key}`,
+        'Content-Length': Buffer.byteLength(body),
+      },
+    };
+
+    const transport = isHttps ? https : http;
+    const req = transport.request(options, (res) => {
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      const maxBytes = 16 * 1024 * 1024;
+      const contentType = String(res.headers['content-type'] || '').toLowerCase();
+      let settled = false;
+
+      const fail = (err: Error): void => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      };
+
+      const finish = (buffer: Buffer): void => {
+        if (settled) return;
+        settled = true;
+        resolve(buffer);
+      };
+
+      res.on('data', (chunk: Buffer) => {
+        totalBytes += chunk.length;
+        if (totalBytes > maxBytes) {
+          fail(new Error(`${label}: response too large`));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+
+      res.on('end', () => {
+        if (settled) return;
+        const buffer = Buffer.concat(chunks);
+        const data = buffer.toString('utf-8');
+        if (res.statusCode && res.statusCode >= 400) {
+          fail(new TtsRequestError(`${label}: HTTP ${res.statusCode}: ${safeApiError(data)}`, res.statusCode));
+          return;
+        }
+
+        if ((contentType.includes('audio/') || contentType.includes('octet-stream')) && !contentType.includes('json')) {
+          finish(buffer);
+          return;
+        }
+
+        try {
+          const json = JSON.parse(data);
+          if (json.error) {
+            fail(new Error(`${label}: ${safeApiError(JSON.stringify(json))}`));
+            return;
+          }
+
+          const audioBase64 = extractAudioBase64(json);
+          if (!audioBase64 || audioBase64.length < 100) {
+            fail(new Error(`${label}: empty audio response`));
+            return;
+          }
+          finish(Buffer.from(String(audioBase64).replace(/^data:audio\/[^;]+;base64,/, ''), 'base64'));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          fail(new Error(`${label}: parse failed: ${message}`));
+        }
+      });
+    });
+
+    req.on('error', (err) => reject(new Error(`${label}: network: ${err.message}`)));
+    req.setTimeout(config.tts_timeout_ms || 20000, () => {
+      req.destroy();
+      reject(new Error(`${label}: timeout`));
+    });
+    req.write(body);
+    req.end();
+  });
 }
 
 function generateLocalVoice(config: AIConfig, text: string): Promise<string | null> {
@@ -336,152 +542,68 @@ function generateLocalVoice(config: AIConfig, text: string): Promise<string | nu
 }
 
 /** 调用远端TTS生成语音，返回本地WAV/MP3文件路径 */
-function generateApiVoice(config: AIConfig, text: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const safeResolve = (value: string | null): void => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
+async function generateApiVoice(config: AIConfig, text: string): Promise<string | null> {
+  const maxChars = Math.max(10, config.tts_max_chars || 120);
+  if (text.length < 2 || text.length > maxChars) {
+    setVoiceError(`text length out of range: ${text.length}/${maxChars}`);
+    return null;
+  }
 
-    const maxChars = Math.max(10, config.tts_max_chars || 120);
-    if (text.length < 2 || text.length > maxChars) {
-      setVoiceError(`text length out of range: ${text.length}/${maxChars}`);
-      safeResolve(null);
-      return;
-    }
+  let url: URL;
+  try {
+    url = new URL(config.api_url);
+  } catch {
+    setVoiceError('invalid api_url');
+    return null;
+  }
 
-    let url: URL;
+  // 如果有授权声音样本，用voiceclone；否则用普通tts
+  const sample = getVoiceSample(config);
+  const useClone = sample.ready && !!sample.dataUrl;
+  const model = useClone
+    ? (config.tts_clone_model || 'mimo-v2.5-tts-voiceclone')
+    : (config.tts_model || 'mimo-v2.5-tts');
+  const sampleKey = useClone ? `${sample.filepath}:${sample.size}:${sample.mime}` : 'no-sample';
+  const cacheBase = getVoiceCacheBase(text, config, useClone, sampleKey);
+
+  const cachedPath = findCachedVoice(cacheBase, config);
+  if (cachedPath) {
+    cacheHits++;
+    return cachedPath;
+  }
+  cacheMisses++;
+  apiTtsRuns++;
+
+  let lastError: Error | null = null;
+  const variants = buildTtsPayloadVariants(config, text, model, sample, useClone);
+  for (const variant of variants) {
     try {
-      url = new URL(config.api_url);
-    } catch {
-      setVoiceError('invalid api_url');
-      safeResolve(null);
-      return;
-    }
-    const isHttps = url.protocol === 'https:';
+      setVoiceMode(variant.label);
+      const audioBuffer = await postTtsRequest(config, url, variant.body, variant.label);
+      const { buffer: wavBuffer, ext } = normalizeGeneratedAudio(audioBuffer);
+      const outputPath = `${cacheBase}.${ext}`;
+      fs.writeFileSync(outputPath, wavBuffer);
 
-    // 如果有授权声音样本，用voiceclone；否则用普通tts
-    let sample = getVoiceSample(config);
-    const useClone = sample.ready && !!sample.dataUrl;
-    const model = useClone
-      ? (config.tts_clone_model || 'mimo-v2.5-tts-voiceclone')
-      : (config.tts_model || 'mimo-v2.5-tts');
-    const sampleKey = useClone ? `${sample.filepath}:${sample.size}:${sample.mime}` : 'no-sample';
-    const cacheBase = getVoiceCacheBase(text, config, useClone, sampleKey);
-
-    const cachedPath = findCachedVoice(cacheBase, config);
-    if (cachedPath) {
-      cacheHits++;
-      safeResolve(cachedPath);
-      return;
-    }
-    cacheMisses++;
-    apiTtsRuns++;
-
-    const requestBody: any = {
-      model,
-      messages: [
-        { role: 'system', content: config.tts_voice_prompt || '用年轻男性声音，语气随意放松，像直播间接弹幕，语速偏快但吐字清楚' },
-        { role: 'user', content: '请说' },
-        { role: 'assistant', content: text },
-      ],
-    };
-
-    if (useClone) {
-      requestBody.audio = { voice: sample.dataUrl };
-    }
-
-    const body = JSON.stringify(requestBody);
-
-    const options = {
-      hostname: url.hostname,
-      port: url.port || (isHttps ? 443 : 80),
-      path: url.pathname + url.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.api_key}`,
-        'Content-Length': Buffer.byteLength(body),
-      },
-    };
-
-    const transport = isHttps ? https : http;
-
-    const req = transport.request(options, (res) => {
-      let data = '';
-      let totalBytes = 0;
-      const maxBytes = 16 * 1024 * 1024;
-
-      if (res.statusCode && res.statusCode >= 400) {
-        setVoiceError(`HTTP ${res.statusCode}`);
-        safeResolve(null);
-        res.resume();
-        return;
+      if (wavBuffer.length < 200) {
+        fs.unlinkSync(outputPath);
+        throw new Error(`${variant.label}: generated audio too small`);
       }
 
-      res.on('data', (chunk: Buffer) => {
-        totalBytes += chunk.length;
-        if (totalBytes > maxBytes) {
-          safeResolve(null);
-          req.destroy();
-          return;
-        }
-        data += chunk.toString();
-      });
-      res.on('end', () => {
-        if (settled) return;
-        try {
-          const json = JSON.parse(data);
-          if (json.error) {
-            setVoiceError(json.error.message || 'api error');
-            console.error('[TTS] API错误:', json.error.message);
-            safeResolve(null);
-            return;
-          }
+      lastVoiceError = '';
+      return outputPath;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      setVoiceError(lastError.message);
+      if (err instanceof TtsRequestError && (err.statusCode === 401 || err.statusCode === 403)) {
+        break;
+      }
+    }
+  }
 
-          const audioBase64 = extractAudioBase64(json);
-          if (!audioBase64 || audioBase64.length < 100) {
-            setVoiceError('empty audio response');
-            safeResolve(null);
-            return;
-          }
-
-          const audioBuffer = Buffer.from(String(audioBase64).replace(/^data:audio\/[^;]+;base64,/, ''), 'base64');
-          const { buffer: wavBuffer, ext } = normalizeGeneratedAudio(audioBuffer);
-          const outputPath = `${cacheBase}.${ext}`;
-          fs.writeFileSync(outputPath, wavBuffer);
-
-          if (wavBuffer.length < 200) {
-            fs.unlinkSync(outputPath);
-            setVoiceError('generated audio too small');
-            safeResolve(null);
-          } else {
-            lastVoiceError = '';
-            safeResolve(outputPath);
-          }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          setVoiceError(`parse failed: ${message}`);
-          console.error('[TTS] 解析失败:', err);
-          safeResolve(null);
-        }
-      });
-    });
-
-    req.on('error', (err) => {
-      setVoiceError(`network: ${err.message}`);
-      safeResolve(null);
-    });
-    req.setTimeout(config.tts_timeout_ms || 20000, () => {
-      setVoiceError('timeout');
-      safeResolve(null);
-      req.destroy();
-    });
-    req.write(body);
-    req.end();
-  });
+  if (lastError) {
+    console.error('[TTS] API生成失败:', lastError.message);
+  }
+  return null;
 }
 
 /** 调用TTS生成语音，返回本地音频文件路径 */
@@ -571,6 +693,7 @@ export function getVoiceStats(config?: AIConfig): {
   model: string;
   cloneModel: string;
   maxChars: number;
+  lastMode: string;
   lastError: string;
 } {
   const sample = getVoiceSample(config);
@@ -595,6 +718,7 @@ export function getVoiceStats(config?: AIConfig): {
     model: config?.tts_model || 'mimo-v2.5-tts',
     cloneModel: config?.tts_clone_model || 'mimo-v2.5-tts-voiceclone',
     maxChars: config?.tts_max_chars || 120,
+    lastMode: lastVoiceMode,
     lastError: lastVoiceError,
   };
   try {

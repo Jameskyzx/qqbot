@@ -79,6 +79,7 @@ interface ReplyJob {
   recordUrls: string[];
   hasImages: boolean;
   hasRecords: boolean;
+  forceVoice: boolean;
   isAtBot: boolean;
   isReplyToBot: boolean;
   repliedMessageId?: number;
@@ -537,6 +538,7 @@ function buildTargetText(job: ReplyJob, recordTranscripts: string[] = []): strin
     job.hasImages ? `图片数量: ${job.imageUrls.length}` : '',
     job.hasRecords ? `语音数量: ${job.recordUrls.length}` : '',
     transcriptText ? `语音听写: ${transcriptText}` : '',
+    job.forceVoice ? '用户明确要求语音回复: 是，回复文本要适合直接念出来，短一点，别写列表。' : '',
   ].filter(Boolean);
   const speakerHints = buildRecentSpeakerHints(job.contextMessages.slice(0, -1), job.userId);
   return [
@@ -621,6 +623,17 @@ function forcedFallbackReply(job: ReplyJob, recordTranscripts: string[] = []): s
   if (job.hasRecords && !job.effectiveText) return '语音我收到了，但这边没拿到听写文本，你补一句文字我接着说';
   if (job.hasImages && !job.effectiveText) return '图我收到了，但这下没看出准信，你补一句要我看哪儿';
   return '我在 这句刚才没生成出来，你再说';
+}
+
+function clampVoiceText(text: string, maxChars: number): string {
+  const cleaned = sanitizeOutgoingText(text)
+    .replace(/\s+/g, ' ')
+    .replace(/[#*_`>]/g, '')
+    .trim();
+  if (cleaned.length <= maxChars) return cleaned;
+  const firstSentence = cleaned.split(/[。！？!?；;\n]/).map((item) => item.trim()).find(Boolean) || cleaned;
+  if (firstSentence.length <= maxChars) return firstSentence;
+  return firstSentence.slice(0, Math.max(10, maxChars - 1)).trim();
 }
 
 function handlePresetCommand(
@@ -1232,6 +1245,21 @@ function shouldSearch(config: AIConfig, text: string): boolean {
   return defaultSearchPattern.test(text);
 }
 
+function isExplicitVoiceReplyRequest(text: string, command: string | null): boolean {
+  if (command && directTtsCommands.has(command)) return true;
+  const normalized = normalizePassiveText(text).toLowerCase();
+  if (!normalized) return false;
+  return /(?:用|发|来|整|给|回|回复|说|念|读|语音|voice|tts|say).{0,8}(?:语音|voice|tts|say|音频|声音|念出来|读出来)|(?:语音|voice|tts|say).{0,8}(?:回|回复|说|念|读|来|发|整|一下)/i.test(normalized);
+}
+
+function stripVoiceReplyInstruction(text: string): string {
+  return text
+    .replace(/请?(?:用|发|来|整|给我)?\s*(?:语音|voice|tts|say)\s*(?:回(?:复)?|说|念|读|回答)?\s*(?:一下|下)?[：:,，、]?\s*/ig, '')
+    .replace(/(?:用|发|来|整|给我)?\s*(?:语音|voice|tts|say)\s*(?:回复|回答|说|念|读|回我)?\s*/ig, '')
+    .replace(/(?:回(?:复)?|回答)\s*(?:用)?\s*(?:语音|voice|tts|say)\s*/ig, '')
+    .trim();
+}
+
 function shouldReply(
   config: AIConfig,
   text: string,
@@ -1241,7 +1269,7 @@ function shouldReply(
   isPrivate: boolean = false,
 ): { reply: boolean; forced: boolean } {
   const directCommand = !!command && directAiCommands.has(command);
-  if (directCommand || atBot || replyToBot || isPrivate) {
+  if (directCommand || atBot || replyToBot || isPrivate || isExplicitVoiceReplyRequest(text, command)) {
     return { reply: true, forced: true };
   }
   if (command) {
@@ -1379,6 +1407,11 @@ export function shutdownAiChat(): void {
   } else {
     flushNow();
   }
+  groupQueues.clear();
+  groupQueueStats.clear();
+  groupQueueAges.clear();
+  lastReplyAt.clear();
+  compressionInFlight.clear();
 }
 
 export function getAiChatStats(): {
@@ -1538,6 +1571,7 @@ export const aiChatPlugin: Plugin = {
           `缓存: ${stats.cacheFiles}条 ${stats.sizeMB}MB 命中${stats.hits}/${stats.misses}`,
           `听写缓存: ${sttStats.cacheFiles}条 ${sttStats.sizeMB}MB 命中${sttStats.hits}/${sttStats.misses} 下载失败${sttStats.downloadMisses} 空转写${sttStats.transcriptMisses}`,
           `最长文本: ${stats.maxChars}字`,
+          ...(stats.lastMode ? [`最近TTS模式: ${stats.lastMode}`] : []),
           ...(stats.lastError ? [`最近错误: ${stats.lastError}`] : []),
           ...(sttStats.lastError ? [`听写最近错误: ${sttStats.lastError}`] : []),
         ].join('\n'));
@@ -1643,16 +1677,21 @@ export const aiChatPlugin: Plugin = {
       ? Number(replySeg.data.id)
       : undefined;
     const atBot = ctx.isAtBot || isAtBot(ctx.event);
-    const effectiveText = ctx.command && directAiCommands.has(ctx.command)
+    const rawEffectiveText = ctx.command && directAiCommands.has(ctx.command)
       ? ctx.args.join(' ').trim()
       : ctx.rawText.trim();
+    const forceVoice = isExplicitVoiceReplyRequest(rawEffectiveText, ctx.command);
+    const strippedVoiceText = forceVoice ? stripVoiceReplyInstruction(rawEffectiveText) : rawEffectiveText;
+    const effectiveText = strippedVoiceText || rawEffectiveText;
 
     if (ctx.command && directAiCommands.has(ctx.command) && !effectiveText && imageUrls.length === 0 && recordUrls.length === 0) {
       ctx.reply('/ai <内容>');
       return true;
     }
 
-    const trigger = shouldReply(config, effectiveText, ctx.command, atBot, ctx.isReplyToBot, ctx.isPrivate);
+    const trigger = forceVoice
+      ? { reply: true, forced: true }
+      : shouldReply(config, effectiveText, ctx.command, atBot, ctx.isReplyToBot, ctx.isPrivate);
 
     const storedBaseText = effectiveText
       ? `[mid=${ctx.event.message_id} uid=${ctx.event.user_id}] ${senderName}: ${effectiveText}`
@@ -1676,6 +1715,8 @@ export const aiChatPlugin: Plugin = {
 
     const triggerReason = ctx.command && directAiCommands.has(ctx.command)
       ? `命令/${ctx.command}`
+      : forceVoice
+        ? '明确要求语音回复'
       : ctx.isPrivate
         ? '私聊'
         : ctx.isReplyToBot
@@ -1712,6 +1753,7 @@ export const aiChatPlugin: Plugin = {
       recordUrls: [...recordUrls],
       hasImages,
       hasRecords,
+      forceVoice,
       isAtBot: atBot,
       isReplyToBot: ctx.isReplyToBot,
       repliedMessageId: Number.isFinite(repliedMessageId) ? repliedMessageId : undefined,
@@ -1880,19 +1922,30 @@ export const aiChatPlugin: Plugin = {
         const quoteMention = config.must_reply_quote && (job.isReplyToBot || job.isAtBot);
         const useQuote = quoteStrongTrigger || quoteMention || Math.random() < 0.18;
 
-        // 一定概率TTS；强触发优先文字引用，避免语音段弱化原消息定位。
+        // 明确要求语音时必须尝试TTS；普通主动接话仍按概率，避免语音刷屏。
         let sentVoice = false;
-        if (!skipVoice && !job.forced && config.enable_tts && cleaned.length >= 4 && cleaned.length <= (config.tts_max_chars || 120) && Math.random() < (config.tts_probability || 0.15)) {
+        const maxVoiceChars = config.tts_max_chars || 120;
+        const finalText = job.forceVoice ? clampVoiceText(cleaned, maxVoiceChars) : cleaned;
+        const voiceAllowed = !skipVoice && config.enable_tts && finalText.length >= 2 && finalText.length <= maxVoiceChars;
+        const shouldSendVoice = voiceAllowed && (job.forceVoice || (!job.forced && Math.random() < (config.tts_probability || 0.15)));
+        if (shouldSendVoice) {
           try {
-            const voicePath = await withGate('tts', () => generateVoice(config, cleaned));
+            const voicePath = await withGate('tts', () => generateVoice(config, finalText));
             if (voicePath) {
-              ctx.reply([{ type: 'record', data: { file: `file://${voicePath}` } }]);
+              const recordMessage: MessageSegment[] = [
+                ...(useQuote ? [{ type: 'reply' as const, data: { id: String(job.messageId) } }] : []),
+                { type: 'record', data: { file: `file://${voicePath}` } },
+              ];
+              ctx.reply(recordMessage);
               sentVoice = true;
             }
           } catch { /* */ }
         }
 
         if (!sentVoice) {
+          if (job.forceVoice) {
+            cleaned = `语音这下没生成出来 ${cleaned}`;
+          }
           if (useQuote) {
             ctx.replyQuoteTo(job.messageId, job.userId, cleaned);
           } else {

@@ -100,6 +100,11 @@ function asString(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+function envString(name: string): string {
+  const value = process.env[name];
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
 export function hasUsableApiKey(apiKey: string | undefined | null): boolean {
   const key = (apiKey || '').trim();
   if (key.length < 8) return false;
@@ -188,7 +193,7 @@ function normalizeAiConfig(value: unknown): AIConfig {
 
   return {
     api_url: asString(raw.api_url, DEFAULT_AI_CONFIG.api_url),
-    api_key: asString(raw.api_key, DEFAULT_AI_CONFIG.api_key),
+    api_key: envString('WANJIER_API_KEY') || envString('OPENAI_API_KEY') || asString(raw.api_key, DEFAULT_AI_CONFIG.api_key),
     model: asString(raw.model, DEFAULT_AI_CONFIG.model),
     vision_model: asString(raw.vision_model, asString(raw.model, DEFAULT_AI_CONFIG.vision_model)),
     active_preset: presets[activePreset] ? activePreset : (Object.keys(presets)[0] || ''),

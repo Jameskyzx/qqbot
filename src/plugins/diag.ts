@@ -127,6 +127,7 @@ export const diagPlugin: Plugin = {
       `听写: ${stt.enabled ? 'on' : 'off'} ${stt.provider}${stt.localReady ? '/local' : ''} 缓存${stt.cacheFiles}条 ${stt.hits}/${stt.misses} 本地${stt.localRuns} API${stt.apiRuns} 下载失败${stt.downloadMisses} 空转写${stt.transcriptMisses}`,
       ...(stt.lastError ? [`听写最近错误: ${stt.lastError}`] : []),
       `语音: ${voice.provider}${voice.localReady ? '/local' : ''} 缓存${voice.cacheFiles}条 ${voice.hits}/${voice.misses} 本地${voice.localRuns} API${voice.apiRuns} 克隆${voice.cloneEnabled ? (voice.cloneReady ? 'ready' : 'missing') : 'off'} 样本${voice.sampleSizeMB}MB`,
+      ...(voice.lastMode ? [`语音最近模式: ${voice.lastMode}`] : []),
       ...(voice.lastError ? [`语音最近错误: ${voice.lastError}`] : []),
       ...liveLines,
     ].join('\n'));
