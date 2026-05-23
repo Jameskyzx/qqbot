@@ -8,23 +8,24 @@ import { getRandomKnowledgeLine } from './knowledge-base';
  */
 
 const pokeReplies = [
-  '不是哥们 有事说事',
-  '可以的 这波戳一戳有点东西',
-  '你先别急 我看到了',
-  '这波 timing 戳得很怪',
-  '别急着开香槟 先说事',
-  '这下真绷不住了',
-  '我晕了 你这戳得像闪光弹',
-  '行 我在 直接问',
-  '这波有说法 但别一直戳',
+  '让人不禁感叹',
+  '让人不禁想问',
+  '真的可以吗',
+  '#查询黄河凌汛程度',
+  '#查询太行山积雪厚度',
+  '先别急 直接说事',
+  '可以 我看到了',
+  '有事说事 别光戳',
+  '这波先收一下',
+  '等一下 我在',
 ];
 
 function shortKnowledgeReply(): string {
-  const queries = ['不是哥们', '可以的', '这波', '先别急', '我晕了'];
+  const queries = ['戳一戳', '公式解说', '让人不禁感叹', '让人不禁想问', '真的可以吗', '黄河凌汛', '太行山积雪'];
   for (let i = 0; i < queries.length; i++) {
     const query = queries[Math.floor(Math.random() * queries.length)];
     const line = getRandomKnowledgeLine('quote', query);
-    if (line && line.length <= 32 && !line.includes('{gift}') && !line.includes('模板')) {
+    if (line && line.length <= 32 && !line.includes('{gift}') && !line.includes('模板') && !line.includes('待核验')) {
       return line.replace(/[。.!！]+$/, '');
     }
   }

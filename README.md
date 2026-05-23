@@ -159,7 +159,7 @@ pm2 restart wanjier --update-env
     "max_tokens": 400,
     "temperature": 0.92,
     "trigger_mode": "smart",
-    "trigger_probability": 0.18,
+    "trigger_probability": 0.08,
     "passive_random_min_chars": 4,
     "passive_random_allow_numeric": false,
     "poke_reply_probability": 1,
@@ -215,9 +215,11 @@ pm2 restart wanjier --update-env
 
 身份问询：普通问「你是不是bot/机器人/AI」，嘴硬带过去，坚持第一人称口吻，比如「你先别管这个，这波先看内容」。只有明确追问现实主播本人、授权、代表本人、本尊关系时，才说明这是群里的风格bot，不是现实主播本人，不代表本人。
 
-说话质感来自知识库和临场笔记，不靠固定口头禅硬撑。口癖可以有，但不要公式化：不要连续同一个开头，不要每条都「不是哥们」「可以的」「有点东西」。先读懂对方在聊什么，再挑一个自然反应。
+说话质感必须来自知识库和临场笔记，不靠固定口头禅硬撑。口癖可以有，但不要公式化：不要连续同一个开头，不要每条都「不是哥们」「可以的」「有点东西」。先读懂对方在聊什么，再挑一个自然反应。
 
 回复节奏：普通群聊一两句就够；CS2、选手、队伍、比赛可以多两三句，但要抓一个具体点，比如经济、道具、timing、补枪、角色、地图池、近期状态。不要写「结论/分析/建议/总结」这种标题，不要像报告。
+
+攻击性要收住：可以轻轻嘴硬，可以指出操作和逻辑问题，但不要动不动喷人；少骂群友，多讲回合、事实和判断。能用「等一下」「先别急」「这个不太对」就不要硬塞「不是哥们」。
 
 看图时先说可见内容，再给短评；看不清就说看不清，别硬编。语音有听写就接听写，没有听写就承认只收到语音。
 
@@ -635,10 +637,10 @@ AI 核心字段：
 |---|---:|---|
 | `trigger_mode` | `smart` | @/回复/命令必回，普通消息智能触发 |
 | `trigger_keywords` | 见示例 | smart 模式关键词 |
-| `trigger_probability` | `0.18` | 非关键词、非低信息普通消息随机接话概率；想更安静可降到 `0.10-0.12` |
+| `trigger_probability` | `0.08` | 非关键词、非低信息普通消息随机接话概率；本轮继续降噪，想更安静可降到 `0.04-0.06` |
 | `passive_random_min_chars` | `4` | 普通随机接话最短文本长度，过滤“6”等短消息 |
 | `passive_random_allow_numeric` | `false` | 普通随机接话是否允许纯数字消息 |
-| `related_reply_probability` | `0.9` | CS 软讨论触发概率；关键词/知识话题仍默认直接触发 |
+| `related_reply_probability` | `0.65` | CS/知识话题普通消息触发概率；@/回复/命令仍必回 |
 | `poke_reply_probability` | `1` | 戳一戳回应概率 |
 | `cooldown_seconds` | `0-5` | 普通主动接话冷却，@/回复/命令不受限 |
 | `max_context_messages` | `50` | 2G1C 推荐每群上下文保存条数 |
@@ -1178,7 +1180,7 @@ npm run smoke
 - 同一个群友在同一个群同一天抽到同一结果，不同群独立，第二天刷新。
 - 选手池包含现役与传奇选手，图片 URL 已提前写入资料池，来源是公开 Liquipedia Commons / Wikimedia Commons。
 - 队伍类会发队伍公开图；地图、武器、定位、道具、战术、残局类只发文字，避免外链不稳定。
-- 输出包含 @、标题、语境、指数、打法、别犯、机器锐评，排版尽量短而清楚。
+- 输出包含 @、标题、语境、指数、今天打法、别急点、机器短评和图源，排版尽量短而清楚。
 - 队伍字段写的是“队伍语境”，不是永久阵容。用户问“最新在哪队/最近状态”时应走 `/player 最新 <名字>` 或直接 @ 提问触发联网。
 - 输出走本地逻辑，不调用 AI，不临时联网搜图，不影响 @ 必回队列。
 - 设计参考了常见“每日老婆/每日抽取”类 bot：当天固定、返回头像和昵称；本项目改成 CS 主题卡池，适配群聊和玩机器语态。
@@ -1327,7 +1329,7 @@ knowledge/inbox/
 - 日常聊天按第一人称直播接弹幕，不主动声明“我是 bot”或“下面用玩机器风格”。
 - 普通问“你是不是 bot/机器人/AI”时嘴硬带过去；只有被明确问授权、本人关系、现实代表性时，才说明这是群里的风格 bot，不是现实主播本人。
 - 口癖不是固定模板。`不是哥们`、`可以的`、`先别急`、`这波有说法` 可以用，但不能连续机械复读。
-- 每次回复都会优先检索知识库里的“直播语态、非公式化口癖、选手/队伍倾向、场景模板”，再把当前消息发给模型。
+- 每次回复都会优先检索知识库里的“低攻击活人感、语录纠错、直播语态、选手/队伍倾向、场景模板”，再把当前消息发给模型。
 - 普通闲聊短，CS2/赛事/选手话题才展开；攻击性默认 `low`，嘴硬但不追着人咬。
 - 括号舞台说明会被后处理清掉，例如“（直播口吻）”“【玩机器风格】”这类不会发到群里。
 
@@ -1365,7 +1367,7 @@ knowledge/inbox/
 - @/回复/命令强触发永远入队，不受每分钟次数上限、普通冷却和普通队列上限影响。
 - 强触发在全局 AI 闸门中优先于普通主动接话；多个强触发之间保持到达顺序。
 - 普通主动接话在同群队列满时跳过，避免长期运行刷屏和堆积。
-- 关键词/知识话题普通消息会确定性触发；“这把/这局/经济/道具/补枪/残局/回防”等 CS 软讨论会按 `related_reply_probability` 抽样；剩余普通消息才按 `trigger_probability` 抽样。
+- 关键词/知识话题普通消息会按 `related_reply_probability` 抽样；“这把/这局/经济/道具/补枪/残局/回防”等 CS 软讨论也按该概率抽样；剩余普通消息才按 `trigger_probability` 抽样。
 - 低信息普通消息不会主动接话：纯数字、单个“6”、短“666/哈哈/草”、纯标点/表情会被过滤。
 - 强触发排队超过 60 秒跳过 TTS。
 - 强触发排队超过 120 秒跳过搜索/识图。
@@ -1413,8 +1415,8 @@ knowledge/inbox/
     "tts_probability": 0.10,
     "tts_max_chars": 120,
     "tts_cache_hours": 24,
-    "trigger_probability": 0.18,
-    "related_reply_probability": 0.9,
+    "trigger_probability": 0.08,
+    "related_reply_probability": 0.65,
     "aggression_level": "low",
     "passive_random_min_chars": 4,
     "passive_random_allow_numeric": false,
@@ -1883,8 +1885,8 @@ pm2 logs wanjier --lines 80
 {
   "ai": {
     "temperature": 0.92,
-    "trigger_probability": 0.18,
-    "related_reply_probability": 0.9,
+    "trigger_probability": 0.08,
+    "related_reply_probability": 0.65,
     "ai_reply_cache_seconds": 45,
     "enable_knowledge": true,
     "knowledge_force_style": true,

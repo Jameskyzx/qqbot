@@ -55,12 +55,12 @@ async function withPreservedFile(filepath, fn) {
 
 async function testConfig() {
   const config = readConfig();
-  assert.strictEqual(config.ai.trigger_probability, 0.18);
+  assert.strictEqual(config.ai.trigger_probability, 0.08);
   assert.strictEqual(config.ai.passive_random_min_chars, 4);
   assert.strictEqual(config.ai.passive_random_allow_numeric, false);
   assert.strictEqual(config.ai.knowledge_max_chars, 2600);
   assert.strictEqual(config.ai.knowledge_force_style, true);
-  assert.strictEqual(config.ai.related_reply_probability, 0.9);
+  assert.strictEqual(config.ai.related_reply_probability, 0.65);
   assert.strictEqual(config.ai.aggression_level, 'low');
   assert.strictEqual(config.ai.poke_reply_probability, 1);
   assert.strictEqual(config.ai.ai_global_concurrency, 3);
@@ -924,6 +924,7 @@ async function testKnowledgeInjectionAndHumanizedPostprocess() {
 async function testPassiveTriggerFiltering() {
   const config = makeConfigForHandler();
   config.ai.trigger_probability = 1;
+  config.ai.related_reply_probability = 1;
   config.ai.passive_random_min_chars = 4;
   config.ai.passive_random_allow_numeric = false;
   config.ai.enable_knowledge = false;
@@ -962,7 +963,6 @@ async function testPassiveTriggerFiltering() {
       'keyword ordinary messages should trigger AI without @',
     );
 
-    config.ai.related_reply_probability = 1;
     handler.handleEvent(makePlainEvent(403, 43, '这把经济怎么又崩了，回防一点道具没有'));
     await waitFor(() => sent.length === 2, 'soft CS discussion passive reply');
     assert.strictEqual(
@@ -1066,6 +1066,9 @@ async function testRepeaterAndPoke() {
   await waitFor(() => sent.length === 1, 'poke reply');
   assert.strictEqual(sent[0].groupId, 6657);
   assert.strictEqual(sent[0].message[0]?.type, 'at', 'poke reply should at the poker when possible');
+  const pokeText = firstText(sent[0].message) || '';
+  assert.ok(pokeText.length > 0 && pokeText.length <= 40, 'poke reply should be a short live-style line');
+  assert.ok(!/模板|核验|机器人|bot|不是本人/.test(pokeText), 'poke reply should not leak knowledge metadata');
 
   const handler = new MessageHandler(bot);
   handler.use(repeaterPlugin);
@@ -1123,7 +1126,8 @@ async function testFunCsPlayer() {
   assert.strictEqual(sent[0].message[0]?.type, 'at', 'csplayer should at the drawer');
   const text = sent[0].message.find((seg) => seg.type === 'text')?.data.text || '';
   assert.ok(text.includes('今日CS选手'), 'csplayer reply should include title');
-  assert.ok(text.includes('昵称：'), 'csplayer reply should include nick label');
+  assert.ok(text.includes('今天打法：'), 'csplayer reply should include playstyle line');
+  assert.ok(text.includes('别急点：'), 'csplayer reply should include avoid line');
   assert.ok(text.includes('签位：'), 'csplayer reply should include score label');
 
   handler.handleEvent(makePlainEvent(602, 62, '今天抽个CS选手'));

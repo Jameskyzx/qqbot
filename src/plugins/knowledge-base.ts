@@ -409,13 +409,15 @@ function scoreSection(section: KnowledgeSection, text: string): number {
   }
   const title = normalizeText(section.title);
   if (normalized.includes(title)) score += 8;
-  if (/语录|短句|经典|quote/i.test(text) && /语录|短句|口癖|长句/.test(section.title)) score += 10;
+  if (/语录|短句|经典|quote/i.test(text) && /语录|短句|短语|锚点|口癖|长句|戳一戳/.test(section.title)) score += 10;
   if (/切片|名场面|直播|礼物/.test(text) && /切片|名场面|直播|礼物/.test(section.title)) score += 8;
   if (/身份|是谁|玩机器/.test(text) && /身份/.test(section.title)) score += 6;
   if (/player|选手|niko|monesy|zywoo|s1mple|donk|ropz/i.test(text) && /选手|人物/.test(section.title)) score += 8;
   if (/team|队伍|navi|g2|vitality|spirit|faze|mouz/i.test(text) && /队伍/.test(section.title)) score += 8;
   if (/cs2|csgo|major|比赛|赛事/i.test(text) && /CS2|赛事|解说/.test(section.title)) score += 6;
-  if (/知识库强制注入|回复铁律|真人化|非公式化|直播语态|口癖调度|反应强度/.test(text) && /回复铁律|直播语态|真人化|非公式化|口癖|反应强度|拟态执行|知识命中优先级/.test(section.title)) score += 12;
+  if (/知识库强制注入|回复铁律|真人化|非公式化|直播语态|口癖调度|反应强度|活人感|低攻击/.test(text) && /回复铁律|直播语态|真人化|非公式化|口癖|反应强度|拟态执行|知识命中优先级|低攻击|活人感/.test(section.title)) score += 16;
+  if (/每日|今日|抽|签位|csplayer|csteam|csmap|csweapon|csrole|csloadout/i.test(text) && /每日 CS|抽签功能|每日CS/.test(section.title)) score += 12;
+  if (/戳一戳|poke|让人不禁|黄河凌汛|太行山积雪/.test(text) && /戳一戳|短语锚点|公开索引/.test(section.title)) score += 12;
   if (/来源|索引/.test(section.title)) score -= 8;
   if (section.title === '知识库') score -= 6;
   return score;
@@ -638,13 +640,13 @@ export function selectKnowledge(text: string, maxChars: number = 1800): string {
 }
 
 export function selectStyleKnowledge(maxChars: number = 1200): string {
-  const query = '知识库强制注入 回复铁律 直播语态 真人化 非公式化 口癖调度 反应强度 知识命中优先级';
+  const query = '知识库强制注入 回复铁律 直播语态 真人化 非公式化 低攻击 活人感 语录纠错 口癖调度 反应强度 知识命中优先级';
   const selected = selectKnowledge(query, maxChars);
   if (selected) return selected;
 
   loadKnowledge();
   const fallback = cachedSections
-    .filter((section) => /回复铁律|直播语态|真人化|非公式化|口癖|反应强度|拟态执行|知识命中优先级/.test(section.title))
+    .filter((section) => /回复铁律|直播语态|真人化|非公式化|低攻击|活人感|语录纠错|口癖|反应强度|拟态执行|知识命中优先级/.test(section.title))
     .slice(0, 4)
     .map((section) => `【${section.title}】\n${section.content}`)
     .join('\n\n')
@@ -656,7 +658,7 @@ export function selectStyleKnowledge(maxChars: number = 1200): string {
 
 export function getRandomKnowledgeLine(kind: 'quote' | 'gift' | 'player' | 'team' | 'style', query: string = ''): string {
   const sectionMap: Record<typeof kind, RegExp> = {
-    quote: /语录|短句|短语|锚点|口癖|长句/,
+    quote: /公开索引|已核验短语锚点|短语锚点|戳一戳短句池/,
     gift: /礼物感谢拟态模板|礼物感谢话术/,
     player: /选手|人物/,
     team: /队伍/,
@@ -668,7 +670,17 @@ export function getRandomKnowledgeLine(kind: 'quote' | 'gift' | 'player' | 'team
     .flatMap((section) => section.content.split(/\r?\n/))
     .filter((line) => /^[-*]\s+/.test(line.trim()))
     .map((line) => line.replace(/^[-*]\s*/, '').trim())
-    .filter((line) => line.length >= 2 && !line.startsWith('#'));
+    .filter((line) => {
+      if (line.length < 2) return false;
+      if (line.startsWith('#') && !line.startsWith('#查询')) return false;
+      if (/^(知识来源类型|置信度|核验状态|内容类型|自动写入资格|证据链接|来源|来源类型|使用规则)[：:]/.test(line)) return false;
+      if (kind === 'quote') {
+        if (line.length > 64) return false;
+        if (/模板|核验|候选|规则|命令|配置|README|bot|机器人|不是本人|不代表|不能声称|以下|优先级|适合|来源|边界|摘要|未提供|不主动|不等于|当作|使用/.test(line)) return false;
+      }
+      if (kind === 'style' && line.length > 90) return false;
+      return true;
+    });
   const filtered = query
     ? lines.filter((line) => normalizeText(line).includes(normalizeText(query)))
     : lines;

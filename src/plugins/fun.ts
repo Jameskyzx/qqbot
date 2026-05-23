@@ -8,8 +8,8 @@ function randomPick(items: string[]): string {
 
 function styleLine(): string {
   return getRandomKnowledgeLine('style') || randomPick([
-    '不是哥们 这波有说法',
-    '可以的 有点东西',
+    '这波有说法',
+    '可以 有点东西',
     '我晕了 这也能开出来',
     '先别急 看结果',
   ]);
@@ -58,7 +58,7 @@ const csPlayers: CSPlayer[] = [
   { nick: 'magixx', name: 'Boris Vorobyev', team: 'Team Spirit', role: 'Support / Rifler', note: '今天干脏活，别嫌镜头少，赢回合才是真的。', image: 'https://liquipedia.net/commons/images/e/e3/Magixx_at_BLAST_Bounty_Winter_2026.jpg', imageSource: 'liquipedia' },
   { nick: 'huNter-', name: 'Nemanja Kovac', team: 'G2 语境', role: 'Rifler', note: '老哥位，今天别急着证明自己，关键枪稳住就行。', image: 'https://liquipedia.net/commons/images/5/52/HuNter-_at_Stake_Ranked_Episode_1.jpg', imageSource: 'liquipedia', aliases: ['hunter'] },
   { nick: 'malbsMd', name: 'Mario Samayoa', team: 'G2', role: 'Rifler', note: '这签就是敢打，问题是敢打完得有人补。', image: 'https://liquipedia.net/commons/images/d/d4/MalbsMd_at_BLAST_Open_Spring_2026.jpg', imageSource: 'liquipedia' },
-  { nick: 'Jimpphat', name: 'Jimi Salo', team: 'MOUZ', role: 'Anchor / Rifler', note: '今天当包点门神，少犯病就是大贡献。', image: 'https://liquipedia.net/commons/images/0/0d/Jimpphat_at_PGL_Cluj-Napoca_2025.jpg', imageSource: 'liquipedia' },
+  { nick: 'Jimpphat', name: 'Jimi Salo', team: 'MOUZ', role: 'Anchor / Rifler', note: '今天当包点门神，少乱动就是大贡献。', image: 'https://liquipedia.net/commons/images/0/0d/Jimpphat_at_PGL_Cluj-Napoca_2025.jpg', imageSource: 'liquipedia' },
   { nick: 'siuhy', name: 'Kamil Szkaradek', team: 'MOUZ', role: 'IGL', note: '指挥签，别急着拼枪，先把节奏拿回来。', image: 'https://liquipedia.net/commons/images/d/df/Siuhy_at_BLAST_Bounty_Winter_2026.jpg', imageSource: 'liquipedia' },
   { nick: 'm0NESY', name: 'Ilya Osipov', team: 'G2 / Falcons 语境', role: 'AWPer', note: '少年狙签，能操作，但今天别把每回合都打成残局教学。', image: 'https://liquipedia.net/commons/images/e/e3/M0NESY_at_BLAST_Rivals_Spring_2025.jpg', imageSource: 'liquipedia', aliases: ['小孩'] },
   { nick: 'NiKo', name: 'Nikola Kovac', team: 'G2 / Falcons 语境', role: 'Rifler', note: '爆头线拉满，但别第一时间上头，别让好枪法救坏决策。', image: 'https://liquipedia.net/commons/images/a/a1/NiKo_at_Copenhagen_Major_2024_EU_RMR.jpg', imageSource: 'liquipedia' },
@@ -104,7 +104,7 @@ const csTeams: DailyCard[] = [
     scoreLabel: '签位强度',
     advice: '今天思路就是稳住默认，等核心位把第一枪打开。',
     avoid: '别一赢手枪局就开香槟，强队最怕自己先松。',
-    line: '不是哥们，这队伍签抽出来，今天至少不能怂。',
+    line: '这队伍签抽出来，今天至少不能怂。',
     image: 'https://liquipedia.net/commons/images/f/f3/Team_Vitality_2023_allmode.png',
   },
   {
@@ -146,7 +146,7 @@ const csTeams: DailyCard[] = [
     name: 'MOUZ',
     subtitle: '年轻纪律 / 包点和补枪细节',
     scoreLabel: '签位强度',
-    advice: '少犯病，多补枪，打出团队交换就很舒服。',
+    advice: '少乱来，多补枪，打出团队交换就很舒服。',
     avoid: '别关键局突然没人敢要信息。',
     line: 'MOUZ签就是别花，稳着稳着对面就急了。',
     image: 'https://liquipedia.net/commons/images/1/11/MOUZ_2021_allmode.png',
@@ -236,7 +236,7 @@ const csTactics: DailyCard[] = [
 const csClutches: DailyCard[] = [
   { key: 'one-v-one', title: '今日CS残局', name: '1v1残局', subtitle: '信息差 / 假动作 / 心态', scoreLabel: '残局指数', advice: '别急着给脚步，先判断包点和时间，再做选择。', avoid: '别明明有时间，硬急成无信息单挑。', line: '1v1签就是心理战，谁先急谁先交学费。' },
   { key: 'save', title: '今日CS残局', name: '理性保枪', subtitle: '经济纪律 / 下一回合还能做人', scoreLabel: '残局指数', advice: '没钳没道具没位置，该保就保，别为了面子送枪。', avoid: '别保枪保到被抓，经济和面子一起没。', line: '保枪签不丢人，丢人的是保都保不住。' },
-  { key: 'retake', title: '今日CS残局', name: '多人回防', subtitle: '切空间 / 道具反清 / 不要一窝蜂', scoreLabel: '残局指数', advice: '先等队友，再用烟闪切点，别三个人从同一个门挤进去。', avoid: '别人数优势打成葫芦娃救爷爷。', line: '回防签看纪律，不是看谁嗓门最大。' },
+  { key: 'retake', title: '今日CS残局', name: '多人回防', subtitle: '切空间 / 道具反清 / 不要一窝蜂', scoreLabel: '残局指数', advice: '先等队友，再用烟闪切点，别三个人从同一个门挤进去。', avoid: '别人数优势打成排队单挑。', line: '回防签看纪律，不是看谁嗓门最大。' },
   { key: 'postplant', title: '今日CS残局', name: '下包后防守', subtitle: '交叉枪线 / 时间压力', scoreLabel: '残局指数', advice: '站位拉开，别全看一个方向，听拆包再给压力。', avoid: '别包都下了还主动送出去帮对面提速。', line: '下包后签就是别急，时间是你队友。' },
   { key: 'eco-clutch', title: '今日CS残局', name: 'ECO偷回合', subtitle: '短枪和道具 / 抓对面大意', scoreLabel: '残局指数', advice: '靠近点、叠人、骗道具，别和长枪正常对枪。', avoid: '别拿小枪打远点还说差一点。', line: 'ECO签最会骗人，但真骗到就是血赚。' },
   { key: 'awp-save', title: '今日CS残局', name: '大狙残局', subtitle: '高价值武器 / 站位选择', scoreLabel: '残局指数', advice: '有机会就打一枪换位，没机会就把狙带走。', avoid: '别为了镜头把全队最贵的枪送了。', line: '狙残局签挺帅，但帅之前先别空。' },
@@ -272,7 +272,58 @@ function scoreLine(score: number): string {
   if (score >= 80) return '签位：很能打';
   if (score >= 60) return '签位：有说法';
   if (score >= 35) return '签位：先稳一手';
-  return '签位：今天别硬拉';
+  return '签位：今天收着点';
+}
+
+function scoreAdvice(score: number): string {
+  if (score >= 90) return '今天可以主动要空间，但别赢一回合就开香槟。';
+  if (score >= 75) return '节奏可以稍微提一点，关键是补枪别掉。';
+  if (score >= 55) return '正常打就行，别急着证明自己。';
+  if (score >= 35) return '先把默认和信息打明白，别上来就赌。';
+  return '今天少硬拉，多等队友，先把回合打完整。';
+}
+
+function sourceName(source: CSPlayer['imageSource']): string {
+  return source === 'liquipedia' ? 'Liquipedia' : 'Wikimedia';
+}
+
+function playerRoleAdvice(player: CSPlayer, score?: number): { style: string; avoid: string } {
+  const role = player.role.toLowerCase();
+  let style = '先把默认和信息打清楚，别急着演集锦。';
+  let avoid = '别为了节目效果把回合送出去。';
+
+  if (/awper|狙/.test(role)) {
+    style = '先架关键枪，拿到首杀就换位置，别恋战。';
+    avoid = '别空一枪还站原地等审判。';
+  } else if (/igl|指挥|coach/.test(role)) {
+    style = '先把队友节奏摆明白，暂停后第一波要有东西。';
+    avoid = '别五个人各玩各的还说是默认。';
+  } else if (/entry|突破/.test(role)) {
+    style = '第一身位可以主动要空间，但补枪距离一定要拉近。';
+    avoid = '别死了没信息，也没人能补。';
+  } else if (/lurker|自由/.test(role)) {
+    style = '慢一点等 timing，侧翼到位再出手。';
+    avoid = '别绕到最后队友全没了。';
+  } else if (/support|辅助/.test(role)) {
+    style = '道具给明白，补位及时，脏活干干净净。';
+    avoid = '别闪队友比闪对面还准。';
+  } else if (/anchor|锚/.test(role)) {
+    style = '包点先站住，拖时间就是价值，别急着前压。';
+    avoid = '别听到脚步就把道具全交完。';
+  } else if (/rifler|步枪|rifle/.test(role)) {
+    style = '准星放稳，第一波交换别掉，关键枪别急。';
+    avoid = '别让好枪法去救坏决策。';
+  }
+
+  if (typeof score === 'number') {
+    if (score >= 85) style = `${style} 今天签位高，可以稍微主动一点。`;
+    else if (score <= 35) style = `${style} 今天先收着打，别急着证明自己。`;
+  }
+
+  return {
+    style: player.style || style,
+    avoid: player.avoid || avoid,
+  };
 }
 
 function normalizeDrawText(text: string): string {
@@ -318,17 +369,16 @@ function isDailyCardRequest(command: string | null, rawText: string, kind: Daily
 
 function buildCsPlayerMessage(userId: number, player: CSPlayer, score?: number): MessageSegment[] {
   const scoreText = typeof score === 'number' ? `${scoreLine(score)} ${score}/100` : '';
+  const roleAdvice = playerRoleAdvice(player, score);
   const text = [
-    `今日CS选手：${player.nick}`,
-    `昵称：${player.nick}`,
-    `真名：${player.name}`,
-    `队伍语境：${player.team}`,
-    `定位：${player.role}`,
+    `今日CS选手 | ${player.nick}`,
     scoreText,
-    player.style ? `打法：${player.style}` : '',
-    player.avoid ? `别犯：${player.avoid}` : '',
-    `机器锐评：${player.note}`,
-    `图源：${player.imageSource}`,
+    `${player.team} / ${player.role}`,
+    `真名：${player.name}`,
+    `今天打法：${roleAdvice.style}`,
+    `别急点：${roleAdvice.avoid}`,
+    `机器短评：${player.note}`,
+    `图源：${sourceName(player.imageSource)}`,
   ].filter(Boolean).join('\n');
   const message: MessageSegment[] = [
     { type: 'at', data: { qq: String(userId) } },
@@ -345,12 +395,12 @@ function buildPrivateCsPlayerMessage(player: CSPlayer, score?: number): MessageS
 
 function buildDailyCardMessage(userId: number, card: DailyCard, score: number, isPrivate: boolean): MessageSegment[] {
   const text = [
-    `${card.title}：${card.name}`,
+    `${card.title} | ${card.name}`,
     card.subtitle,
     `${card.scoreLabel}：${score}/100`,
-    `打法：${card.advice}`,
-    `别犯：${card.avoid}`,
-    `机器锐评：${card.line}`,
+    `今天打法：${card.advice}`,
+    `别急点：${card.avoid}`,
+    `机器短评：${card.line}`,
   ].join('\n');
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
@@ -372,9 +422,9 @@ function buildLoadoutMessage(userId: number, scopeId: number, isPrivate: boolean
     `武器：${weapon.name}`,
     `定位：${role.name}`,
     `综合节目效果：${score}/100`,
-    `打法：${role.advice} ${weapon.advice}`,
-    `别犯：${map.avoid}`,
-    `机器锐评：${score >= 80 ? '这套签有点东西，今天可以稍微硬一点。' : score >= 45 ? '能打，但别把自己当主角。' : '不是哥们，这套先稳住，别上来就送大的。'}`,
+    `今天打法：${role.advice} ${weapon.advice}`,
+    `别急点：${map.avoid}`,
+    `机器短评：${score >= 80 ? '这套签有点东西，今天可以稍微主动一点。' : score >= 45 ? '能打，但别把自己当主角。' : '这套先稳住，别上来就送大的。'}`,
   ].join('\n');
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
@@ -420,7 +470,7 @@ export const funPlugin: Plugin = {
         '小吉 - 小有收获，别贪别送',
         '末吉 - 还行，但别硬起',
         '凶 - 今天宜默认控图，别第一身位白给',
-        '大凶 - 不是哥们，今天真别硬拉',
+        '大凶 - 今天真得收着点，别硬拉',
       ];
       const weights = [5, 15, 25, 25, 15, 10, 5];
       const total = weights.reduce((a, b) => a + b, 0);
@@ -472,7 +522,7 @@ export const funPlugin: Plugin = {
       else if (rp >= 50) comment = '中规中矩，默认控图等机会。';
       else if (rp >= 30) comment = '一般，少嘴硬多补枪。';
       else if (rp >= 10) comment = '有点危险，别第一时间白给。';
-      else comment = '不是哥们，今天先别硬起，保枪吧。';
+      else comment = '今天先别硬起，保枪吧。';
 
       ctx.replyAt(`今日人品值: ${rp}/100\n${comment}`);
       return true;

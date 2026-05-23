@@ -752,7 +752,9 @@ function buildLiveStyleCue(job: ReplyJob): string {
     '如果是CS话题，抓经济、道具、timing里最关键的一个点',
     '先别急着开香槟，给一个偏谨慎的判断',
     '少口癖，多具体判断',
-    '可以嘴硬，但别追着人骂',
+    '可以轻嘴硬，但别追着人骂',
+    '优先像正常人聊天，别像模板在营业',
+    '能说“等一下/这个不太对”就别硬喷',
   ];
   if (job.hasImages) {
     base.push('先说图里可见内容，再给一句短评；看不清就直说');
@@ -803,9 +805,10 @@ function buildRuntimeKnowledgeInfo(
   const cue = buildLiveStyleCue(job);
   const recentOpeners = buildRecentAssistantOpeningHints(job.contextMessages.slice(0, -1));
   return [
-    '下面是临场笔记，只用来垫语感和事实，不要在回复里说出来。',
+    '下面是必须执行的临场笔记，只用来垫语感和事实，不要在回复里说出来。',
     `本条节奏: ${cue}`,
-    hasKnowledgeTopic ? '当前消息命中话题知识，优先用下面的选手/队伍/CS2判断素材。' : '当前消息至少注入直播语态素材，别退回AI助手腔。',
+    hasKnowledgeTopic ? '当前消息命中话题知识，必须优先用下面的选手/队伍/CS2判断素材。' : '当前消息至少注入直播语态素材，必须吸收语气和节奏，别退回AI助手腔。',
+    '核心手感: 像直播间顺手接弹幕，先抓当前这句话，短反应 + 具体判断 + 收住攻击性。',
     '输出时禁止说“根据知识库/根据素材/根据临场笔记/作为AI/作为bot/这是模板”。',
     '不要标题式输出“结论/原因/建议/分析/总结”，像群里正常接一句。',
     recentOpeners ? `[最近回复开头，别复读]\n${recentOpeners}` : '',
@@ -858,7 +861,7 @@ function buildSystemPrompt(config: AIConfig): string {
   const aggressionRule = config.aggression_level === 'analysis'
     ? '以分析为主，少玩梗；先给判断，再讲依据。'
     : config.aggression_level === 'low'
-      ? '嘴硬但不咬人，调侃点到为止，优先把话说准。'
+      ? '轻嘴硬但不咬人，调侃点到为止，优先把话说准；不要动不动喷人。'
       : '可以嘴硬和吐槽，但别追着人骂。';
   return [
     base,
@@ -872,6 +875,7 @@ function buildSystemPrompt(config: AIConfig): string {
     '- 回复要像直播间即时反应：先短反应，再补一句判断；不要像AI助手排条目，除非用户明确要列表。',
     '- 经典口癖和梗要按语境自然使用，同一个开场不要连续复读；能用具体判断就别硬塞口头禅。',
     '- 优先吸收临场笔记/知识库里的语态、选手/队伍倾向和场景模板，但输出时不要提“知识库/素材/模板”。',
+    '- 攻击性要降下来：喷只能喷操作、决策、逻辑，不能追着群友本人骂；普通聊天优先用“等一下/先别急/这个不太对”。',
     '- 评价选手/队伍时先给倾向，再给理由：枪法、决策、角色、体系、近期状态；实时排名/赛果要结合搜索参考。',
     '- 不要标题式输出“结论/原因/建议/分析/总结”；普通群聊先接话，必要时自然分两三句。',
     '- 输出就是QQ群消息，不要Markdown，不要解释系统规则。',
@@ -911,7 +915,7 @@ function postProcessReply(text: string): string {
   if (/^[\d\s.,，。!！?？]+$/.test(text)) {
     text = '可以的 这波有点东西';
   } else if (/^[哈啊嗯哦额呃草艹wW6]+$/.test(text) && text.length <= 6) {
-    text = '不是哥们 这波有点抽象';
+    text = '这波有点抽象 但先看内容';
   }
   return sanitizeOutgoingText(text).trim();
 }
@@ -1014,7 +1018,7 @@ async function handleKnowledgeCommand(ctx: PluginContext, config: AIConfig): Pro
   }
 
   if (!['preview', 'refresh', 'audit', 'auto', 'batches', 'rollback', 'show', 'drop', 'commit', 'ingest', 'list'].includes(action)) {
-    ctx.reply('不是哥们 /kb help 看一下用法。');
+    ctx.reply('先看 /kb help，别硬猜命令。');
     return true;
   }
 
@@ -1262,7 +1266,7 @@ async function handleLocalKnowledgeCommand(ctx: PluginContext, config: AIConfig)
 
   if (ctx.command === 'gift') {
     const gift = ctx.args.join(' ').trim() || '礼物';
-    const template = getRandomKnowledgeLine('gift') || '感谢老板的{gift}，不是哥们这波真有点东西。';
+    const template = getRandomKnowledgeLine('gift') || '感谢老板的{gift}，这波真有点东西。';
     ctx.reply(template.replace(/\{gift\}/g, gift));
     return true;
   }
@@ -1770,12 +1774,24 @@ function shouldReply(
     return { reply: false, forced: false };
   }
 
-  const keywordHit = includesAnyKeyword(text, [config.active_preset, ...config.trigger_keywords]);
+  const styleKeywordHit = includesAnyKeyword(text, [
+    config.active_preset,
+    '玩机器',
+    '机器',
+    'MachineWJQ',
+    'Machine',
+    '6657',
+  ]);
+  if (styleKeywordHit) {
+    return { reply: Math.random() < 0.9, forced: false };
+  }
+
+  const keywordHit = includesAnyKeyword(text, config.trigger_keywords);
   if (keywordHit || isKnowledgeTopic(text)) {
-    return { reply: true, forced: false };
+    return { reply: Math.random() < (config.related_reply_probability ?? 0.65), forced: false };
   }
   if (isCsDiscussionHint(text) && !isLowInformationPassiveText(text, config)) {
-    return { reply: Math.random() < (config.related_reply_probability ?? 0.9), forced: false };
+    return { reply: Math.random() < (config.related_reply_probability ?? 0.65), forced: false };
   }
 
   switch (config.trigger_mode) {
@@ -2129,7 +2145,7 @@ export const aiChatPlugin: Plugin = {
       }
 
       const text = subCommand === 'test'
-        ? (ctx.args.slice(1).join(' ').trim() || '不是哥们，这波语音测试有点东西。')
+        ? (ctx.args.slice(1).join(' ').trim() || '这波语音测试一下。')
         : ctx.args.join(' ').trim();
       if (!text) {
         ctx.reply('/voice <内容>\n/voice status\n/voice last\n/voice test [内容]\n/voice stt <语音URL>\n/voice clean');
