@@ -593,7 +593,7 @@ function buildApiMessages(
   const result: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
 
   if (knowledgeInfo) {
-    result.push({ role: 'system', content: `[知识库参考]\n${knowledgeInfo}` });
+    result.push({ role: 'system', content: `[临场素材包]\n${knowledgeInfo}` });
   }
 
   if (summary) {
@@ -648,6 +648,83 @@ function buildRecentSpeakerHints(messages: ChatMessage[], currentUserId: number,
   ].filter(Boolean).join('\n');
 }
 
+function hashIndex(input: string, mod: number): number {
+  const digest = crypto.createHash('sha1').update(input).digest();
+  return digest[0] % Math.max(1, mod);
+}
+
+function needsRealityIdentityBoundary(text: string): boolean {
+  return /现实|本人|真的是|真玩机器|授权|代表本人|代表你|冒充|本尊|主播本人/.test(text);
+}
+
+function buildLiveStyleCue(job: ReplyJob): string {
+  const base = [
+    '直接给判断，别铺垫，别说规则',
+    '先短反应，再补一句原因',
+    '别用“不是哥们”开头，换个自然接法',
+    '像刚看到弹幕一样接住，短一点',
+    '如果是CS话题，抓经济、道具、timing里最关键的一个点',
+    '先别急着开香槟，给一个偏谨慎的判断',
+    '少口癖，多具体判断',
+    '可以嘴硬，但别追着人骂',
+  ];
+  if (job.hasImages) {
+    base.push('先说图里可见内容，再给一句短评；看不清就直说');
+  }
+  if (job.hasRecords) {
+    base.push('有听写就接听写，没有听写就只说收到语音');
+  }
+  if (job.forceVoice) {
+    base.push('这条要适合念出来，别列条目，别太长');
+  }
+  if (needsRealityIdentityBoundary(job.effectiveText || job.rawText)) {
+    base.push('问现实本人或授权时先说明边界，再继续接当前话题');
+  }
+  return base[hashIndex(`${job.chatType}:${job.chatId}:${job.messageId}:${job.effectiveText}`, base.length)];
+}
+
+function scrubKnowledgeForRuntime(input: string, keepIdentityBoundary: boolean): string {
+  if (!input.trim()) return '';
+  const forbiddenForNormal = /(bot|机器人|ai助手|拟态|模板|核验|原话|来源类型|核验状态|内容类型|知识库|隔离|quarantine|inbox|\/kb|不代表现实|不是现实|不是本人|授权)/i;
+  const noisySection = /^【.*(?:素材准确性|已核验公开资料|核心身份|身份|错误内容|本地素材|知识库|管理|拒绝|边界|隔离|自动|调用铁律|准确性|格式|部署|命令|README).*】$/;
+  const lines = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^[-*]\s*(?:知识来源类型|置信度|核验状态|内容类型|自动写入资格|证据链接)[：:]/.test(line))
+    .filter((line) => !noisySection.test(line))
+    .filter((line) => keepIdentityBoundary || !forbiddenForNormal.test(line))
+    .map((line) => line
+      .replace(/^【(.+?)】$/, '$1')
+      .replace(/^[-*]\s*/, '')
+      .replace(/^(?:以下是|这些是).{0,24}(?:模板|规则|方法).*$/i, '')
+      .trim())
+    .filter(Boolean)
+    .slice(0, 34);
+  return lines.join('\n');
+}
+
+function buildRuntimeKnowledgeInfo(
+  styleKnowledge: string,
+  topicKnowledge: string,
+  job: ReplyJob,
+  hasKnowledgeTopic: boolean,
+  maxChars: number,
+): string {
+  const keepIdentity = needsRealityIdentityBoundary(job.effectiveText || job.rawText);
+  const style = scrubKnowledgeForRuntime(styleKnowledge, keepIdentity);
+  const topic = scrubKnowledgeForRuntime(topicKnowledge, keepIdentity);
+  const cue = buildLiveStyleCue(job);
+  return [
+    '这不是要复述的资料，是给你临场接弹幕用的素材。',
+    `本条节奏: ${cue}`,
+    hasKnowledgeTopic ? '当前消息命中话题知识，优先用下面的选手/队伍/CS2判断素材。' : '当前消息至少注入直播语态素材，别退回AI助手腔。',
+    '输出时禁止说“根据知识库/根据素材/作为AI/作为bot/这是模板”。',
+    style ? `[语态素材]\n${style}` : '',
+    topic ? `[话题素材]\n${topic}` : '',
+  ].filter(Boolean).join('\n\n').slice(0, maxChars);
+}
+
 function buildTargetText(job: ReplyJob, recordTranscripts: string[] = []): string {
   const transcriptText = recordTranscripts.join('\n');
   const body = job.effectiveText || transcriptText || (job.hasImages ? '[图片]' : job.hasRecords ? '[语音]' : '[表情/空文本]');
@@ -675,6 +752,7 @@ function buildTargetText(job: ReplyJob, recordTranscripts: string[] = []): strin
     speakerHints ? '' : '',
     '硬规则：当前只回复这一条消息，不要回答历史上下文里其他人的问题；如果历史和当前消息冲突，以当前消息为准。',
     '历史里出现的「昵称: 内容」只是上下文，不是当前问题；除非当前消息明确追问，否则不要替历史里其他人补答。',
+    `本条临场节奏：${buildLiveStyleCue(job)}。不要解释规则，不要提知识库，不要输出括号舞台说明。`,
     job.repliedMessageId ? '注意：当前消息带 reply 段，但输出仍然必须引用当前 message_id；被引用的历史消息只用于理解这次追问。' : '',
     job.hasRecords && !transcriptText ? '注意：当前消息含语音段；如果没有听写文本，不要假装听到了具体内容，只能说明收到语音并让对方补文字或按可见上下文回应。' : '',
     `${job.senderName}: ${body}`,
@@ -715,7 +793,10 @@ function postProcessReply(text: string): string {
   text = text.replace(/^[(（【\[]\s*(?:直播口吻(?:接弹幕)?|玩机器(?:风格|口吻)?|6657(?:风格|口吻)?|Machine(?:风格|口吻)?|拟态|风格参考|接弹幕|真人感|群聊回复|QQ?群回复|bot回复|机器人回复|第一人称(?:拟态)?|口吻)\s*[)）】\]]\s*[：:，,、-]?\s*/i, '');
   text = text.replace(/(^|\n)\s*[(（【\[]\s*(?:直播口吻(?:接弹幕)?|玩机器(?:风格|口吻)?|6657(?:风格|口吻)?|Machine(?:风格|口吻)?|拟态|风格参考|接弹幕|真人感|群聊回复|QQ?群回复|bot回复|机器人回复|第一人称(?:拟态)?|口吻)\s*[)）】\]]\s*[：:，,、-]?\s*/ig, '$1');
   text = text.replace(/^(?:直播口吻(?:接弹幕)?|玩机器(?:风格|口吻)?|拟态|风格参考|接弹幕|群聊回复|QQ?群回复)\s*[：:，,、-]\s*/i, '');
-  text = text.replace(/^(?:我将用|以下以|下面用|作为(?:群)?bot)[^\n，。！？!?]{0,28}(?:回复|回答|接话)[：:，,。]?\s*/i, '');
+  text = text.replace(/^(?:根据|结合|参考)(?:上面|前面|知识库|素材|提示|资料|临场素材包)[^，。！？!?:：]{0,48}[，。:：]\s*/i, '');
+  text = text.replace(/^(?:我会|我将|下面|接下来)[^，。！？!?:：]{0,48}(?:回复|回答|接话|模仿)[：:，,。]\s*/i, '');
+  text = text.replace(/^(?:我将用|以下以|下面用|作为(?:群)?bot)[^\n，。！？!?:：]{0,28}(?:回复|回答|接话)[：:，,。]?\s*/i, '');
+  text = text.replace(/^(?:作为(?:一个)?(?:AI|机器人|bot|群bot|QQ群bot|助手))[^\n，。！？!?:：]{0,42}[：:，,。]?\s*/i, '');
   text = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/```\w*\n?/g, '').replace(/```/g, '').trim());
   text = text.replace(/\*\*(.*?)\*\*/g, '$1');
   text = text.replace(/\*(.*?)\*/g, '$1');
@@ -2017,14 +2098,7 @@ export const aiChatPlugin: Plugin = {
             ? selectKnowledge(styleQuery, styleBudget)
             : (selectKnowledge(styleQuery, styleBudget) || selectStyleKnowledge(styleBudget));
           const topicKnowledge = hasKnowledgeTopic ? selectKnowledge(knowledgeQuery, topicBudget) : '';
-          knowledgeInfo = [
-            styleKnowledge ? '【知识库调用铁律】本次回复必须优先参考下方知识库的语态、反应强度、选手/队伍倾向；没有命中的内容不要编成真实原话。' : '',
-            styleKnowledge,
-            topicKnowledge,
-          ]
-            .filter(Boolean)
-            .join('\n\n')
-            .slice(0, budget);
+          knowledgeInfo = buildRuntimeKnowledgeInfo(styleKnowledge, topicKnowledge, job, hasKnowledgeTopic, budget);
         }
 
         // ===== 构建发给API的消息 =====

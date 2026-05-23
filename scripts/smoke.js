@@ -840,6 +840,47 @@ async function testOpaqueOneBotImageResolution() {
   }
 }
 
+async function testKnowledgeInjectionAndHumanizedPostprocess() {
+  const config = makeConfigForHandler();
+  config.ai.enable_knowledge = true;
+  config.ai.knowledge_force_style = true;
+  config.ai.knowledge_max_chars = 1800;
+  const sent = [];
+  const capturedMessages = [];
+  const bot = {
+    getConfig: () => config,
+    sendGroupMessage: async (groupId, message, onMessageId) => {
+      sent.push({ groupId, message });
+      if (onMessageId) onMessageId(94_000 + sent.length);
+      return true;
+    },
+    callApiAsync: async () => ({ retcode: 0, data: {} }),
+  };
+  const handler = new MessageHandler(bot);
+  handler.use(aiChat.aiChatPlugin);
+
+  aiChat.__setLLMCallerForTests(async (_config, messages) => {
+    capturedMessages.push(messages);
+    const runtimePack = messages.find((item) => typeof item.content === 'string' && item.content.startsWith('[临场素材包]'));
+    assert.ok(runtimePack, 'AI prompt should always include runtime knowledge/style material when knowledge is enabled');
+    assert.ok(!runtimePack.content.includes('知识库调用铁律'), 'runtime knowledge should not inject rule-label boilerplate');
+    assert.ok(runtimePack.content.includes('输出时禁止说'), 'runtime pack should tell model not to leak template/source wording');
+    return '根据知识库参考，作为AI助手我将用玩机器风格回复：不是哥们 这个回答太规整了';
+  });
+
+  try {
+    handler.handleEvent(makeEvent(904, 94, ' 今天CS2这队伍怎么打'));
+    await waitFor(() => sent.length === 1, 'knowledge injected reply');
+    const text = firstText(sent[0].message);
+    assert.ok(text.includes('不是哥们 这个回答太规整了'), 'reply should keep the useful humanized content');
+    assert.ok(!/根据知识库|作为AI|我将用|玩机器风格回复/.test(text), 'postprocess should strip assistant/template boilerplate');
+  } finally {
+    aiChat.__setLLMCallerForTests();
+    aiChat.shutdownAiChat();
+  }
+  assert.strictEqual(capturedMessages.length, 1);
+}
+
 async function testPassiveTriggerFiltering() {
   const config = makeConfigForHandler();
   config.ai.trigger_probability = 1;
@@ -1148,6 +1189,7 @@ async function main() {
   await testExplicitVoiceReply();
   await testOpaqueOneBotRecordResolution();
   await testOpaqueOneBotImageResolution();
+  await testKnowledgeInjectionAndHumanizedPostprocess();
   await testPassiveTriggerFiltering();
   await testPrivateMessages();
   await testRepeaterAndPoke();

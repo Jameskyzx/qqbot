@@ -157,7 +157,7 @@ pm2 restart wanjier --update-env
     "max_context_messages": 50,
     "context_send_messages": 30,
     "max_tokens": 400,
-    "temperature": 0.85,
+    "temperature": 0.92,
     "trigger_mode": "smart",
     "trigger_probability": 0.12,
     "passive_random_min_chars": 4,
@@ -622,7 +622,7 @@ AI 核心字段：
 | `model` | 按供应商填写 | 文本模型 |
 | `vision_model` | 按供应商填写 | 识图模型 |
 | `max_tokens` | `400` | 群聊回复长度上限 |
-| `temperature` | `0.8-0.9` | 越高越活，但越不稳定 |
+| `temperature` | `0.9-0.95` | 推荐偏活一点，降低公式化；太飘再降回 `0.85` |
 | `api_timeout_ms` | `15000` | 单次模型请求超时 |
 
 `config.example.json` 里的 `api_key` 是占位值。运行时会把包含“在这里填入”“your api”“example”“placeholder”等占位特征的 key 视为未配置，避免无效请求排进队列后白等超时。
@@ -653,7 +653,7 @@ AI 核心字段：
 | `search_negative_cache_seconds` | `60` | 空结果缓存时间 |
 | `search_cache_max_entries` | `1000` | 搜索缓存最大条数，70GB 存储可适当提高 |
 | `search_on_style_query` | `true` | 玩机器/CS2 相关问题也可触发搜索 |
-| `ai_reply_cache_seconds` | `120-300` | 普通主动接话 AI 回复缓存 |
+| `ai_reply_cache_seconds` | `45` | 普通主动接话 AI 回复缓存；强触发不缓存，降低复读感 |
 
 知识库：
 
@@ -1378,7 +1378,7 @@ knowledge/inbox/
     "search_timeout_ms": 1200,
     "api_timeout_ms": 15000,
     "search_cache_max_entries": 1000,
-    "ai_reply_cache_seconds": 180,
+    "ai_reply_cache_seconds": 45,
     "vision_max_images": 2,
     "image_cache_max_mb": 512,
     "image_cache_max_file_mb": 2,
