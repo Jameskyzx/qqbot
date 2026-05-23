@@ -106,6 +106,13 @@ function checkConfig(config, example) {
     }
   }
 
+  const topLevelKeys = new Set(Object.keys(config));
+  const missingTopLevel = Object.keys(example)
+    .filter((key) => key !== 'ai' && !topLevelKeys.has(key));
+  if (missingTopLevel.length > 0) {
+    risk.push(`config.json 顶层字段落后于示例: 缺 ${missingTopLevel.join(', ')}`);
+  }
+
   try {
     const ws = new URL(String(config.ws_url || ''));
     if (!['ws:', 'wss:'].includes(ws.protocol)) hard.push(`ws_url 协议不是 ws/wss: ${config.ws_url}`);
@@ -117,6 +124,12 @@ function checkConfig(config, example) {
   if (!Number(config.bot_qq || process.env.BOT_QQ || 0)) risk.push('bot_qq 未配置；运行时会以 OneBot self_id 为准，但换号排障会更难');
   else ok.push(`bot_qq 已配置: ${config.bot_qq || process.env.BOT_QQ}`);
   if (!Array.isArray(config.admin_qq) || config.admin_qq.length === 0) risk.push('admin_qq 为空，/diag live、/kb refresh 等管理命令不可控');
+
+  const loginInterval = Number(config.login_check_interval_seconds ?? example.login_check_interval_seconds ?? 60);
+  if (!Number.isFinite(loginInterval) || loginInterval < 0) risk.push('login_check_interval_seconds 不合法');
+  else if (loginInterval === 0) risk.push('login_check_interval_seconds=0，QQ登录态异常不会被主动发现');
+  else if (loginInterval < 30) suggest.push('login_check_interval_seconds 低于30秒，可能给NapCat API带来不必要压力');
+  else ok.push(`登录态检查间隔: ${loginInterval}s`);
 
   const apiKey = process.env.WANJIER_API_KEY || process.env.OPENAI_API_KEY || ai.api_key;
   if (hasUsableApiKey(apiKey)) ok.push('API Key 看起来已配置');

@@ -5,6 +5,10 @@ export interface BotConfig {
   /** 配置模板版本，用于部署预检和配置漂移提示 */
   config_version?: number;
   ws_url: string;
+  /** QQ登录态主动检查间隔秒，0为关闭；用于识别NapCat还在但QQ已下线 */
+  login_check_interval_seconds?: number;
+  /** QQ登录态检查的OneBot API超时毫秒 */
+  login_check_api_timeout_ms?: number;
   /** 期望登录的Bot QQ号，仅用于启动展示/部署校验；运行时以OneBot self_id为准 */
   bot_qq?: number;
   bot_name: string;

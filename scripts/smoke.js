@@ -67,6 +67,8 @@ async function withPreservedFile(filepath, fn) {
 async function testConfig() {
   const config = readConfig();
   assert.strictEqual(config.config_version, 20260524);
+  assert.strictEqual(config.login_check_interval_seconds, 60);
+  assert.strictEqual(config.login_check_api_timeout_ms, 5000);
   assert.strictEqual(config.ai.trigger_probability, 0.08);
   assert.strictEqual(config.ai.passive_random_min_chars, 4);
   assert.strictEqual(config.ai.passive_random_allow_numeric, false);
@@ -633,12 +635,63 @@ function makeConfigForHandler() {
   return config;
 }
 
+function makeRuntimeStats(overrides = {}) {
+  return {
+    startedAt: Date.now(),
+    wsUrl: 'ws://127.0.0.1:3001',
+    readyState: 'open',
+    connected: true,
+    connecting: false,
+    manuallyClosed: false,
+    reconnectScheduled: false,
+    reconnectIntervalMs: 1000,
+    pendingApi: 0,
+    lastConnectedAt: Date.now(),
+    lastDisconnectedAt: 0,
+    lastDisconnectCode: 0,
+    lastDisconnectReason: '',
+    lastError: '',
+    lastFrameAt: Date.now(),
+    lastEventAt: Date.now(),
+    lastPingAt: Date.now(),
+    lastPongAt: Date.now(),
+    staleHeartbeatReconnects: 0,
+    totalDisconnects: 0,
+    consecutiveEarlyDisconnects: 0,
+    lastConnectionHint: '',
+    framesReceived: 3,
+    eventsReceived: 2,
+    apiCalls: 1,
+    apiResponses: 1,
+    apiTimeouts: 0,
+    apiFailures: 0,
+    groupSendAttempts: 0,
+    privateSendAttempts: 0,
+    groupSendFailures: 0,
+    privateSendFailures: 0,
+    loginCheckIntervalSeconds: 60,
+    loginCheckInFlight: false,
+    lastLoginCheckAt: Date.now(),
+    lastLoginOkAt: Date.now(),
+    lastLoginOk: true,
+    lastLoginUserId: 3853043835,
+    lastLoginNickname: 'smoke-bot',
+    lastLoginError: '',
+    loginCheckFailures: 0,
+    loginCheckSuccesses: 1,
+    ...overrides,
+  };
+}
+
 async function testAdminMaintenanceCommands() {
   const config = makeConfigForHandler();
   const sent = [];
+  let runtimeStats = makeRuntimeStats();
   const bot = {
     getConfig: () => config,
     updateConfig: (nextConfig) => Object.assign(config, nextConfig),
+    getRuntimeStats: () => runtimeStats,
+    checkLoginNow: async () => runtimeStats,
     sendGroupMessage: async (groupId, message, onMessageId) => {
       sent.push({ groupId, message });
       if (onMessageId) onMessageId(39_000 + sent.length);
@@ -659,13 +712,19 @@ async function testAdminMaintenanceCommands() {
   assert.ok(firstText(sent[1].message).includes('当前运行配置'), 'maint config should render config drift panel');
   assert.ok(firstText(sent[1].message).includes('多模态'), 'maint config should show multimodal switches');
 
-  handler.handleEvent(makePlainEvent(803, 1, '/maint clean'));
-  await waitFor(() => sent.length === 3, 'maint clean');
-  assert.ok(firstText(sent[2].message).includes('维护清理跑完了'), 'maint clean should render cleanup summary');
+  runtimeStats = makeRuntimeStats({ lastLoginOk: false, lastLoginError: 'Login Error ErrCode 3', lastLoginOkAt: 0 });
+  handler.handleEvent(makePlainEvent(803, 1, '/maint login'));
+  await waitFor(() => sent.length === 3, 'maint login');
+  assert.ok(firstText(sent[2].message).includes('登录态检查'), 'maint login should render login check panel');
+  assert.ok(firstText(sent[2].message).includes('Login Error ErrCode 3'), 'maint login should show login error');
+
+  handler.handleEvent(makePlainEvent(805, 1, '/maint clean'));
+  await waitFor(() => sent.length === 4, 'maint clean');
+  assert.ok(firstText(sent[3].message).includes('维护清理跑完了'), 'maint clean should render cleanup summary');
 
   handler.handleEvent(makePlainEvent(804, 2, '/maint status'));
-  await waitFor(() => sent.length === 4, 'maint non-admin denial');
-  assert.ok(firstText(sent[3].message).includes('权限不足'), 'maint should be admin-only');
+  await waitFor(() => sent.length === 5, 'maint non-admin denial');
+  assert.ok(firstText(sent[4].message).includes('权限不足'), 'maint should be admin-only');
 }
 
 async function waitFor(condition, label, timeoutMs = 3000) {

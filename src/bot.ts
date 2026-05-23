@@ -8,9 +8,20 @@ type ApiCallback = {
   timer: NodeJS.Timeout;
 };
 
+function readyStateName(state: number | undefined): string {
+  switch (state) {
+    case WebSocket.CONNECTING: return 'connecting';
+    case WebSocket.OPEN: return 'open';
+    case WebSocket.CLOSING: return 'closing';
+    case WebSocket.CLOSED: return 'closed';
+    default: return 'none';
+  }
+}
+
 export class Bot {
   private ws: WebSocket | null = null;
   private config: BotConfig;
+  private readonly startedAt = Date.now();
   private readonly minReconnectInterval = 1000;
   private readonly maxReconnectInterval = 60000;
   private reconnectInterval = this.minReconnectInterval;
@@ -21,6 +32,42 @@ export class Bot {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private manuallyClosed = false;
   private connecting = false;
+  private lastConnectedAt = 0;
+  private lastDisconnectedAt = 0;
+  private lastDisconnectCode = 0;
+  private lastDisconnectReason = '';
+  private lastError = '';
+  private lastFrameAt = 0;
+  private lastEventAt = 0;
+  private lastPingAt = 0;
+  private lastPongAt = 0;
+  private staleHeartbeatReconnects = 0;
+  private totalDisconnects = 0;
+  private consecutiveEarlyDisconnects = 0;
+  private framesAtConnectionOpen = 0;
+  private lastConnectionHint = '';
+  private framesReceived = 0;
+  private eventsReceived = 0;
+  private apiCalls = 0;
+  private apiResponses = 0;
+  private apiTimeouts = 0;
+  private apiFailures = 0;
+  private groupSendAttempts = 0;
+  private privateSendAttempts = 0;
+  private groupSendFailures = 0;
+  private privateSendFailures = 0;
+  private loginCheckTimer: NodeJS.Timeout | null = null;
+  private loginCheckInFlight = false;
+  private loginCheckPromise: Promise<void> | null = null;
+  private loginCheckIntervalSeconds = 0;
+  private lastLoginCheckAt = 0;
+  private lastLoginOkAt = 0;
+  private lastLoginOk = false;
+  private lastLoginUserId = 0;
+  private lastLoginNickname = '';
+  private lastLoginError = '';
+  private loginCheckFailures = 0;
+  private loginCheckSuccesses = 0;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -32,6 +79,17 @@ export class Bot {
     this.heartbeatTimer = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         try {
+          const now = Date.now();
+          if (this.lastPingAt && this.lastPongAt < this.lastPingAt && now - this.lastPingAt > 90000) {
+            this.staleHeartbeatReconnects++;
+            this.lastError = 'WebSocket heartbeat stale';
+            console.error('[Bot] WebSocket 心跳超时，主动断开等待重连');
+            this.ws.terminate();
+            return;
+          }
+          if (!this.lastPingAt || this.lastPongAt >= this.lastPingAt) {
+            this.lastPingAt = now;
+          }
           this.ws.ping();
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -61,13 +119,20 @@ export class Bot {
     ws.on('open', () => {
       this.connecting = false;
       this.reconnectInterval = this.minReconnectInterval;
+      this.lastConnectedAt = Date.now();
+      this.lastPongAt = Date.now();
+      this.lastError = '';
+      this.framesAtConnectionOpen = this.framesReceived;
       console.log('[Bot] ✅ WebSocket 连接成功！');
       // 定时发送心跳保持连接活跃
       this.startHeartbeat();
+      this.ensureLoginCheckTimer(true);
     });
 
     ws.on('message', (data) => {
       try {
+        this.framesReceived++;
+        this.lastFrameAt = Date.now();
         const parsed = JSON.parse(data.toString());
 
         // 处理 API 响应
@@ -75,6 +140,7 @@ export class Bot {
           const cb = this.apiCallbacks.get(parsed.echo)!;
           this.apiCallbacks.delete(parsed.echo);
           clearTimeout(cb.timer);
+          this.apiResponses++;
           cb.resolve(parsed);
           return;
         }
@@ -86,10 +152,30 @@ export class Bot {
       }
     });
 
+    ws.on('pong', () => {
+      this.lastPongAt = Date.now();
+    });
+
     ws.on('close', (code, reason) => {
       this.connecting = false;
       if (this.ws === ws) this.ws = null;
       this.stopHeartbeat();
+      this.lastDisconnectedAt = Date.now();
+      this.lastDisconnectCode = code;
+      this.lastDisconnectReason = reason.toString();
+      this.totalDisconnects++;
+      const connectedForMs = this.lastConnectedAt > 0 ? this.lastDisconnectedAt - this.lastConnectedAt : 0;
+      const framesDuringConnection = this.framesReceived - this.framesAtConnectionOpen;
+      const earlyDisconnect = code === 1006 && connectedForMs < 10000 && framesDuringConnection <= 1;
+      if (earlyDisconnect) {
+        this.consecutiveEarlyDisconnects++;
+        if (this.consecutiveEarlyDisconnects >= 3) {
+          this.lastConnectionHint = `连续${this.consecutiveEarlyDisconnects}次WebSocket很快断开，常见原因是NapCat未完成QQ登录、QQ掉线、OneBot配置未生效或端口映射不对`;
+          console.error(`[Bot] ${this.lastConnectionHint}。先看 docker logs napcat，再进 WebUI 扫码/重新登录。`);
+        }
+      } else {
+        this.consecutiveEarlyDisconnects = 0;
+      }
       this.rejectPendingApi(new Error(`WebSocket 已断开 code=${code}`));
       if (this.manuallyClosed) return;
 
@@ -100,6 +186,7 @@ export class Bot {
 
     ws.on('error', (err) => {
       this.connecting = false;
+      this.lastError = err.message;
       console.error('[Bot] WebSocket 错误:', err.message);
     });
   }
@@ -119,7 +206,99 @@ export class Bot {
     this.heartbeatTimer = null;
   }
 
+  private ensureLoginCheckTimer(runSoon: boolean = false): void {
+    const intervalSeconds = Math.floor(Number(this.config.login_check_interval_seconds ?? 60));
+    const nextInterval = Math.max(0, Math.min(intervalSeconds, 3600));
+    if (this.loginCheckTimer && nextInterval === this.loginCheckIntervalSeconds) {
+      if (runSoon) void this.runLoginCheck();
+      return;
+    }
+
+    if (this.loginCheckTimer) {
+      clearInterval(this.loginCheckTimer);
+      this.loginCheckTimer = null;
+    }
+    this.loginCheckIntervalSeconds = nextInterval;
+    if (nextInterval <= 0) return;
+
+    this.loginCheckTimer = setInterval(() => {
+      void this.runLoginCheck();
+    }, nextInterval * 1000);
+    this.loginCheckTimer.unref();
+    if (runSoon) void this.runLoginCheck();
+  }
+
+  private async runLoginCheck(): Promise<void> {
+    if (this.loginCheckPromise) return this.loginCheckPromise;
+    this.loginCheckPromise = this.performLoginCheck().finally(() => {
+      this.loginCheckPromise = null;
+    });
+    return this.loginCheckPromise;
+  }
+
+  private async performLoginCheck(): Promise<void> {
+    const previousOk = this.lastLoginOk;
+    this.lastLoginCheckAt = Date.now();
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.recordLoginCheckFailure('WebSocket 未连接', previousOk);
+      return;
+    }
+
+    this.loginCheckInFlight = true;
+    try {
+      const timeoutMs = Math.max(1000, Math.min(Number(this.config.login_check_api_timeout_ms ?? 5000), 60000));
+      const res = await this.callApiAsync('get_login_info', {}, timeoutMs) as {
+        retcode?: number;
+        status?: string;
+        message?: string;
+        wording?: string;
+        data?: {
+          user_id?: number | string;
+          nickname?: string;
+        };
+      };
+      if (typeof res?.retcode === 'number' && res.retcode !== 0) {
+        this.recordLoginCheckFailure(`retcode=${res.retcode} ${res.message || res.wording || res.status || ''}`.trim(), previousOk);
+        return;
+      }
+
+      const userId = Number(res?.data?.user_id || 0);
+      const nickname = String(res?.data?.nickname || '');
+      this.lastLoginOk = userId > 0 || res?.retcode === 0;
+      this.lastLoginOkAt = this.lastLoginOk ? Date.now() : this.lastLoginOkAt;
+      this.lastLoginUserId = userId || this.lastLoginUserId;
+      this.lastLoginNickname = nickname || this.lastLoginNickname;
+      this.lastLoginError = this.lastLoginOk ? '' : 'get_login_info 返回为空';
+      if (this.lastLoginOk) this.recordLoginCheckSuccess(previousOk);
+      else this.recordLoginCheckFailure(this.lastLoginError, previousOk);
+    } catch (err) {
+      this.recordLoginCheckFailure(err instanceof Error ? err.message : String(err), previousOk);
+    } finally {
+      this.loginCheckInFlight = false;
+    }
+  }
+
+  private recordLoginCheckSuccess(previousOk: boolean): void {
+    this.loginCheckFailures = 0;
+    this.loginCheckSuccesses++;
+    this.consecutiveEarlyDisconnects = 0;
+    this.lastConnectionHint = '';
+    if (!previousOk) {
+      console.log(`[Bot] 登录态检查恢复: QQ${this.lastLoginUserId || '-'} ${this.lastLoginNickname || ''}`.trim());
+    }
+  }
+
+  private recordLoginCheckFailure(message: string, previousOk: boolean): void {
+    this.lastLoginOk = false;
+    this.lastLoginError = message || '登录态检查失败';
+    this.loginCheckFailures++;
+    if (previousOk || this.loginCheckFailures === 1 || this.loginCheckFailures % 5 === 0) {
+      console.error(`[Bot] 登录态检查失败(${this.loginCheckFailures}): ${this.lastLoginError}。NapCat可能还在，但QQ可能已下线；优先去WebUI扫码/重新登录。`);
+    }
+  }
+
   private rejectPendingApi(error: Error): void {
+    this.apiFailures += this.apiCallbacks.size;
     for (const [echo, callback] of this.apiCallbacks) {
       clearTimeout(callback.timer);
       callback.reject(error);
@@ -134,6 +313,10 @@ export class Bot {
       this.reconnectTimer = null;
     }
     this.stopHeartbeat();
+    if (this.loginCheckTimer) {
+      clearInterval(this.loginCheckTimer);
+      this.loginCheckTimer = null;
+    }
     this.rejectPendingApi(new Error('Bot 正在关闭'));
     if (this.ws) {
       try {
@@ -147,6 +330,8 @@ export class Bot {
 
   /** 分发事件 */
   private dispatchEvent(event: OneBotEvent): void {
+    this.eventsReceived++;
+    this.lastEventAt = Date.now();
     for (const handler of this.eventHandlers) {
       try {
         handler(event);
@@ -158,6 +343,7 @@ export class Bot {
 
   /** 发送群消息（追踪消息ID用于回复检测） */
   sendGroupMessage(groupId: number, message: string | MessageSegment[], onMessageId?: (id: number) => void): Promise<boolean> {
+    this.groupSendAttempts++;
     const sanitized = sanitizeOutgoingMessage(message);
     const msg = typeof sanitized === 'string'
       ? [{ type: 'text', data: { text: sanitized } }]
@@ -168,6 +354,7 @@ export class Bot {
       message: msg,
     }).then((res: any) => {
       if (typeof res?.retcode === 'number' && res.retcode !== 0) {
+        this.groupSendFailures++;
         console.error(`[Bot] 发送群消息失败: 群${groupId} retcode=${res.retcode} ${res.message || res.wording || ''}`);
         return false;
       }
@@ -178,6 +365,7 @@ export class Bot {
       }
       return true;
     }).catch((err) => {
+      this.groupSendFailures++;
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[Bot] 发送群消息异常: 群${groupId} ${errMsg}`);
       return false;
@@ -186,6 +374,7 @@ export class Bot {
 
   /** 发送私聊消息 */
   sendPrivateMessage(userId: number, message: string | MessageSegment[], onMessageId?: (id: number) => void): Promise<boolean> {
+    this.privateSendAttempts++;
     const sanitized = sanitizeOutgoingMessage(message);
     const msg = typeof sanitized === 'string'
       ? [{ type: 'text', data: { text: sanitized } }]
@@ -196,6 +385,7 @@ export class Bot {
       message: msg,
     }).then((res: any) => {
       if (typeof res?.retcode === 'number' && res.retcode !== 0) {
+        this.privateSendFailures++;
         console.error(`[Bot] 发送私聊消息失败: QQ${userId} retcode=${res.retcode} ${res.message || res.wording || ''}`);
         return false;
       }
@@ -206,6 +396,7 @@ export class Bot {
       }
       return true;
     }).catch((err) => {
+      this.privateSendFailures++;
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[Bot] 发送私聊消息异常: QQ${userId} ${errMsg}`);
       return false;
@@ -216,15 +407,18 @@ export class Bot {
   callApiAsync(action: string, params: Record<string, unknown> = {}, timeoutMs: number = 10000): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.apiFailures++;
         reject(new Error('WebSocket 未连接'));
         return;
       }
 
       const echo = `${action}_${++this.echoCounter}_${Date.now()}`;
+      this.apiCalls++;
       const timer = setTimeout(() => {
         const callback = this.apiCallbacks.get(echo);
         if (!callback) return;
         this.apiCallbacks.delete(echo);
+        this.apiTimeouts++;
         callback.reject(new Error('API 调用超时'));
       }, Math.max(500, timeoutMs));
       timer.unref();
@@ -238,6 +432,7 @@ export class Bot {
         if (!callback) return;
         this.apiCallbacks.delete(echo);
         clearTimeout(callback.timer);
+        this.apiFailures++;
         callback.reject(err);
       });
     });
@@ -246,13 +441,16 @@ export class Bot {
   /** 调用 OneBot API（不等待响应） */
   callApi(action: string, params: Record<string, unknown> = {}): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.apiFailures++;
       console.error('[Bot] WebSocket 未连接，无法调用 API:', action);
       return;
     }
 
+    this.apiCalls++;
     const payload = JSON.stringify({ action, params });
     this.ws.send(payload, (err) => {
       if (err) {
+        this.apiFailures++;
         console.error(`[Bot] API 发送失败 ${action}:`, err.message);
       }
     });
@@ -266,5 +464,102 @@ export class Bot {
   /** 更新配置 */
   updateConfig(config: Partial<BotConfig>): void {
     Object.assign(this.config, config);
+    this.ensureLoginCheckTimer();
+  }
+
+  async checkLoginNow(): Promise<ReturnType<Bot['getRuntimeStats']>> {
+    await this.runLoginCheck();
+    return this.getRuntimeStats();
+  }
+
+  /** 运行时连接和API统计，用于/status、/diag、/maint排障 */
+  getRuntimeStats(): {
+    startedAt: number;
+    wsUrl: string;
+    readyState: string;
+    connected: boolean;
+    connecting: boolean;
+    manuallyClosed: boolean;
+    reconnectScheduled: boolean;
+    reconnectIntervalMs: number;
+    pendingApi: number;
+    lastConnectedAt: number;
+    lastDisconnectedAt: number;
+    lastDisconnectCode: number;
+    lastDisconnectReason: string;
+    lastError: string;
+    lastFrameAt: number;
+    lastEventAt: number;
+    lastPingAt: number;
+    lastPongAt: number;
+    staleHeartbeatReconnects: number;
+    totalDisconnects: number;
+    consecutiveEarlyDisconnects: number;
+    lastConnectionHint: string;
+    framesReceived: number;
+    eventsReceived: number;
+    apiCalls: number;
+    apiResponses: number;
+    apiTimeouts: number;
+    apiFailures: number;
+    groupSendAttempts: number;
+    privateSendAttempts: number;
+    groupSendFailures: number;
+    privateSendFailures: number;
+    loginCheckIntervalSeconds: number;
+    loginCheckInFlight: boolean;
+    lastLoginCheckAt: number;
+    lastLoginOkAt: number;
+    lastLoginOk: boolean;
+    lastLoginUserId: number;
+    lastLoginNickname: string;
+    lastLoginError: string;
+    loginCheckFailures: number;
+    loginCheckSuccesses: number;
+  } {
+    return {
+      startedAt: this.startedAt,
+      wsUrl: this.config.ws_url,
+      readyState: readyStateName(this.ws?.readyState),
+      connected: this.ws?.readyState === WebSocket.OPEN,
+      connecting: this.connecting,
+      manuallyClosed: this.manuallyClosed,
+      reconnectScheduled: !!this.reconnectTimer,
+      reconnectIntervalMs: this.reconnectInterval,
+      pendingApi: this.apiCallbacks.size,
+      lastConnectedAt: this.lastConnectedAt,
+      lastDisconnectedAt: this.lastDisconnectedAt,
+      lastDisconnectCode: this.lastDisconnectCode,
+      lastDisconnectReason: this.lastDisconnectReason,
+      lastError: this.lastError,
+      lastFrameAt: this.lastFrameAt,
+      lastEventAt: this.lastEventAt,
+      lastPingAt: this.lastPingAt,
+      lastPongAt: this.lastPongAt,
+      staleHeartbeatReconnects: this.staleHeartbeatReconnects,
+      totalDisconnects: this.totalDisconnects,
+      consecutiveEarlyDisconnects: this.consecutiveEarlyDisconnects,
+      lastConnectionHint: this.lastConnectionHint,
+      framesReceived: this.framesReceived,
+      eventsReceived: this.eventsReceived,
+      apiCalls: this.apiCalls,
+      apiResponses: this.apiResponses,
+      apiTimeouts: this.apiTimeouts,
+      apiFailures: this.apiFailures,
+      groupSendAttempts: this.groupSendAttempts,
+      privateSendAttempts: this.privateSendAttempts,
+      groupSendFailures: this.groupSendFailures,
+      privateSendFailures: this.privateSendFailures,
+      loginCheckIntervalSeconds: this.loginCheckIntervalSeconds,
+      loginCheckInFlight: this.loginCheckInFlight,
+      lastLoginCheckAt: this.lastLoginCheckAt,
+      lastLoginOkAt: this.lastLoginOkAt,
+      lastLoginOk: this.lastLoginOk,
+      lastLoginUserId: this.lastLoginUserId,
+      lastLoginNickname: this.lastLoginNickname,
+      lastLoginError: this.lastLoginError,
+      loginCheckFailures: this.loginCheckFailures,
+      loginCheckSuccesses: this.loginCheckSuccesses,
+    };
   }
 }

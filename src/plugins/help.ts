@@ -57,7 +57,7 @@ export const helpPlugin: Plugin = {
         '',
         '管理(仅管理员):',
         '  /reload - 重载配置并重新应用运行期参数',
-        '  /maint status|config|clean|gc - 维护面板/清理/GC',
+        '  /maint status|login|config|clean|gc - 维护面板/登录态/清理/GC',
         '  /ban /unban /kick /title',
         '  /kb preview <关键词> / /kb ingest [full]',
         '  /kb list / /kb show <ID> / /kb commit <ID> / /kb drop <ID>',

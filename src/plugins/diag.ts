@@ -82,6 +82,20 @@ export const diagPlugin: Plugin = {
     const aiStats = getAiChatStats();
     const search = getSearchStats();
     const image = getCacheStats();
+    let runtime = ctx.bot.getRuntimeStats();
+    if (runtime.connected) ok.push(`OneBot WebSocket 已连接(${runtime.readyState})`);
+    else hard.push(`OneBot WebSocket 未连接(${runtime.readyState})，bot 收不到消息也发不出去`);
+    if (runtime.pendingApi > 20) risk.push(`OneBot API pending 偏高: ${runtime.pendingApi}`);
+    if (runtime.apiTimeouts > 0 || runtime.apiFailures > 0) risk.push(`OneBot API 有失败: timeout=${runtime.apiTimeouts} fail=${runtime.apiFailures}`);
+    if (runtime.consecutiveEarlyDisconnects >= 3) hard.push(runtime.lastConnectionHint || `WebSocket连续早断开${runtime.consecutiveEarlyDisconnects}次，优先查NapCat登录态和OneBot配置`);
+    else if (runtime.totalDisconnects > 0) risk.push(`WebSocket累计断开${runtime.totalDisconnects}次，早断${runtime.consecutiveEarlyDisconnects}次，心跳重连${runtime.staleHeartbeatReconnects}次`);
+    if (runtime.lastDisconnectedAt) risk.push(`最近WS断开: code=${runtime.lastDisconnectCode}${runtime.lastDisconnectReason ? ` ${runtime.lastDisconnectReason}` : ''}`);
+    if (runtime.lastLoginCheckAt && !runtime.lastLoginOk) {
+      hard.push(`QQ登录态异常: ${runtime.lastLoginError || 'get_login_info 未通过'}。NapCat可能还在，但QQ号已下线，需要去WebUI扫码/重登`);
+    }
+    if (runtime.lastLoginOk && config.bot_qq && runtime.lastLoginUserId && config.bot_qq !== runtime.lastLoginUserId) {
+      hard.push(`QQ登录号不匹配: config.bot_qq=${config.bot_qq}，NapCat实际登录=${runtime.lastLoginUserId}。换号必须去NapCat重登，不是只改config`);
+    }
     const liveLines: string[] = [];
 
     if (liveMode) {
@@ -89,6 +103,14 @@ export const diagPlugin: Plugin = {
         ctx.replyAt('/diag live 得管理员来跑，别把外网检查当玩具。');
         return true;
       }
+      runtime = await ctx.bot.checkLoginNow();
+      if (!runtime.lastLoginOk && !hard.some((item) => item.includes('QQ登录态异常'))) {
+        hard.push(`QQ登录态异常: ${runtime.lastLoginError || 'get_login_info 未通过'}。需要去NapCat WebUI扫码/重登`);
+      }
+      if (runtime.lastLoginOk && config.bot_qq && runtime.lastLoginUserId && config.bot_qq !== runtime.lastLoginUserId) {
+        hard.push(`QQ登录号不匹配: config.bot_qq=${config.bot_qq}，NapCat实际登录=${runtime.lastLoginUserId}`);
+      }
+      liveLines.push(`live登录态: ${runtime.lastLoginOk ? `OK QQ${runtime.lastLoginUserId || '-'} ${runtime.lastLoginNickname || ''}` : `异常 ${runtime.lastLoginError || 'unknown'}`}`);
       const liveSearch = await webSearch(
         '玩机器Machine 萌娘百科 6657',
         Math.max(ai.knowledge_source_timeout_ms || ai.search_timeout_ms || 1800, 1200),
@@ -119,6 +141,9 @@ export const diagPlugin: Plugin = {
       `建议: ${suggestions.length}`,
       ...suggestions.slice(0, 5).map((item) => `? ${item}`),
       `知识审计: ${audit.sections}块 ${audit.chars}字 问题${audit.issues.length} 主库分层`,
+      `OneBot: ${runtime.readyState} connected=${runtime.connected ? 'yes' : 'no'} pendingApi=${runtime.pendingApi} frames=${runtime.framesReceived} events=${runtime.eventsReceived} 断开${runtime.totalDisconnects} 早断${runtime.consecutiveEarlyDisconnects} 心跳重连${runtime.staleHeartbeatReconnects}`,
+      ...(runtime.lastConnectionHint ? [`连接提示: ${runtime.lastConnectionHint}`] : []),
+      `QQ登录: ${runtime.lastLoginOk ? 'ok' : '异常/未确认'} self=${runtime.lastLoginUserId || '-'} 失败${runtime.loginCheckFailures} 成功${runtime.loginCheckSuccesses}${runtime.lastLoginError ? ` 错误=${runtime.lastLoginError}` : ''}`,
       `队列: ${aiStats.pendingJobs}待处理 / ${aiStats.forcedJobs}强触发`,
       `并发: AI ${aiStats.gates.ai.active}/${aiStats.gates.ai.limit}+${aiStats.gates.ai.queued} 搜索 ${aiStats.gates.search.active}/${aiStats.gates.search.limit}+${aiStats.gates.search.queued} 图${aiStats.gates.vision.active}/${aiStats.gates.vision.limit}+${aiStats.gates.vision.queued} 听写${aiStats.gates.stt.active}/${aiStats.gates.stt.limit}+${aiStats.gates.stt.queued} TTS${aiStats.gates.tts.active}/${aiStats.gates.tts.limit}+${aiStats.gates.tts.queued}`,
       `Gate背压: 普通拒绝AI${aiStats.gates.ai.rejectedPassive} 搜索${aiStats.gates.search.rejectedPassive} 图${aiStats.gates.vision.rejectedPassive} 听写${aiStats.gates.stt.rejectedPassive} TTS${aiStats.gates.tts.rejectedPassive}`,

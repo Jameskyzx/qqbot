@@ -9,6 +9,11 @@ import { getVoiceStats } from './tts';
 
 const startTime = Date.now();
 
+function formatTime(timestamp: number): string {
+  if (!timestamp) return '无';
+  return new Date(timestamp).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+}
+
 export const statusPlugin: Plugin = {
   name: 'status',
   description: '查看机器人运行状态',
@@ -29,6 +34,7 @@ export const statusPlugin: Plugin = {
       const sttStats = getSttStats(config.ai);
       const knowledgeStats = getKnowledgeStats();
       const aiStats = getAiChatStats();
+      const runtime = ctx.bot.getRuntimeStats();
       const lastRefresh = knowledgeStats.lastAutoRefreshAt
         ? new Date(knowledgeStats.lastAutoRefreshAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
         : '无';
@@ -39,6 +45,13 @@ export const statusPlugin: Plugin = {
         `⏱ 运行: ${hours}h ${minutes}m ${seconds}s`,
         `💾 内存: heap ${memMB} MB / rss ${rssMB} MB`,
         `🆔 Bot: self_id ${ctx.event.self_id} / 配置 ${config.bot_qq || '未填写'}`,
+        `🔌 OneBot: ${runtime.readyState} connected=${runtime.connected ? 'yes' : 'no'} pendingApi=${runtime.pendingApi} 断开${runtime.totalDisconnects} 早断${runtime.consecutiveEarlyDisconnects} 心跳重连${runtime.staleHeartbeatReconnects} 重连=${runtime.reconnectScheduled ? Math.round(runtime.reconnectIntervalMs / 1000) + 's' : '无'}`,
+        `🔐 QQ登录: ${runtime.lastLoginOk ? 'ok' : '异常/未确认'} self=${runtime.lastLoginUserId || '-'} ${runtime.lastLoginNickname || ''} 检查${formatTime(runtime.lastLoginCheckAt)} OK${formatTime(runtime.lastLoginOkAt)} 失败${runtime.loginCheckFailures} 成功${runtime.loginCheckSuccesses}${runtime.lastLoginError ? ` 错误=${runtime.lastLoginError}` : ''}`,
+        `📨 事件: frames=${runtime.framesReceived} events=${runtime.eventsReceived} 最后帧${formatTime(runtime.lastFrameAt)} 最后事件${formatTime(runtime.lastEventAt)}`,
+        `📤 发送/API: 群${runtime.groupSendAttempts - runtime.groupSendFailures}/${runtime.groupSendAttempts} 私聊${runtime.privateSendAttempts - runtime.privateSendFailures}/${runtime.privateSendAttempts} API ${runtime.apiResponses}/${runtime.apiCalls} timeout=${runtime.apiTimeouts} fail=${runtime.apiFailures}`,
+        ...(runtime.lastDisconnectedAt ? [`🔌 最近断开: ${formatTime(runtime.lastDisconnectedAt)} code=${runtime.lastDisconnectCode}${runtime.lastDisconnectReason ? ` reason=${runtime.lastDisconnectReason}` : ''}`] : []),
+        ...(runtime.lastError ? [`🔌 最近WS错误: ${runtime.lastError}`] : []),
+        ...(runtime.lastConnectionHint ? [`🔌 连接提示: ${runtime.lastConnectionHint}`] : []),
         `🧾 配置版本: ${config.config_version || '未填写'} / ${CONFIG_VERSION}${(config.config_version || 0) < CONFIG_VERSION ? ' 偏旧' : ''}`,
         `🎭 当前预设: ${config.ai?.active_preset || '无'}`,
         `📚 知识库: ${knowledgeStats.sections}块 ${knowledgeStats.chars}字 词${knowledgeStats.keywords} 候选${knowledgeStats.candidates}`,

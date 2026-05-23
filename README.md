@@ -618,6 +618,8 @@ pm2 restart wanjier
 |---|---|
 | `config_version` | 配置模板版本，当前为 `20260524`；`npm run doctor` 和 `/maint config` 会用它判断 VPS 配置是否落后 |
 | `ws_url` | OneBot WebSocket 地址，通常是 `ws://127.0.0.1:3001` |
+| `login_check_interval_seconds` | QQ 登录态主动检查间隔，推荐 `60`；`0` 表示关闭 |
+| `login_check_api_timeout_ms` | 登录态检查调用 `get_login_info` 的超时，推荐 `5000` |
 | `bot_qq` | 期望登录的机器人 QQ，仅用于展示和错号提醒 |
 | `bot_name` | 机器人显示名 |
 | `command_prefix` | 命令前缀，默认 `/` |
@@ -1138,6 +1140,7 @@ apt install -y ffmpeg
 | `/diag` | 快速严格自检，不消耗 AI token |
 | `/diag live` | 管理员真实联网/写盘自检 |
 | `/maint status` | 管理员维护面板：配置版本、队列、缓存、知识库、闸门、内存 |
+| `/maint login` | 管理员立即检查 OneBot 连接和 QQ 登录态 |
 | `/maint config` | 管理员查看关键运行配置和配置漂移 |
 | `/maint clean` | 管理员清理搜索、图片、TTS、STT 缓存并跑知识库审计 |
 | `/maint gc` | 管理员手动触发 Node GC，需要 PM2 `--expose-gc` |
@@ -1557,6 +1560,7 @@ npm run stt:test -- <语音URL或本地文件>
 ```text
 /reload
 /maint status
+/maint login
 /maint config
 /maint clean
 /maint gc
@@ -1564,6 +1568,7 @@ npm run stt:test -- <语音URL或本地文件>
 
 - `/reload` 会重新读取 `config.json`，并立即重新应用 AI/搜索/识图/STT/TTS 全局并发、搜索缓存容量、图片缓存上限、知识库自动刷新配置。改普通配置后不用重启，除非你换了环境变量、Node 参数或 PM2 配置。
 - `/maint status` 是轻量维护面板，适合看队列是否堵住、知识库是否命中、缓存是否膨胀、配置版本是否偏旧。
+- `/maint login` 会立即调用 OneBot `get_login_info` 检查 QQ 是否真的在线，并显示 WebSocket 断开次数、早断次数、心跳重连次数和最近错误。经常掉登录时优先跑这个。
 - `/maint config` 专门看关键配置漂移，升级后第一时间跑它。
 - `/maint clean` 会清理搜索、图片、TTS、STT 缓存，修剪知识库自动日志，并跑一次知识库审计。
 - `/maint gc` 只做手动内存回收；PM2 的 `ecosystem.config.js` 已经带 `--expose-gc`，如果你不是用这个文件启动，需要把该参数补上。
@@ -1838,6 +1843,94 @@ pm2 logs wanjier --lines 0
   - 这不会切换登录账号。
   - 正确：NapCat 必须扫码登录新 QQ，OneBot 配置文件也要对应新 QQ。
 
+### 经常掉登录或显示 QQ 已下线
+
+先记住一句：PM2 显示 `online` 只能说明 Node 进程还活着；Docker 显示 `Up` 只能说明 NapCat 容器还活着。QQ 号是否真的在线，要看 NapCat 登录态和 OneBot `get_login_info`。
+
+群里或私聊管理员账号先跑：
+
+```text
+/maint login
+/status
+/diag live
+```
+
+判断方式：
+
+- `OneBot: open connected=yes`，但 `QQ登录: 异常`：NapCat 还连着，QQ 号大概率掉线，需要进 WebUI 扫码或重新登录。
+- `OneBot: closed/none connected=no`：bot 没连上 OneBot，先查 NapCat WebSocket、3001 端口和容器。
+- `早断` 连续增加，日志里反复 `code=1006/socket hang up/ECONNRESET`：常见原因是 NapCat 没完成登录、QQ 掉线、OneBot 配置没生效、端口映射错。
+- `QQ登录号不匹配`：`config.bot_qq` 和 NapCat 实际登录号不是同一个。换号必须重登 NapCat，只改 `config.json` 没用。
+
+VPS 上看 NapCat 登录日志：
+
+```bash
+docker logs --tail 300 napcat | grep -iE "login|登录|offline|下线|error|qrcode|webui|token|扫码|二维码" || true
+docker logs napcat 2>&1 | grep -iE "webui token|User Panel Url|token" | tail -20
+```
+
+如果日志出现 `Login Error`、`未配置回退密码`、二维码登录提示，或者长时间没有成功登录信息，就去 WebUI：
+
+```text
+http://你的服务器IP:6099/webui?token=日志里看到的token
+```
+
+打不开 WebUI 时先确认端口：
+
+```bash
+docker ps | grep napcat
+ss -lntp | grep 6099 || true
+```
+
+`docker ps` 里应该能看到：
+
+```text
+0.0.0.0:6099->6099/tcp
+```
+
+如果没有 6099 映射，需要按部署章节重建 NapCat 容器。WebUI 能打开后，在页面里确认 QQ 账号是否在线；不在线就扫码重新登录。
+
+重登后的验证顺序：
+
+```bash
+cd /opt/wanjier-bot
+pm2 restart wanjier --update-env
+pm2 logs wanjier --lines 80 --nostream
+```
+
+然后群里发：
+
+```text
+/maint login
+/ping
+/whoami
+```
+
+预期：
+
+- `/maint login` 显示 `QQ登录: ok`。
+- `/ping` 能直接回，不依赖 AI。
+- `/whoami` 的 `当前bot号` 等于你要用的机器人 QQ。
+
+如果 QQ 经常被挤下线，重点检查：
+
+- 同一个 QQ 是否还在手机、电脑、旧 VPS、旧 NapCat 容器上登录。
+- 是否同时跑了多个 `napcat` 容器或多个 OneBot 客户端。
+- VPS 时间是否明显不准：`timedatectl` 看时区和 NTP。
+- Docker 是否因内存重启：`docker inspect napcat --format '{{.RestartCount}}'`。
+- 是否频繁重启容器导致 QQ 风控。改 OneBot 配置后重启一次即可，不要反复刷重启。
+
+本项目现在会每 `login_check_interval_seconds` 秒主动调用一次 `get_login_info`。推荐保持：
+
+```json
+{
+  "login_check_interval_seconds": 60,
+  "login_check_api_timeout_ms": 5000
+}
+```
+
+不建议把间隔调得太低，30 秒以下会给 NapCat API 增加无意义压力；也不建议设成 `0`，否则 QQ 掉线只能靠人工看日志发现。
+
 ### @ 了不回复
 
 1. 群里发 `/whoami`，确认 `当前bot号` 是 NapCat 登录号。
@@ -1929,6 +2022,8 @@ pm2 logs wanjier --lines 80
 ```json
 {
   "config_version": 20260524,
+  "login_check_interval_seconds": 60,
+  "login_check_api_timeout_ms": 5000,
   "ai": {
     "temperature": 0.92,
     "trigger_probability": 0.08,

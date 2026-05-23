@@ -348,6 +348,8 @@ export function normalizeConfig(value: unknown): BotConfig {
   return {
     config_version: Math.floor(asNumber(value.config_version, 0, 0, Number.MAX_SAFE_INTEGER)) || undefined,
     ws_url: wsUrl,
+    login_check_interval_seconds: Math.floor(asNumber(value.login_check_interval_seconds, 60, 0, 3600)),
+    login_check_api_timeout_ms: Math.floor(asNumber(value.login_check_api_timeout_ms, 5000, 1000, 60000)),
     bot_qq: configuredBotQq,
     bot_name: asString(value.bot_name, 'QQ Bot'),
     command_prefix: commandPrefix,
@@ -370,5 +372,31 @@ export function loadConfig(configPath: string = CONFIG_PATH): BotConfig {
     throw new Error(`配置文件 JSON 解析失败: ${message}`);
   }
 
+  return normalizeConfig(parsed);
+}
+
+export function updateConfigFile(
+  mutator: (raw: PlainObject) => void,
+  configPath: string = CONFIG_PATH,
+): BotConfig {
+  if (!fs.existsSync(configPath)) {
+    throw new Error(`未找到 config.json: ${configPath}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`配置文件 JSON 解析失败: ${message}`);
+  }
+  if (!isObject(parsed)) {
+    throw new Error('配置文件必须是 JSON 对象');
+  }
+
+  mutator(parsed);
+  const tmp = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(parsed, null, 2)}\n`, 'utf-8');
+  fs.renameSync(tmp, configPath);
   return normalizeConfig(parsed);
 }

@@ -1,4 +1,4 @@
-import { CONFIG_VERSION, loadConfig } from '../config';
+import { CONFIG_VERSION, loadConfig, updateConfigFile } from '../config';
 import { Plugin } from '../types';
 import { getAiChatStats, startAiChatBackgroundTasks } from './ai-chat';
 import { cleanupCache as cleanImageCache, getCacheStats as getImageCacheStats } from './image-cache';
@@ -20,11 +20,16 @@ function isMaintCommand(command: string | null): boolean {
   return command === 'maint' || command === 'maintenance' || command === '维护';
 }
 
+function formatLoginTime(timestamp: number): string {
+  if (!timestamp) return '无';
+  return new Date(timestamp).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+}
+
 export const adminPlugin: Plugin = {
   name: 'admin',
   description: '管理员命令 - 群管理、配置重载等',
 
-  handler: (ctx) => {
+  handler: async (ctx) => {
     const config = ctx.bot.getConfig();
     const isAdmin = config.admin_qq.includes(ctx.event.user_id);
 
@@ -109,11 +114,26 @@ export const adminPlugin: Plugin = {
           '当前运行配置',
           `config_version: ${currentConfig.config_version || '未填写'} / ${CONFIG_VERSION}${(currentConfig.config_version || 0) < CONFIG_VERSION ? '，建议同步 config.example.json' : ''}`,
           `bot_qq: ${currentConfig.bot_qq || '未填写'}，self_id: ${ctx.event.self_id}`,
+          `登录检查: 间隔${currentConfig.login_check_interval_seconds ?? 60}s，超时${currentConfig.login_check_api_timeout_ms ?? 5000}ms`,
           `预设: ${currentConfig.ai.active_preset || '无'}，trigger=${currentConfig.ai.trigger_mode}，随机=${currentConfig.ai.trigger_probability}，相关=${currentConfig.ai.related_reply_probability}`,
           `知识: ${currentConfig.ai.enable_knowledge ? 'on' : 'off'}，强制风格=${currentConfig.ai.knowledge_force_style ? 'on' : 'off'}，max=${currentConfig.ai.knowledge_max_chars}`,
           `多模态: 识图=${currentConfig.ai.enable_vision ? 'on' : 'off'}，听写=${currentConfig.ai.enable_stt ? 'on' : 'off'}，语音=${currentConfig.ai.enable_tts ? 'on' : 'off'}`,
           `缓存: 搜索${currentConfig.ai.search_cache_max_entries}条，图片${currentConfig.ai.image_cache_max_mb}MB/${currentConfig.ai.image_cache_max_files}文件，TTS${currentConfig.ai.tts_cache_max_mb}MB，STT${currentConfig.ai.stt_cache_max_mb}MB`,
           `并发: AI ${currentConfig.ai.ai_global_concurrency} / 搜索 ${currentConfig.ai.search_global_concurrency} / 图 ${currentConfig.ai.vision_global_concurrency} / 听写 ${currentConfig.ai.stt_global_concurrency} / 语音 ${currentConfig.ai.tts_global_concurrency}，普通排队上限 ${currentConfig.ai.gate_passive_queue_max}`,
+        ].join('\n'));
+        return true;
+      }
+
+      if (action === 'login' || action === '登录') {
+        const runtime = await ctx.bot.checkLoginNow();
+        ctx.reply([
+          '登录态检查',
+          `OneBot: ${runtime.readyState} connected=${runtime.connected ? 'yes' : 'no'} pendingApi=${runtime.pendingApi} 断开${runtime.totalDisconnects} 早断${runtime.consecutiveEarlyDisconnects} 心跳重连${runtime.staleHeartbeatReconnects}`,
+          `QQ登录: ${runtime.lastLoginOk ? 'ok' : '异常'} self=${runtime.lastLoginUserId || '-'} ${runtime.lastLoginNickname || ''} 失败${runtime.loginCheckFailures} 成功${runtime.loginCheckSuccesses}`,
+          `检查时间: ${formatLoginTime(runtime.lastLoginCheckAt)}，最近OK: ${formatLoginTime(runtime.lastLoginOkAt)}`,
+          ...(runtime.lastLoginError ? [`错误: ${runtime.lastLoginError}`] : []),
+          ...(runtime.lastConnectionHint ? [`连接提示: ${runtime.lastConnectionHint}`] : []),
+          ...(runtime.lastLoginOk ? [] : ['如果这里异常，但 Docker/PM2 都在线，优先去 NapCat WebUI 扫码或重新登录 QQ。']),
         ].join('\n'));
         return true;
       }
@@ -124,10 +144,14 @@ export const adminPlugin: Plugin = {
       const voiceStats = getVoiceStats(currentConfig.ai);
       const sttStats = getSttStats(currentConfig.ai);
       const knowledgeStats = getKnowledgeStats();
+      const runtime = ctx.bot.getRuntimeStats();
       const mem = process.memoryUsage();
       ctx.reply([
         '维护状态',
         `config_version: ${currentConfig.config_version || '未填写'} / ${CONFIG_VERSION}${(currentConfig.config_version || 0) < CONFIG_VERSION ? '，偏旧' : ''}`,
+        `OneBot: ${runtime.readyState} connected=${runtime.connected ? 'yes' : 'no'} pendingApi=${runtime.pendingApi} 断开${runtime.totalDisconnects} 早断${runtime.consecutiveEarlyDisconnects} 心跳重连${runtime.staleHeartbeatReconnects}`,
+        `QQ登录: ${runtime.lastLoginOk ? 'ok' : '异常/未确认'} 检查${formatLoginTime(runtime.lastLoginCheckAt)} 失败${runtime.loginCheckFailures}${runtime.lastLoginError ? ` 错误=${runtime.lastLoginError}` : ''}`,
+        ...(runtime.lastConnectionHint ? [`连接提示: ${runtime.lastConnectionHint}`] : []),
         `内存: heap ${formatMb(mem.heapUsed)}MB / rss ${formatMb(mem.rss)}MB`,
         `队列: ${aiStats.queuedGroups}群 待处理${aiStats.pendingJobs} 强触发${aiStats.forcedJobs} 最老${Math.round(aiStats.oldestQueueAgeMs / 1000)}s`,
         `闸门: AI ${aiStats.gates.ai.active}/${aiStats.gates.ai.limit}+${aiStats.gates.ai.queued} 搜索 ${aiStats.gates.search.active}/${aiStats.gates.search.limit}+${aiStats.gates.search.queued} 图 ${aiStats.gates.vision.active}/${aiStats.gates.vision.limit}+${aiStats.gates.vision.queued} 听写 ${aiStats.gates.stt.active}/${aiStats.gates.stt.limit}+${aiStats.gates.stt.queued} 语音 ${aiStats.gates.tts.active}/${aiStats.gates.tts.limit}+${aiStats.gates.tts.queued}`,
@@ -138,7 +162,7 @@ export const adminPlugin: Plugin = {
         `图片缓存: ${imageStats.count}/${imageStats.maxFiles} ${imageStats.sizeMB}/${imageStats.maxSizeMB}MB，最近清理${formatDate(imageStats.lastCleanupAt)} 删${imageStats.lastCleanupDeleted}`,
         `语音缓存: ${voiceStats.cacheFiles}/${voiceStats.maxCacheFiles} ${voiceStats.sizeMB}/${voiceStats.maxCacheMB}MB，最近清理${formatDate(voiceStats.lastCleanupAt)} 删${voiceStats.lastCleanupDeleted}`,
         `听写缓存: ${sttStats.cacheFiles}/${sttStats.maxCacheFiles} ${sttStats.sizeMB}/${sttStats.maxCacheMB}MB，最近清理${formatDate(sttStats.lastCleanupAt)} 删${sttStats.lastCleanupDeleted}`,
-        '可用: /maint clean 清缓存审计，/maint gc 手动GC，/maint config 看关键配置',
+        '可用: /maint login 查登录态，/maint clean 清缓存审计，/maint gc 手动GC，/maint config 看关键配置',
       ].join('\n'));
       return true;
     }
@@ -154,11 +178,22 @@ export const adminPlugin: Plugin = {
         ctx.reply('私聊里用法: /addgroup <群号>');
         return true;
       }
-      if (!config.enabled_groups.includes(groupId)) {
-        config.enabled_groups.push(groupId);
-        ctx.reply(`✅ 已将群 ${groupId} 加入白名单`);
-      } else {
+      if (config.enabled_groups.includes(groupId)) {
         ctx.reply(`ℹ️ 群 ${groupId} 已在白名单中`);
+        return true;
+      }
+      try {
+        const newConfig = updateConfigFile((raw) => {
+          const current = Array.isArray(raw.enabled_groups)
+            ? raw.enabled_groups.map((item) => Number(item)).filter((item) => Number.isSafeInteger(item) && item > 0)
+            : [];
+          raw.enabled_groups = [...new Set([...current, groupId])];
+        });
+        ctx.bot.updateConfig(newConfig);
+        ctx.reply(`✅ 已将群 ${groupId} 加入白名单，并写入 config.json`);
+      } catch (err) {
+        config.enabled_groups.push(groupId);
+        ctx.reply(`已临时加入群 ${groupId}，但写 config.json 失败: ${err instanceof Error ? err.message : err}`);
       }
       return true;
     }
@@ -173,12 +208,23 @@ export const adminPlugin: Plugin = {
         ctx.reply('用法: /rmgroup <群号>');
         return true;
       }
-      const idx = config.enabled_groups.indexOf(groupId);
-      if (idx >= 0) {
-        config.enabled_groups.splice(idx, 1);
-        ctx.reply(`✅ 已将群 ${groupId} 移出白名单`);
-      } else {
+      if (!config.enabled_groups.includes(groupId)) {
         ctx.reply(`ℹ️ 群 ${groupId} 不在白名单中`);
+        return true;
+      }
+      try {
+        const newConfig = updateConfigFile((raw) => {
+          const current = Array.isArray(raw.enabled_groups)
+            ? raw.enabled_groups.map((item) => Number(item)).filter((item) => Number.isSafeInteger(item) && item > 0)
+            : [];
+          raw.enabled_groups = [...new Set(current.filter((item) => item !== groupId))];
+        });
+        ctx.bot.updateConfig(newConfig);
+        ctx.reply(`✅ 已将群 ${groupId} 移出白名单，并写入 config.json`);
+      } catch (err) {
+        const idx = config.enabled_groups.indexOf(groupId);
+        if (idx >= 0) config.enabled_groups.splice(idx, 1);
+        ctx.reply(`已临时移出群 ${groupId}，但写 config.json 失败: ${err instanceof Error ? err.message : err}`);
       }
       return true;
     }
