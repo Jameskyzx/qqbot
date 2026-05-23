@@ -10,7 +10,7 @@ async function main() {
     ? fs.readFileSync(configPath, 'utf-8')
     : fs.readFileSync(fallbackPath, 'utf-8');
   const config = normalizeConfig(JSON.parse(raw));
-  const text = process.argv.slice(2).join(' ').trim() || '不是哥们 这波语音链路测试一下';
+  const text = process.argv.slice(2).join(' ').trim() || '这波语音链路测试一下';
 
   config.ai.enable_tts = true;
   if (!config.ai.tts_provider) config.ai.tts_provider = 'api';

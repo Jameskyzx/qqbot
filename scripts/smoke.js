@@ -27,6 +27,12 @@ function firstText(message) {
 
 async function testOutgoingSanitize() {
   assert.strictEqual(sanitize.sanitizeOutgoingText('可以 😂 笑哭 🤣'), '可以');
+  const softened = sanitize.sanitizeOutgoingText('不是哥们 这个开头太公式了');
+  assert.ok(!softened.startsWith('不是哥们'), 'formulaic opener should be softened at send boundary');
+  assert.ok(softened.includes('这个开头太公式了'), 'send-boundary softening should keep useful content');
+  const softenedGeneric = sanitize.sanitizeOutgoingText('讲道理 这个开头也太像模板了');
+  assert.ok(!softenedGeneric.startsWith('讲道理'), 'generic formulaic opener should be softened at send boundary');
+  assert.ok(softenedGeneric.includes('这个开头也太像模板了'), 'generic opener softening should keep useful content');
   const message = sanitize.sanitizeOutgoingMessage([
     { type: 'text', data: { text: '别发😂笑哭' } },
     { type: 'image', data: { file: 'https://example.com/a.jpg' } },
@@ -657,8 +663,8 @@ async function testMessageReplyTargeting() {
     await waitFor(() => sent.length === beforeStageLabel + 1, 'stage label reply');
     assert.strictEqual(
       sent.at(-1).message.find((seg) => seg.type === 'text')?.data.text,
-      '不是哥们 这个括号真不能有',
-      'stage direction label should be stripped from LLM output',
+      '这个括号真不能有',
+      'stage direction label and formulaic opener should be stripped from LLM output',
     );
 
     const beforeEmpty = sent.length;
@@ -904,7 +910,8 @@ async function testKnowledgeInjectionAndHumanizedPostprocess() {
     handler.handleEvent(makeEvent(904, 94, ' 今天CS2这队伍怎么打'));
     await waitFor(() => sent.length === 1, 'knowledge injected reply');
     const text = firstText(sent[0].message);
-    assert.ok(text.includes('不是哥们 这个回答太规整了'), 'reply should keep the useful humanized content');
+    assert.ok(text.includes('这个回答太规整了'), 'reply should keep the useful humanized content');
+    assert.ok(!/^不是哥们/.test(text), 'postprocess should soften formulaic opener');
     assert.ok(!/结论：|根据知识库|根据临场笔记|作为AI|我将用|玩机器风格回复/.test(text), 'postprocess should strip assistant/template boilerplate');
 
     handler.handleEvent(makePlainEvent(908, 98, '/trace last'));

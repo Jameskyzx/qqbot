@@ -711,7 +711,7 @@ function normalizeAssistantOpener(text: string): string {
   const cleaned = sanitizeOutgoingText(text)
     .replace(/\s+/g, ' ')
     .replace(/^(?:结论|原因|建议|分析|总结|答案|短评|判断|我的判断|先说结论)\s*[：:]\s*/i, '')
-    .replace(/^(?:不是哥们|兄弟|哥们|可以的|这波|讲道理|说实话)[，,。!！?\s]*/i, (match) => match.trim())
+    .replace(/^(?:不是哥们|不是，哥们|不是 哥们|兄弟们?|哥们|家人们|可以的|这波|讲道理|说实话|我只能说)[，,。!！?\s]*/i, '')
     .trim();
   if (!cleaned) return '';
   const firstClause = cleaned.split(/[。！？!?；;\n]/).find(Boolean) || cleaned;
@@ -746,8 +746,8 @@ function needsRealityIdentityBoundary(text: string): boolean {
 function buildLiveStyleCue(job: ReplyJob): string {
   const base = [
     '直接给判断，别铺垫，别说规则',
-    '先短反应，再补一句原因',
-    '别用“不是哥们”开头，换个自然接法',
+    '不要口癖开场，第一句直接说事',
+    '短反应可以有，但别复读固定口头禅',
     '像刚看到弹幕一样接住，短一点',
     '如果是CS话题，抓经济、道具、timing里最关键的一个点',
     '先别急着开香槟，给一个偏谨慎的判断',
@@ -755,6 +755,7 @@ function buildLiveStyleCue(job: ReplyJob): string {
     '可以轻嘴硬，但别追着人骂',
     '优先像正常人聊天，别像模板在营业',
     '能说“等一下/这个不太对”就别硬喷',
+    '这条不要用固定口头禅开头',
   ];
   if (job.hasImages) {
     base.push('先说图里可见内容，再给一句短评；看不清就直说');
@@ -781,6 +782,7 @@ function scrubKnowledgeForRuntime(input: string, keepIdentityBoundary: boolean):
     .filter(Boolean)
     .filter((line) => !/^[-*]\s*(?:知识来源类型|置信度|核验状态|内容类型|自动写入资格|证据链接)[：:]/.test(line))
     .filter((line) => !noisySection.test(line))
+    .filter((line) => !/不是哥们/.test(line))
     .filter((line) => keepIdentityBoundary || !forbiddenForNormal.test(line))
     .map((line) => line
       .replace(/^【(.+?)】$/, '$1')
@@ -874,6 +876,7 @@ function buildSystemPrompt(config: AIConfig): string {
     `- ${aggressionRule}不要持续人身攻击、辱骂、歧视或攻击现实隐私。`,
     '- 回复要像直播间即时反应：先短反应，再补一句判断；不要像AI助手排条目，除非用户明确要列表。',
     '- 经典口癖和梗要按语境自然使用，同一个开场不要连续复读；能用具体判断就别硬塞口头禅。',
+    '- 固定口头禅不是默认开场，除非对方主动玩梗或内容特别离谱；绝大多数回复直接说判断。',
     '- 优先吸收临场笔记/知识库里的语态、选手/队伍倾向和场景模板，但输出时不要提“知识库/素材/模板”。',
     '- 攻击性要降下来：喷只能喷操作、决策、逻辑，不能追着群友本人骂；普通聊天优先用“等一下/先别急/这个不太对”。',
     '- 评价选手/队伍时先给倾向，再给理由：枪法、决策、角色、体系、近期状态；实时排名/赛果要结合搜索参考。',
@@ -910,14 +913,35 @@ function postProcessReply(text: string): string {
   text = text.replace(/^[(（【\[]\s*(?:直播口吻(?:接弹幕)?|玩机器(?:风格|口吻)?|6657(?:风格|口吻)?|Machine(?:风格|口吻)?|拟态|风格参考|接弹幕|真人感|群聊回复|QQ?群回复|bot回复|机器人回复|第一人称(?:拟态)?|口吻)\s*[)）】\]]\s*[：:，,、-]?\s*/i, '');
   text = text.replace(/^["「『](.+)["」』]$/s, '$1');
   text = text.replace(/^[（(]\s*(.+?)\s*[）)]$/s, '$1');
+  text = deFormulaicOpening(text);
   text = text.replace(/\n{3,}/g, '\n\n');
   text = text.replace(/^ +/gm, '');
   if (/^[\d\s.,，。!！?？]+$/.test(text)) {
-    text = '可以的 这波有点东西';
+    text = '我看到了 这句信息太少';
   } else if (/^[哈啊嗯哦额呃草艹wW6]+$/.test(text) && text.length <= 6) {
-    text = '这波有点抽象 但先看内容';
+    text = '有点抽象 先看你想说啥';
   }
   return sanitizeOutgoingText(text).trim();
+}
+
+function deFormulaicOpening(text: string): string {
+  const trimmed = text.trimStart();
+  const match = trimmed.match(/^(?:不是哥们|不是，哥们|不是 哥们|哥们|兄弟们?|家人们|可以的|讲道理|说实话|先说结论|我的判断是|我只能说)[，,。!！?\s]+(.+)/s);
+  if (!match) return text;
+  const rest = match[1].trimStart();
+  if (!rest) return text;
+  if (/^(?:你是不是|你是|我是|到底|bot|机器人|ai|AI)/.test(rest)) return text;
+  if (/^(?:来了|收到|在|到|感谢|谢谢)/.test(rest)) return text;
+
+  const replacements = [
+    '等一下，',
+    '这个不太对，',
+    '先别急，',
+    '',
+    '',
+  ];
+  const idx = hashIndex(rest, replacements.length);
+  return `${replacements[idx]}${rest}`.trimStart();
 }
 
 function forcedFallbackReply(job: ReplyJob, recordTranscripts: string[] = []): string {

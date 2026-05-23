@@ -26,7 +26,7 @@ const recallReplies = [
   '{name} 撤回了什么 让我看看',
   '撤回也没用 弹幕已经看到了',
   '{name} 你这个撤回timing很怪',
-  '不是哥们 刚说完就撤回？',
+  '刚说完就撤回 这 timing 很怪',
   '来不及了 我已经记住了（没有',
 ];
 
@@ -59,7 +59,7 @@ export function registerRecallListener(bot: Bot, enabled: boolean = true): void 
     let reply: string;
     if (cached) {
       const templates = [
-        `${cached.user} 刚才这句「${cached.text.slice(0, 30)}」怎么撤了，不是哥们`,
+        `${cached.user} 刚才这句「${cached.text.slice(0, 30)}」怎么撤了`,
         `来不及了 ${cached.user}，这波已经被弹幕捕获`,
         `${cached.user} 这个撤回有点心虚啊`,
       ];
