@@ -2219,11 +2219,9 @@ export const aiChatPlugin: Plugin = {
           try {
             const voicePath = await withGate('tts', () => generateVoice(config, finalText), job.forced || job.forceVoice);
             if (voicePath) {
-              const recordMessage: MessageSegment[] = [
-                ...(useQuote ? [{ type: 'reply' as const, data: { id: String(job.messageId) } }] : []),
-                voiceRecordSegment(config, voicePath),
-              ];
-              ctx.reply(recordMessage);
+              // QQ/NapCat 对 reply + record 组合兼容性差，部分客户端会显示但无法播放。
+              // 语音消息保持纯 record；只有文本兜底才引用原消息。
+              ctx.reply([voiceRecordSegment(config, voicePath)]);
               sentVoice = true;
             }
           } catch { /* */ }

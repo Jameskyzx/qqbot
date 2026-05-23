@@ -1033,7 +1033,7 @@ apt install -y ffmpeg
 - `最近TTS模式`：最近一次远端请求采用的 payload 格式，例如 `mimo-voiceclone-chat-v25`。
 - `最近错误`：最近一次 API、网络、解析或长度错误。
 
-明确说“用语音回复 / 发语音 / voice / tts / say / 念出来 / 读出来”时，会被当成强触发：必须入队、必须尝试发语音，并且群聊里会把 `reply` 段和 `record` 段一起发送，定位到原消息。如果语音生成失败，会引用原消息退回文字，开头会说明这次语音没生成出来。
+明确说“用语音回复 / 发语音 / voice / tts / say / 念出来 / 读出来”时，会被当成强触发：必须入队、必须尝试发语音。语音发送时只发纯 `record` 段，不带 `reply`，因为 QQ/NapCat 对 `reply + record` 组合兼容性差，容易显示但无法播放。如果语音生成失败，才会引用原消息退回文字，开头会说明这次语音没生成出来。
 
 ### 7. 常见语音问题
 
@@ -1047,7 +1047,7 @@ apt install -y ffmpeg
 - `local tts command missing`：`tts_provider` 是 `local/auto`，但 `tts_local_command` 没填。
 - `local tts timeout`：本地语音引擎太慢或模型没加载好，提高 `tts_local_timeout_ms`，或让引擎常驻服务再用 wrapper 调 HTTP。
 - `local tts failed`：wrapper 退出码非 0 或没有生成音频，直接在 VPS 上手动执行 wrapper 看 stderr。
-- QQ 不显示语音：先确认 `/voice status` 的 `TTS发送` 是 `base64`。Docker NapCat 不建议用 `file://`，除非容器挂载了同一个 `voice_cache/` 路径并且 NapCat 有读取权限。
+- QQ 不显示语音：先确认 `/voice status` 的 `TTS发送` 是 `base64`。语音消息必须是纯 `record`，不能和 `reply` 拼在同一条里。Docker NapCat 不建议用 `file://`，除非容器挂载了同一个 `voice_cache/` 路径并且 NapCat 有读取权限。
 - `听写 HTTP 400/422`：多数是供应商不支持当前音频输入格式，换 `stt_model` 或关闭 `enable_stt`。
 - `local stt command missing`：`stt_provider` 是 `local/auto`，但 `stt_local_command` 没填。
 - `local stt failed`：本地听写脚本没有输出文本，检查模型路径、音频格式和脚本权限。

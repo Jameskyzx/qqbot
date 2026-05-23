@@ -733,7 +733,7 @@ async function testExplicitVoiceReply() {
   try {
     handler.handleEvent(makePlainEvent(901, 91, '用语音回复 今天NAVI咋样'));
     await waitFor(() => sent.length === 1, 'explicit voice reply');
-    assert.strictEqual(sent[0].message.find((seg) => seg.type === 'reply')?.data.id, '901');
+    assert.ok(!sent[0].message.some((seg) => seg.type === 'reply'), 'record message should not include reply segment because QQ may fail to play reply+record');
     assert.ok(sent[0].message.some((seg) => seg.type === 'record'), 'explicit voice request should send record segment');
     const record = sent[0].message.find((seg) => seg.type === 'record');
     assert.ok(record.data.file.startsWith('base64://'), 'Docker NapCat default should send TTS as base64 record segment');
