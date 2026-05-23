@@ -706,8 +706,10 @@ async function testExplicitVoiceReply() {
   const config = makeConfigForHandler();
   config.ai.enable_tts = true;
   config.ai.tts_provider = 'local';
-  config.ai.tts_local_command = `"${process.execPath}" -e "const fs=require('fs');const out=process.env.QQBOT_TTS_OUTPUT;const h=Buffer.alloc(44);h.write('RIFF',0);h.writeUInt32LE(256,4);h.write('WAVE',8);h.write('fmt ',12);h.writeUInt32LE(16,16);h.writeUInt16LE(1,20);h.writeUInt16LE(1,22);h.writeUInt32LE(16000,24);h.writeUInt32LE(32000,28);h.writeUInt16LE(2,32);h.writeUInt16LE(16,34);h.write('data',36);h.writeUInt32LE(220,40);fs.mkdirSync(require('path').dirname(out),{recursive:true});fs.writeFileSync(out,Buffer.concat([h,Buffer.alloc(220)]));console.log(out);"`;
+  config.ai.tts_local_command = `"${process.execPath}" -e "const fs=require('fs');const out=process.env.QQBOT_TTS_OUTPUT;const cap=process.env.SMOKE_TTS_CAPTURE;if(cap)fs.writeFileSync(cap,process.env.QQBOT_TTS_TEXT||'','utf8');const h=Buffer.alloc(44);h.write('RIFF',0);h.writeUInt32LE(256,4);h.write('WAVE',8);h.write('fmt ',12);h.writeUInt32LE(16,16);h.writeUInt16LE(1,20);h.writeUInt16LE(1,22);h.writeUInt32LE(16000,24);h.writeUInt32LE(32000,28);h.writeUInt16LE(2,32);h.writeUInt16LE(16,34);h.write('data',36);h.writeUInt32LE(220,40);fs.mkdirSync(require('path').dirname(out),{recursive:true});fs.writeFileSync(out,Buffer.concat([h,Buffer.alloc(220)]));console.log(out);"`;
   config.ai.tts_max_chars = 120;
+  const capturePath = path.resolve(__dirname, '..', 'voice_cache', `smoke-tts-capture-${Date.now()}.txt`);
+  process.env.SMOKE_TTS_CAPTURE = capturePath;
   const sent = [];
   const bot = {
     getConfig: () => config,
@@ -720,24 +722,37 @@ async function testExplicitVoiceReply() {
   };
   const handler = new MessageHandler(bot);
   handler.use(aiChat.aiChatPlugin);
+  let llmCalls = 0;
 
   aiChat.__setLLMCallerForTests(async (_config, messages) => {
+    llmCalls++;
     const current = messages[messages.length - 1];
     const content = typeof current.content === 'string'
       ? current.content
       : current.content.map((item) => item.text || '').join('\n');
     assert.ok(content.includes('用户明确要求语音回复: 是'), 'prompt should mark explicit voice request');
-    return '可以 这句我直接给你念出来';
+    return 'AI自由发挥语音烟测';
   });
 
   try {
-    handler.handleEvent(makePlainEvent(901, 91, '用语音回复 今天NAVI咋样'));
+    const directText = `直读语音烟测${Date.now()}`;
+    handler.handleEvent(makePlainEvent(901, 91, `用语音回复 ${directText}`));
     await waitFor(() => sent.length === 1, 'explicit voice reply');
+    assert.strictEqual(llmCalls, 0, 'verbatim voice reply should bypass LLM');
     assert.ok(!sent[0].message.some((seg) => seg.type === 'reply'), 'record message should not include reply segment because QQ may fail to play reply+record');
     assert.ok(sent[0].message.some((seg) => seg.type === 'record'), 'explicit voice request should send record segment');
     const record = sent[0].message.find((seg) => seg.type === 'record');
     assert.ok(record.data.file.startsWith('base64://'), 'Docker NapCat default should send TTS as base64 record segment');
+    assert.strictEqual(fs.readFileSync(capturePath, 'utf-8'), directText, 'verbatim voice reply should speak exactly the user provided text');
+
+    handler.handleEvent(makePlainEvent(905, 95, '用语音回答 今天NAVI咋样'));
+    await waitFor(() => sent.length === 2, 'ai voice answer');
+    assert.strictEqual(llmCalls, 1, 'voice answer should call LLM when user asks for an answer');
+    assert.ok(sent[1].message.some((seg) => seg.type === 'record'), 'voice answer should send record segment');
+    assert.strictEqual(fs.readFileSync(capturePath, 'utf-8'), 'AI自由发挥语音烟测', 'voice answer should speak the LLM response');
   } finally {
+    delete process.env.SMOKE_TTS_CAPTURE;
+    if (fs.existsSync(capturePath)) fs.unlinkSync(capturePath);
     aiChat.__setLLMCallerForTests();
     aiChat.shutdownAiChat();
   }

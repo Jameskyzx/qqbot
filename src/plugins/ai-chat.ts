@@ -1520,12 +1520,71 @@ function isExplicitVoiceReplyRequest(text: string, command: string | null): bool
   return /(?:用|发|来|整|给|回|回复|说|念|读|语音|voice|tts|say).{0,8}(?:语音|voice|tts|say|音频|声音|念出来|读出来)|(?:语音|voice|tts|say).{0,8}(?:回|回复|说|念|读|来|发|整|一下)/i.test(normalized);
 }
 
+function extractVerbatimVoiceText(text: string, command: string | null): string {
+  const raw = text.trim();
+  if (!raw) return '';
+  if (command && directTtsCommands.has(command)) return raw;
+  if (/(?:语音|voice|tts|say)\s*(?:回答|分析|评价|解释|总结|查|搜|说说|聊聊|怎么看|怎么说)|(?:回答|分析|评价|解释|总结|说说|聊聊|怎么看|怎么说)\s*(?:.*?)(?:语音|voice|tts|say)/i.test(raw)) {
+    return '';
+  }
+
+  const patterns = [
+    /^(?:请)?(?:用|发|来|整|给我)?\s*(?:语音|voice|tts|say)\s*(?:回复|回|说|念|读|念出来|读出来)?\s*(?:一下|下)?[：:,，、\s]+([\s\S]+)$/i,
+    /^(?:请)?(?:用|发|来|整|给我)?\s*(?:语音|voice|tts|say)\s*(?:回复|回|说|念|读|念出来|读出来)?\s*(?:一下|下)?([\s\S]+)$/i,
+    /^(?:请)?(?:回复|回|说|念|读)\s*(?:语音|voice|tts|say)\s*(?:一下|下)?[：:,，、\s]+([\s\S]+)$/i,
+    /^(?:请)?(?:回复|回|说|念|读)\s*(?:语音|voice|tts|say)\s*(?:一下|下)?([\s\S]+)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (!match) continue;
+    const candidate = (match[1] || '')
+      .replace(/^(?:回复|回答)\s*(?:一下|下)?[：:,，、\s]*/i, '')
+      .trim();
+    if (!candidate) continue;
+    if (/^(?:回答|分析|评价|怎么看|怎么说|帮我|告诉我|解释|查一下|搜一下|总结|评价一下)\b/i.test(candidate)) {
+      return '';
+    }
+    return candidate;
+  }
+  return '';
+}
+
 function stripVoiceReplyInstruction(text: string): string {
   return text
     .replace(/请?(?:用|发|来|整|给我)?\s*(?:语音|voice|tts|say)\s*(?:回(?:复)?|说|念|读|回答)?\s*(?:一下|下)?[：:,，、]?\s*/ig, '')
     .replace(/(?:用|发|来|整|给我)?\s*(?:语音|voice|tts|say)\s*(?:回复|回答|说|念|读|回我)?\s*/ig, '')
     .replace(/(?:回(?:复)?|回答)\s*(?:用)?\s*(?:语音|voice|tts|say)\s*/ig, '')
     .trim();
+}
+
+async function sendVerbatimVoice(ctx: PluginContext, config: AIConfig, text: string, fallbackMessageId?: number, fallbackUserId?: number): Promise<boolean> {
+  const spokenText = clampVoiceText(text, config.tts_max_chars || 120);
+  if (!spokenText) return false;
+  if (!config.enable_tts) {
+    const message = '语音没开，这句没法念';
+    if (fallbackMessageId && fallbackUserId) ctx.replyQuoteTo(fallbackMessageId, fallbackUserId, message);
+    else ctx.reply(message);
+    return true;
+  }
+  const ttsNeedsApi = (config.tts_provider || 'api') === 'api' || ((config.tts_provider || 'api') === 'auto' && !(config.tts_local_command || '').trim());
+  if (ttsNeedsApi && !hasUsableApiKey(config.api_key)) {
+    const message = 'AI接口没配，语音也就别想了';
+    if (fallbackMessageId && fallbackUserId) ctx.replyQuoteTo(fallbackMessageId, fallbackUserId, message);
+    else ctx.reply(message);
+    return true;
+  }
+  try {
+    const voicePath = await withGate('tts', () => generateVoice(config, spokenText), true);
+    if (voicePath) {
+      ctx.reply([voiceRecordSegment(config, voicePath)]);
+      return true;
+    }
+  } catch { /* */ }
+  const message = `语音生成失败 ${spokenText}`;
+  if (fallbackMessageId && fallbackUserId) ctx.replyQuoteTo(fallbackMessageId, fallbackUserId, message);
+  else ctx.reply(message);
+  return true;
 }
 
 function shouldReply(
@@ -1896,22 +1955,7 @@ export const aiChatPlugin: Plugin = {
         ctx.reply('/voice <内容>\n/voice status\n/voice test [内容]\n/voice stt <语音URL>\n/voice clean');
         return true;
       }
-      if (!config.enable_tts) {
-        ctx.reply('语音没开');
-        return true;
-      }
-      const ttsNeedsApi = (config.tts_provider || 'api') === 'api' || ((config.tts_provider || 'api') === 'auto' && !(config.tts_local_command || '').trim());
-      if (ttsNeedsApi && !apiReady) {
-        ctx.reply('AI接口没配，语音也就别想了。');
-        return true;
-      }
-      const voicePath = await withGate('tts', () => generateVoice(config, text));
-      if (voicePath) {
-        ctx.reply([voiceRecordSegment(config, voicePath)]);
-      } else {
-        ctx.reply('语音生成失败');
-      }
-      return true;
+      return sendVerbatimVoice(ctx, config, text);
     }
 
     // ===== 显式联网搜索 =====
@@ -1933,6 +1977,16 @@ export const aiChatPlugin: Plugin = {
 
     if (ctx.command && !directAiCommands.has(ctx.command)) {
       return false;
+    }
+
+    const earlyRawEffectiveText = ctx.command && directAiCommands.has(ctx.command)
+      ? ctx.args.join(' ').trim()
+      : ctx.rawText.trim();
+    const verbatimVoiceText = isExplicitVoiceReplyRequest(earlyRawEffectiveText, ctx.command)
+      ? extractVerbatimVoiceText(earlyRawEffectiveText, ctx.command)
+      : '';
+    if (verbatimVoiceText) {
+      return sendVerbatimVoice(ctx, config, verbatimVoiceText, ctx.event.message_id, ctx.event.user_id);
     }
 
     if (!apiReady) {
@@ -1958,9 +2012,7 @@ export const aiChatPlugin: Plugin = {
       ? Number(replySeg.data.id)
       : undefined;
     const atBot = ctx.isAtBot || isAtBot(ctx.event);
-    const rawEffectiveText = ctx.command && directAiCommands.has(ctx.command)
-      ? ctx.args.join(' ').trim()
-      : ctx.rawText.trim();
+    const rawEffectiveText = earlyRawEffectiveText;
     const forceVoice = isExplicitVoiceReplyRequest(rawEffectiveText, ctx.command);
     const strippedVoiceText = forceVoice ? stripVoiceReplyInstruction(rawEffectiveText) : rawEffectiveText;
     const effectiveText = strippedVoiceText || rawEffectiveText;
