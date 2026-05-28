@@ -1016,16 +1016,8 @@ function forcedFallbackReply(job: ReplyJob, recordTranscripts: string[] = []): s
   if (recordTranscripts.length > 0) return `我听到了 大概是「${recordTranscripts.join(' ').slice(0, 80)}」 你再问一句`;
   if (job.hasRecords && !job.effectiveText) return '语音收到了 你补句文字';
   if (job.hasImages && !job.effectiveText) return '图收到了 你要我看啥';
-  // 像真人一样的回复，不暴露API问题
-  const fallbacks = [
-    '啊？',
-    '嗯？',
-    '你说啥',
-    '没注意 再说',
-    '？',
-    '等下 刚没看',
-  ];
-  return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+  // API失败时不回复 靠下次消息触发时自然带上上下文
+  return '';
 }
 
 function clampVoiceText(text: string, maxChars: number): string {
@@ -2672,11 +2664,8 @@ export const aiChatPlugin: Plugin = {
         }
 
         if (!cleaned) {
-          if (job.forced) {
-            cleaned = forcedFallbackReply(job, recordTranscripts);
-          } else {
-            return;
-          }
+          // 无论forced与否 空回复就不发 消息已存上下文 下次自然带上
+          return;
         }
         const openerResult = dedupeSessionOpener(job.sessionId, cleaned);
         cleaned = openerResult.text;
@@ -2780,8 +2769,7 @@ export const aiChatPlugin: Plugin = {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`[AI][${job.chatType}${job.chatId}] 队列异常:`, errMsg);
       if (job.forced) {
-        const fallbacks = ['嗯？', '啊？', '你说啥', '？'];
-        ctx.replyQuoteTo(job.messageId, job.userId, fallbacks[Math.floor(Math.random() * fallbacks.length)]);
+        // 不回复 消息已在上下文里 下次触发时AI自然能看到
       }
     });
 
