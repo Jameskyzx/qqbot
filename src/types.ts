@@ -83,7 +83,7 @@ export interface AIConfig {
   /** 人格模式 */
   persona_mode?: 'first_person_bot' | 'style_bot' | 'assistant';
   /** 吐槽强度 */
-  aggression_level?: 'low' | 'medium' | 'analysis';
+  aggression_level?: 'low' | 'medium' | 'high' | 'analysis';
   /** 知识库更新模式 */
   knowledge_update_mode?: 'reviewed_command' | 'static';
   /** 是否启用轻量知识库后台自动更新 */
