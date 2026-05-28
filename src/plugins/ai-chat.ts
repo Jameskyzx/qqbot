@@ -602,6 +602,20 @@ function isLengthLimitedFinish(reason: string): boolean {
   return normalized === 'length' || normalized.includes('max_tokens') || normalized.includes('token_limit');
 }
 
+/** 检测内容是否在中文标点处被截断（即使finish_reason=stop也补救） */
+function looksTruncated(text: string): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (trimmed.length < 10) return false;
+  // 看最后一个字符
+  const last = trimmed[trimmed.length - 1];
+  // 正常结束符
+  const properEndings = /[。！？!?…)）"」』.\]]/;
+  if (properEndings.test(last)) return false;
+  // 以中文/英文/数字结尾且没有合适标点 = 可能截断
+  return /[\u4e00-\u9fa5a-zA-Z0-9，,、/]/.test(last);
+}
+
 function appendContinuation(base: string, next: string): string {
   const left = base.trimEnd();
   const right = next.trimStart();
@@ -629,14 +643,16 @@ function buildContinuationMessages(messages: ChatMessage[], partialReply: string
 }
 
 async function postLLM(config: AIConfig, messages: ChatMessage[], useVision: boolean = false, label: string = 'chat'): Promise<string> {
-  const maxContinuationRounds = 2;
+  const maxContinuationRounds = 3;
   let currentMessages = messages;
   let combined = '';
 
   for (let round = 0; round <= maxContinuationRounds; round++) {
     const result = await postLLMOnce(config, currentMessages, useVision, round === 0 ? label : `${label}:continue${round}`);
     combined = appendContinuation(combined, result.content);
-    if (!isLengthLimitedFinish(result.finishReason)) break;
+    // 触发续写：明确length截断 或 内容看起来被截断
+    const needContinue = isLengthLimitedFinish(result.finishReason) || looksTruncated(combined);
+    if (!needContinue) break;
     if (round >= maxContinuationRounds) break;
     currentMessages = buildContinuationMessages(messages, combined);
   }
