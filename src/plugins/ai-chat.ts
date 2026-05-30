@@ -55,6 +55,17 @@ import {
   callLLMWithRetry as runLLMWithRetry,
 } from './llm-api';
 import { ContextManager, SessionContext } from './ai-context';
+import {
+  extractImageUrls,
+  extractRecordUrls,
+  uniqueNonEmpty,
+  isDirectMediaSource,
+  firstMediaString,
+  resolveOneBotImageSources,
+  resolveOneBotRecordSources,
+  voiceRecordSegment,
+  isAtBot,
+} from './media-utils';
 import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
@@ -151,143 +162,9 @@ interface VoiceTrace {
 // ============ 上下文管理器 已迁移到 ./ai-context.ts ============
 
 // ============ 工具函数 ============
-function extractImageUrls(message: MessageSegment[]): string[] {
-  return message
-    .filter((seg) => seg.type === 'image')
-    .map((seg) => seg.type === 'image' ? (seg.data.url || seg.data.file || '') : '')
-    .filter(Boolean);
-}
-
-function extractRecordUrls(message: MessageSegment[]): string[] {
-  return message
-    .filter((seg) => seg.type === 'record')
-    .map((seg) => seg.type === 'record' ? (seg.data.url || seg.data.file || '') : '')
-    .filter(Boolean);
-}
-
-function uniqueNonEmpty(items: string[]): string[] {
-  return [...new Set(items.map((item) => item.trim()).filter(Boolean))];
-}
-
-function isDirectMediaSource(input: string): boolean {
-  return /^(https?:\/\/|file:\/\/|data:|base64:\/\/)/i.test(input) || (!!input && fs.existsSync(input));
-}
-
-function firstStringCandidate(items: any[]): string {
-  for (const item of items) {
-    if (typeof item === 'string' && item.trim()) return item.trim();
-  }
-  return '';
-}
-
-function normalizeApiBase64Source(value: string, mime: string): string {
-  const raw = value.trim();
-  if (!raw) return '';
-  if (raw.startsWith('data:')) return raw;
-  if (raw.startsWith('base64://')) return `data:${mime};base64,${raw.slice('base64://'.length).replace(/\s+/g, '')}`;
-  const compact = raw.replace(/\s+/g, '');
-  if (compact.length < 80) return '';
-  if (!/^[A-Za-z0-9+/_=-]+$/.test(compact)) return '';
-  return `data:${mime};base64,${compact}`;
-}
-
-function firstMediaString(data: any, inlineMime: string): string {
-  const url = firstStringCandidate([
-    data?.url,
-    data?.file_url,
-    data?.data?.url,
-    data?.data?.file_url,
-  ]);
-  if (url) return url;
-
-  const inline = firstStringCandidate([
-    data?.base64,
-    data?.b64,
-    data?.base64_file,
-    data?.file_base64,
-    data?.data?.base64,
-    data?.data?.b64,
-    data?.data?.base64_file,
-    data?.data?.file_base64,
-  ]);
-  const inlineSource = inline ? normalizeApiBase64Source(inline, inlineMime) : '';
-  if (inlineSource) return inlineSource;
-
-  const candidates = [
-    data?.file,
-    data?.path,
-    data?.file_path,
-    data?.data?.file,
-    data?.data?.path,
-    data?.data?.file_path,
-  ];
-  for (const item of candidates) {
-    if (typeof item === 'string' && item.trim()) return item.trim();
-  }
-  return '';
-}
-
-async function resolveOneBotImageSources(ctx: PluginContext, message: MessageSegment[]): Promise<string[]> {
-  const raw = uniqueNonEmpty(extractImageUrls(message));
-  const resolved: string[] = [];
-  for (const source of raw) {
-    if (isDirectMediaSource(source)) {
-      resolved.push(source);
-      continue;
-    }
-    try {
-      const res = await ctx.bot.callApiAsync('get_image', { file: source }, 3000);
-      const next = firstMediaString((res as any)?.data || res, 'image/jpeg');
-      resolved.push(next || source);
-    } catch {
-      resolved.push(source);
-    }
-  }
-  return uniqueNonEmpty(resolved);
-}
-
-async function resolveOneBotRecordSources(ctx: PluginContext, config: AIConfig, message: MessageSegment[]): Promise<string[]> {
-  const raw = uniqueNonEmpty(extractRecordUrls(message));
-  const resolved: string[] = [];
-  for (const source of raw) {
-    if (isDirectMediaSource(source)) {
-      resolved.push(source);
-      continue;
-    }
-    try {
-      const res = await ctx.bot.callApiAsync('get_record', {
-        file: source,
-        out_format: config.stt_record_format || 'mp3',
-      }, 5000);
-      const next = firstMediaString((res as any)?.data || res, 'audio/mpeg');
-      resolved.push(next || source);
-    } catch {
-      resolved.push(source);
-    }
-  }
-  return uniqueNonEmpty(resolved);
-}
-
-function voiceRecordSegment(config: AIConfig, filepath: string): MessageSegment {
-  const mode = config.tts_send_mode || 'base64';
-  if (mode !== 'file') {
-    try {
-      const buffer = fs.readFileSync(filepath);
-      if (buffer.length > 0 && buffer.length <= 16 * 1024 * 1024) {
-        return { type: 'record', data: { file: `base64://${buffer.toString('base64')}` } };
-      }
-    } catch { /* fall back to file */ }
-  }
-  return { type: 'record', data: { file: `file://${filepath}` } };
-}
-
-function isAtBot(event: MessageEvent): boolean {
-  if (event.message_type !== 'group') return false;
-  const selfId = String(event.self_id);
-  return event.message.some(
-    (seg) => seg.type === 'at' && String(seg.data.qq) === selfId
-  ) || event.raw_message.includes(`[CQ:at,qq=${selfId}]`);
-}
+// extractImageUrls / extractRecordUrls / uniqueNonEmpty / isDirectMediaSource
+// firstMediaString / resolveOneBotImageSources / resolveOneBotRecordSources
+// voiceRecordSegment / isAtBot 已迁移到 ./media-utils
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
