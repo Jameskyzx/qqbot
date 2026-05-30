@@ -120,6 +120,34 @@ function envString(name: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
+/** 环境变量数值，无效时返回 undefined */
+function envNumber(name: string): number | undefined {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** 环境变量布尔值 */
+function envBoolean(name: string): boolean | undefined {
+  const raw = (process.env[name] || '').trim().toLowerCase();
+  if (!raw) return undefined;
+  if (['true', '1', 'yes', 'on'].includes(raw)) return true;
+  if (['false', '0', 'no', 'off'].includes(raw)) return false;
+  return undefined;
+}
+
+/** 环境变量逗号分隔的整数数组（如 WANJIER_ADMIN_QQ=12345,67890） */
+function parseEnvIntArray(name: string, fallback: number[]): number[] {
+  const raw = (process.env[name] || '').trim();
+  if (!raw) return fallback;
+  const parts = raw.split(/[,\s]+/).filter(Boolean);
+  const numbers = parts
+    .map((item) => Number(item))
+    .filter((item) => Number.isSafeInteger(item) && item > 0);
+  return [...new Set(numbers)];
+}
+
 export function hasUsableApiKey(apiKey: string | undefined | null): boolean {
   const key = (apiKey || '').trim();
   if (key.length < 8) return false;
@@ -196,7 +224,7 @@ function normalizeAiConfig(value: unknown): AIConfig {
   const validTriggerModes = new Set(['command', 'at', 'all', 'smart']);
   const personaMode = asString(raw.persona_mode, DEFAULT_AI_CONFIG.persona_mode || 'first_person_bot');
   const validPersonaModes = new Set(['first_person_bot', 'style_bot', 'assistant']);
-  const aggressionLevel = asString(raw.aggression_level, DEFAULT_AI_CONFIG.aggression_level || 'low');
+  const aggressionLevel = envString('WANJIER_AGGRESSION') || asString(raw.aggression_level, DEFAULT_AI_CONFIG.aggression_level || 'low');
   const validAggressionLevels = new Set(['low', 'medium', 'high', 'analysis']);
   const knowledgeUpdateMode = asString(raw.knowledge_update_mode, DEFAULT_AI_CONFIG.knowledge_update_mode || 'reviewed_command');
   const validKnowledgeUpdateModes = new Set(['reviewed_command', 'static']);
@@ -213,20 +241,20 @@ function normalizeAiConfig(value: unknown): AIConfig {
   const validTtsSendModes = new Set(['auto', 'base64', 'file']);
 
   return {
-    api_url: asString(raw.api_url, DEFAULT_AI_CONFIG.api_url),
+    api_url: envString('WANJIER_API_URL') || asString(raw.api_url, DEFAULT_AI_CONFIG.api_url),
     api_key: envString('WANJIER_API_KEY') || envString('OPENAI_API_KEY') || asString(raw.api_key, DEFAULT_AI_CONFIG.api_key),
-    model: asString(raw.model, DEFAULT_AI_CONFIG.model),
-    vision_model: asString(raw.vision_model, asString(raw.model, DEFAULT_AI_CONFIG.vision_model)),
+    model: envString('WANJIER_MODEL') || asString(raw.model, DEFAULT_AI_CONFIG.model),
+    vision_model: envString('WANJIER_VISION_MODEL') || asString(raw.vision_model, asString(raw.model, DEFAULT_AI_CONFIG.vision_model)),
     active_preset: presets[activePreset] ? activePreset : (Object.keys(presets)[0] || ''),
     presets,
     max_context_rounds: Math.floor(asNumber(raw.max_context_rounds, DEFAULT_AI_CONFIG.max_context_rounds, 1, 500)),
     max_context_messages: Math.floor(asNumber(raw.max_context_messages, DEFAULT_AI_CONFIG.max_context_messages, 5, 1000)),
     context_send_messages: Math.floor(asNumber(raw.context_send_messages, DEFAULT_AI_CONFIG.context_send_messages || 25, 1, 200)),
-    max_tokens: Math.floor(asNumber(raw.max_tokens, DEFAULT_AI_CONFIG.max_tokens, 16, 32768)),
-    temperature: asNumber(raw.temperature, DEFAULT_AI_CONFIG.temperature, 0, 2),
+    max_tokens: Math.floor(asNumber(envNumber('WANJIER_MAX_TOKENS') ?? raw.max_tokens, DEFAULT_AI_CONFIG.max_tokens, 16, 32768)),
+    temperature: asNumber(envNumber('WANJIER_TEMPERATURE') ?? raw.temperature, DEFAULT_AI_CONFIG.temperature, 0, 2),
     trigger_mode: validTriggerModes.has(triggerMode) ? triggerMode as AIConfig['trigger_mode'] : DEFAULT_AI_CONFIG.trigger_mode,
     trigger_keywords: asStringArray(raw.trigger_keywords),
-    trigger_probability: asNumber(raw.trigger_probability, DEFAULT_AI_CONFIG.trigger_probability, 0, 1),
+    trigger_probability: asNumber(envNumber('WANJIER_TRIGGER_PROBABILITY') ?? raw.trigger_probability, DEFAULT_AI_CONFIG.trigger_probability, 0, 1),
     passive_random_min_chars: Math.floor(asNumber(raw.passive_random_min_chars, DEFAULT_AI_CONFIG.passive_random_min_chars || 4, 1, 50)),
     passive_random_allow_numeric: asBoolean(raw.passive_random_allow_numeric, DEFAULT_AI_CONFIG.passive_random_allow_numeric || false),
     poke_reply_probability: asNumber(raw.poke_reply_probability, DEFAULT_AI_CONFIG.poke_reply_probability ?? 1, 0, 1),
@@ -269,7 +297,7 @@ function normalizeAiConfig(value: unknown): AIConfig {
     stt_global_concurrency: Math.floor(asNumber(raw.stt_global_concurrency, DEFAULT_AI_CONFIG.stt_global_concurrency || 1, 1, 5)),
     forced_reply_quote: asBoolean(raw.forced_reply_quote, DEFAULT_AI_CONFIG.forced_reply_quote || true),
     must_reply_quote: asBoolean(raw.must_reply_quote, DEFAULT_AI_CONFIG.must_reply_quote || false),
-    enable_vision: asBoolean(raw.enable_vision, DEFAULT_AI_CONFIG.enable_vision),
+    enable_vision: envBoolean('WANJIER_ENABLE_VISION') ?? asBoolean(raw.enable_vision, DEFAULT_AI_CONFIG.enable_vision),
     vision_payload_mode: validVisionPayloadModes.has(visionPayloadMode) ? visionPayloadMode as AIConfig['vision_payload_mode'] : 'auto',
     vision_max_images: Math.floor(asNumber(raw.vision_max_images, DEFAULT_AI_CONFIG.vision_max_images || 2, 0, 4)),
     image_cache_max_mb: Math.floor(asNumber(raw.image_cache_max_mb, DEFAULT_AI_CONFIG.image_cache_max_mb || 512, 20, 4096)),
@@ -278,8 +306,8 @@ function normalizeAiConfig(value: unknown): AIConfig {
     image_download_max_redirects: Math.floor(asNumber(raw.image_download_max_redirects, DEFAULT_AI_CONFIG.image_download_max_redirects || 3, 0, 10)),
     image_cache_cleanup_interval_minutes: Math.floor(asNumber(raw.image_cache_cleanup_interval_minutes, DEFAULT_AI_CONFIG.image_cache_cleanup_interval_minutes || 30, 5, 1440)),
     image_cache_max_files: Math.floor(asNumber(raw.image_cache_max_files, DEFAULT_AI_CONFIG.image_cache_max_files || 5000, 50, 100000)),
-    enable_tts: asBoolean(raw.enable_tts, DEFAULT_AI_CONFIG.enable_tts),
-    enable_stt: asBoolean(raw.enable_stt, DEFAULT_AI_CONFIG.enable_stt || false),
+    enable_tts: envBoolean('WANJIER_ENABLE_TTS') ?? asBoolean(raw.enable_tts, DEFAULT_AI_CONFIG.enable_tts),
+    enable_stt: envBoolean('WANJIER_ENABLE_STT') ?? asBoolean(raw.enable_stt, DEFAULT_AI_CONFIG.enable_stt || false),
     stt_model: asString(raw.stt_model, DEFAULT_AI_CONFIG.stt_model || asString(raw.vision_model, asString(raw.model, ''))),
     stt_provider: validAudioProviders.has(sttProvider) ? sttProvider as AIConfig['stt_provider'] : 'api',
     stt_payload_mode: validSttPayloadModes.has(sttPayloadMode) ? sttPayloadMode as AIConfig['stt_payload_mode'] : 'auto',
@@ -309,7 +337,7 @@ function normalizeAiConfig(value: unknown): AIConfig {
     tts_cache_max_mb: Math.floor(asNumber(raw.tts_cache_max_mb, DEFAULT_AI_CONFIG.tts_cache_max_mb || 512, 8, 4096)),
     tts_cache_max_files: Math.floor(asNumber(raw.tts_cache_max_files, DEFAULT_AI_CONFIG.tts_cache_max_files || 3000, 50, 100000)),
     tts_sample_max_mb: Math.floor(asNumber(raw.tts_sample_max_mb, DEFAULT_AI_CONFIG.tts_sample_max_mb || 8, 1, 100)),
-    tts_probability: asNumber(raw.tts_probability, DEFAULT_AI_CONFIG.tts_probability, 0, 1),
+    tts_probability: asNumber(envNumber('WANJIER_TTS_PROBABILITY') ?? raw.tts_probability, DEFAULT_AI_CONFIG.tts_probability, 0, 1),
   };
 }
 
@@ -353,8 +381,8 @@ export function normalizeConfig(value: unknown): BotConfig {
     bot_qq: configuredBotQq,
     bot_name: asString(value.bot_name, 'QQ Bot'),
     command_prefix: commandPrefix,
-    admin_qq: asNumberArray(value.admin_qq),
-    enabled_groups: asNumberArray(value.enabled_groups),
+    admin_qq: parseEnvIntArray('WANJIER_ADMIN_QQ', asNumberArray(value.admin_qq)),
+    enabled_groups: parseEnvIntArray('WANJIER_ENABLED_GROUPS', asNumberArray(value.enabled_groups)),
     ai: normalizeAiConfig(value.ai),
   };
 }

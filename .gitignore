@@ -1,6 +1,7 @@
 node_modules/
 dist/
 config.json
+.env
 *.log
 voice_cache/
 stt_cache/
