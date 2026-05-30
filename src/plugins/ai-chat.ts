@@ -46,31 +46,21 @@ import {
   setKnowledgeAutoEnabled,
 } from './knowledge-base';
 import { loadContext, writeSession, deleteSession, markDirty, setFlushHandler, getDirtySessions, listAllSessions, clearDirtySession, flushNow } from './context-store';
+import {
+  ChatMessage,
+  MessageContent,
+  LLMCaller,
+  LLMPostResult,
+  callLLM as defaultCallLLM,
+  callLLMWithRetry as runLLMWithRetry,
+} from './llm-api';
 import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 
 // ============ 类型 ============
-interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string | MessageContent[];
-}
-
-interface MessageContent {
-  type: string;
-  text?: string;
-  image_url?: { url: string; detail?: string } | string;
-  image?: string;
-  input_image?: { image_url?: string; url?: string; detail?: string };
-}
-
-type LLMCaller = (config: AIConfig, messages: ChatMessage[], useVision?: boolean) => Promise<string>;
-
-interface LLMPostResult {
-  content: string;
-  finishReason: string;
-}
+// ChatMessage / MessageContent / LLMCaller 已从 ./llm-api 导入
 
 interface SessionContext {
   summary: string;
