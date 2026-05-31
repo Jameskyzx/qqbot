@@ -9,6 +9,7 @@ import { configureGates, getGateStats, withGate } from './concurrency';
 import { sanitizeOutgoingText } from '../message-sanitize';
 import { detectFuzzyCommand, detectCsTopicQuery } from './fuzzy-command';
 import { fetchOngoingMatches, fetchTeamRanking, fetchRecentResults } from './hltv-api';
+import { prewarmPlayerImages } from './fun';
 import {
   directTtsCommands,
   extractVerbatimVoiceText,
@@ -828,8 +829,17 @@ function forcedFallbackReply(job: ReplyJob, recordTranscripts: string[] = []): s
   if (recordTranscripts.length > 0) return `我听到了 大概是「${recordTranscripts.join(' ').slice(0, 80)}」 你再问一句`;
   if (job.hasRecords && !job.effectiveText) return '语音收到了 你补句文字';
   if (job.hasImages && !job.effectiveText) return '图收到了 你要我看啥';
-  // API失败时不回复 靠下次消息触发时自然带上上下文
-  return '';
+  // API失败但用户是@/回复/私聊时，给个有人味的延迟回复，不要消失
+  // 但不要每次都说同一句，避免用户觉得是模板
+  const fallbacks = [
+    '我这卡了一下 你再说一遍',
+    '诶 网络有点抽 重新发一下',
+    '等等 我刚才没接住',
+    '哥们 我顿了一下 你那条是啥',
+    '稍等 我现在脑子不太转',
+    '我看了一眼 你那条没看清 你重发',
+  ];
+  return fallbacks[Math.floor(Math.random() * fallbacks.length)];
 }
 
 function handlePresetCommand(
@@ -1250,6 +1260,8 @@ function formatReplyTrace(trace: ReplyTrace | null): string {
     `媒体: 图片${trace.hasImages ? '有' : '无'} 语音${trace.hasRecords ? '有' : '无'} 听写${trace.recordTranscripts}`,
     `队列: 等待${Math.round(trace.queueAgeMs / 1000)}s`,
     `增强: 知识${trace.knowledgeInjected ? `${trace.knowledgeChars}字` : '未注入'}${trace.knowledgeTopic ? '/话题命中' : ''} 搜索${trace.searchUsed ? `${trace.searchChars}字` : '未用'} 识图${trace.visionPayload ? '已传图' : '未传图'}`,
+    trace.hltvUsed ? `HLTV实时: 已注入${trace.hltvChars}字` : '',
+    trace.hltvError ? `HLTV错误: ${trace.hltvError}` : '',
     trace.knowledgeTitles.length > 0 ? `知识分区: ${trace.knowledgeTitles.join(' / ')}` : (trace.forced ? '知识分区: 无命中，建议 /kb stats' : ''),
     trace.openerBefore ? `开头: ${trace.openerBefore} -> ${trace.openerAfter || '[空]'}${trace.openerDeduped ? ' 已去重' : ''}` : '',
     trace.sttError ? `听写错误: ${trace.sttError}` : '',
@@ -1612,6 +1624,24 @@ export function startAiChatBackgroundTasks(config: AIConfig): void {
         });
     }, 90 * 1000).unref();
   }
+
+  // 启动后延迟 5 分钟开始预热选手图缓存。串行 8 秒间隔，避免限流。
+  // 仅在缓存少于 10 张图时才跑，否则每次重启都重新拉浪费资源。
+  setTimeout(() => {
+    try {
+      const stats = getImageCacheStats();
+      if (stats.count >= 10) {
+        console.log(`[Prewarm] 已有 ${stats.count} 张缓存图，跳过预热`);
+        return;
+      }
+      console.log(`[Prewarm] 启动预热选手图(每张8秒间隔，全部完成约7分钟)...`);
+      prewarmPlayerImages()
+        .then((r) => console.log(`[Prewarm] 完成 成功${r.success} 失败${r.failed}`))
+        .catch((err) => console.error('[Prewarm] 异常:', err instanceof Error ? err.message : err));
+    } catch (err) {
+      console.error('[Prewarm] 启动失败:', err instanceof Error ? err.message : err);
+    }
+  }, 5 * 60 * 1000).unref();
 }
 
 function includesAnyKeyword(text: string, keywords: string[] = []): boolean {
@@ -2734,7 +2764,7 @@ export const aiChatPlugin: Plugin = {
         const searchableText = job.effectiveText || recordTranscriptText;
         if (!skipHeavyEnhancements && shouldSearch(config, searchableText)) {
           try {
-            const timeoutMs = config.search_timeout_ms || 1500;
+            const timeoutMs = config.search_timeout_ms || 4000;
             const searchPromise = webSearch(
               searchableText,
               timeoutMs,
@@ -2746,7 +2776,7 @@ export const aiChatPlugin: Plugin = {
               timer.unref();
             });
             const result = await Promise.race([searchPromise, timeoutPromise]);
-            if (result) searchInfo = result.slice(0, 350);
+            if (result) searchInfo = result.slice(0, 1000);
           } catch (err) {
             patchReplyTrace(job.messageId, {
               searchError: err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120),

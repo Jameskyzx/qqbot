@@ -872,6 +872,26 @@ export const __test = {
   },
 };
 
+/**
+ * 后台预热选手图缓存。每张间隔 8 秒，避免触发 Liquipedia 限流。
+ * 跑完后所有选手图都在本地，30 天不会再要外网。
+ */
+export async function prewarmPlayerImages(): Promise<{ success: number; failed: number }> {
+  let success = 0;
+  let failed = 0;
+  for (const player of csPlayers) {
+    try {
+      const dataUrl = await imageDataUrlResolver(player.image);
+      if (dataUrl) success++;
+      else failed++;
+    } catch { failed++; }
+    // 8 秒间隔严格避免限流
+    await new Promise((r) => setTimeout(r, 8000));
+  }
+  console.log(`[Prewarm] 选手图预热完成: 成功${success} 失败${failed}`);
+  return { success, failed };
+}
+
 /** 字符串哈希 */
 function hashCode(str: string): number {
   let hash = 0;

@@ -51,6 +51,7 @@ export const helpPlugin: Plugin = {
         '  /whoami - 查bot号/群号',
         '  /status - 运行状态',
         '  /diag - 严格自检',
+        '  /data - 实时数据健康度(测HLTV/Google News)',
         '  /mem - 内存状态',
         '  /time - 时间',
         '  /stats - 群统计',

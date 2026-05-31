@@ -6,12 +6,59 @@ import { auditKnowledge, getKnowledgeRuntimePaths, getKnowledgeStats, loadKnowle
 import { getSearchStats, webSearch } from './web-search';
 import { getSttStats } from './stt';
 import { getVoiceStats } from './tts';
+import { fetchOngoingMatches, fetchTeamRanking, fetchRecentResults, getHltvStats } from './hltv-api';
 import * as fs from 'fs';
 
 export const diagPlugin: Plugin = {
   name: 'diag',
   description: '严格自检诊断',
   handler: async (ctx) => {
+    // ===== /data 实时数据健康度（含 HLTV/搜索测试） =====
+    if (ctx.command === 'data' || ctx.command === 'realtime') {
+      const ai = ctx.bot.getConfig().ai;
+      const lines: string[] = ['📡 实时数据状态'];
+      const start = Date.now();
+
+      // 1. HLTV 缓存
+      const hltvStats = getHltvStats();
+      lines.push(`HLTV 缓存: ${hltvStats.entries} 条 [${hltvStats.keys.join(', ') || '无'}]`);
+
+      // 2. 实测 HLTV (限流冷却中会很快返回)
+      lines.push('');
+      lines.push('--- 实测 HLTV/Liquipedia ---');
+      const m = await fetchOngoingMatches();
+      lines.push(`比赛: ${m ? m.split('\n').length + ' 条' : '空（可能限流）'}`);
+      const r = await fetchTeamRanking();
+      lines.push(`排名: ${r ? r.split('\n').length + ' 条' : '空（可能限流）'}`);
+      const res = await fetchRecentResults();
+      lines.push(`战报: ${res ? res.split('\n').length + ' 条' : '空（可能限流）'}`);
+
+      // 3. 实测 webSearch (Google News)
+      lines.push('');
+      lines.push('--- 实测 webSearch (Google News) ---');
+      const wsResult = await webSearch('CS2 最新比赛 2026', 5000, 0, 0);
+      lines.push(`webSearch: ${wsResult ? wsResult.length + ' 字符' : '空'}`);
+      if (wsResult) {
+        const firstLine = wsResult.split('\n')[0].slice(0, 100);
+        lines.push(`首条: ${firstLine}`);
+      }
+
+      // 4. 知识库
+      lines.push('');
+      lines.push('--- 知识库 ---');
+      const kbStats = getKnowledgeStats();
+      lines.push(`知识库: ${kbStats.sections}块/${kbStats.chars}字`);
+      lines.push(`自动刷新: ${kbStats.autoEnabled ? 'on' : 'off'} 最近${new Date(kbStats.lastAutoRefreshAt || 0).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
+
+      // 5. 当前时间
+      lines.push('');
+      lines.push(`⏱ 测试耗时 ${Date.now() - start}ms`);
+      lines.push(`系统时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`);
+      void ai;
+      ctx.reply(lines.join('\n'));
+      return true;
+    }
+
     if (ctx.command !== 'diag') return false;
 
     const config = ctx.bot.getConfig();

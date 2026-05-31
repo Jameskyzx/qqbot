@@ -22,7 +22,7 @@
     "max_context_messages": 80,
     "context_send_messages": 40,
     "max_tokens": 4096,
-    "temperature": 0.92,
+    "temperature": 0.78,
     "trigger_mode": "smart",
     "trigger_keywords": ["玩机器", "机器", "MachineWJQ", "Machine", "6657", "CS2", "CSGO", "Major", "BLAST", "IEM", "ESL", "队伍", "选手", "切片", "语录", "直播", "礼物", "白给", "残局", "道具", "阵容", "转会", "比分", "赛程", "今日CS", "每日CS", "抽选手", "抽队伍", "抽地图", "抽武器", "抽定位", "抽道具", "抽战术", "抽残局", "今日套餐"],
     "trigger_probability": 0.005,
