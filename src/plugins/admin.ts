@@ -120,6 +120,72 @@ export const adminPlugin: Plugin = {
       return true;
     }
 
+    // ===== /tune 快速调参 (admin) =====
+    if (ctx.command === 'tune') {
+      if (!isAdmin) {
+        ctx.replyAt('⛔ 权限不足，仅管理员可用');
+        return true;
+      }
+      const sub = (ctx.args[0] || '').toLowerCase();
+      const valStr = (ctx.args[1] || '').trim();
+      const tunables: Record<string, { key: string; min: number; max: number; desc: string }> = {
+        trigger: { key: 'trigger_probability', min: 0, max: 1, desc: '随机插话概率' },
+        related: { key: 'related_reply_probability', min: 0, max: 1, desc: '相关话题接话概率' },
+        tts: { key: 'tts_probability', min: 0, max: 1, desc: '语音回复概率' },
+        poke: { key: 'poke_reply_probability', min: 0, max: 1, desc: '戳一戳回应概率' },
+        temp: { key: 'temperature', min: 0, max: 2, desc: 'AI温度' },
+        maxtokens: { key: 'max_tokens', min: 256, max: 16384, desc: '最大tokens' },
+        minchars: { key: 'passive_random_min_chars', min: 1, max: 100, desc: '被动接话最短字数' },
+        cooldown: { key: 'cooldown_seconds', min: 0, max: 60, desc: '冷却秒数' },
+      };
+
+      if (!sub || sub === 'help' || sub === '?') {
+        const lines = ['快速调参 /tune <项> <值>'];
+        for (const [name, info] of Object.entries(tunables)) {
+          const cur = (config.ai as any)[info.key];
+          lines.push(`  /tune ${name} ${info.min}~${info.max}  当前=${cur}  ${info.desc}`);
+        }
+        lines.push('', '改完会自动写回 config.json，不需要 /reload');
+        ctx.reply(lines.join('\n'));
+        return true;
+      }
+
+      const tunable = tunables[sub];
+      if (!tunable) {
+        ctx.reply(`未知调参项 ${sub}\n可用: ${Object.keys(tunables).join(', ')}\n用 /tune 看帮助`);
+        return true;
+      }
+
+      if (!valStr) {
+        const cur = (config.ai as any)[tunable.key];
+        ctx.reply(`${tunable.desc} (${tunable.key}): 当前=${cur}\n设置: /tune ${sub} <${tunable.min}~${tunable.max}>`);
+        return true;
+      }
+
+      const numVal = parseFloat(valStr);
+      if (isNaN(numVal) || numVal < tunable.min || numVal > tunable.max) {
+        ctx.reply(`无效值，应在 ${tunable.min}~${tunable.max} 之间`);
+        return true;
+      }
+
+      try {
+        const finalVal = tunable.key === 'max_tokens' || tunable.key === 'passive_random_min_chars' || tunable.key === 'cooldown_seconds'
+          ? Math.floor(numVal)
+          : numVal;
+        // 写 config.json
+        const { updateConfigFile } = require('../config');
+        const newConfig = updateConfigFile((raw: any) => {
+          if (!raw.ai) raw.ai = {};
+          raw.ai[tunable.key] = finalVal;
+        });
+        ctx.bot.updateConfig(newConfig);
+        ctx.reply(`✅ ${tunable.desc} 已改为 ${finalVal}\n已写入 config.json，立即生效`);
+      } catch (err) {
+        ctx.reply(`❌ 写入失败: ${err instanceof Error ? err.message : err}`);
+      }
+      return true;
+    }
+
     // ===== 运行维护 =====
     if (isMaintCommand(ctx.command)) {
       if (!isAdmin) {

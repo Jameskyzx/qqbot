@@ -69,6 +69,7 @@ export const helpPlugin: Plugin = {
         '',
         '管理(仅admin):',
         '  /reload - 重载配置',
+        '  /tune <项> <值> - 快速调参(trigger/related/tts/poke/temp/maxtokens/minchars/cooldown)',
         '  /maint status|login|config|clean - 维护面板',
         '  /gc - 强制GC',
         '  /ban /unban /kick /title',

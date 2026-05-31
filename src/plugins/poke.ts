@@ -157,6 +157,15 @@ export function registerPokeListener(bot: Bot): void {
       ]
       : reply;
     bot.sendGroupMessage(groupId, message);
+
+    // 15% 概率反戳回去（OneBot send_poke）
+    if (userId && Math.random() < 0.15) {
+      setTimeout(() => {
+        try {
+          bot.callApi('send_poke', { user_id: userId, group_id: groupId });
+        } catch { /* */ }
+      }, 800 + Math.random() * 600);
+    }
   });
 
   console.log('[Poke] 戳一戳回应已启用');

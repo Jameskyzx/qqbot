@@ -565,8 +565,11 @@ function buildLiveStyleCue(job: ReplyJob): string {
     '少口癖，多具体判断',
     '可以轻嘴硬，但别追着人骂',
     '优先像正常人聊天，别像模板在营业',
-    '能说“等一下/这个不太对”就别硬喷',
+    '能说"等一下/这个不太对"就别硬喷',
     '这条不要用固定口头禅开头',
+    '结尾可以加一个 [face:178] 或者 [face:101] 这种 QQ 经典表情，但别每条都加',
+    '可以用1-2个emoji 比如 😂 🤣 但别堆',
+    '想表达情绪用一个 [face:21] [face:14] 这种就够，别整大段',
   ];
   if (job.hasImages) {
     base.push('先说图里可见内容，再给一句短评；看不清就直说');
@@ -1073,6 +1076,8 @@ const lastReplyAt: Map<string, number> = new Map();
 /** 群最近消息时间戳列表（最多保留最近 60 秒内）- 用于"群聊正在快速对话"的检测 */
 const recentGroupMessages: Map<string, number[]> = new Map();
 const sessionRecentOpeners: Map<string, string[]> = new Map();
+/** 每个 session 最近 5 条 bot 回复（标准化后），用于全句去重 */
+const sessionRecentReplies: Map<string, string[]> = new Map();
 const replyCache: Map<string, { value: string; expiresAt: number }> = new Map();
 let skippedPassiveReplies = 0;
 let deferredCompressions = 0;
@@ -1222,6 +1227,43 @@ function dedupeSessionOpener(sessionId: string, text: string): {
   const updated = after ? [after, ...recent.filter((item) => item !== after)].slice(0, 3) : recent.slice(0, 3);
   sessionRecentOpeners.set(sessionId, updated);
   return { text: next, before, after, deduped, recent: updated };
+}
+
+/** 标准化 bot 回复用于全句去重比较 */
+function normalizeForReplyDedup(text: string): string {
+  return sanitizeOutgoingText(text)
+    .toLowerCase()
+    .replace(/\[(?:face|表情|emoji|qq)[:：]\d+\]/gi, '')
+    .replace(/[\s，。！？,.!?；;、]/g, '')
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}]/gu, '')
+    .slice(0, 80);
+}
+
+/** 检查 bot 这句和最近 5 条是否重复 */
+function isRecentReplyDuplicate(sessionId: string, text: string): boolean {
+  const norm = normalizeForReplyDedup(text);
+  if (!norm || norm.length < 6) return false;
+  const recent = sessionRecentReplies.get(sessionId) || [];
+  for (const past of recent) {
+    if (!past) continue;
+    // 完全相同 = 重复
+    if (past === norm) return true;
+    // 一方包含另一方 80% 以上 = 实质重复
+    const shorter = past.length < norm.length ? past : norm;
+    const longer = past.length < norm.length ? norm : past;
+    if (shorter.length >= 8 && longer.includes(shorter)) return true;
+  }
+  return false;
+}
+
+/** 记录 bot 最近回复 */
+function recordRecentReply(sessionId: string, text: string): void {
+  const norm = normalizeForReplyDedup(text);
+  if (!norm) return;
+  const recent = sessionRecentReplies.get(sessionId) || [];
+  recent.unshift(norm);
+  if (recent.length > 5) recent.length = 5;
+  sessionRecentReplies.set(sessionId, recent);
 }
 
 function makeDirectVoiceReplyTrace(
@@ -1593,6 +1635,7 @@ function shouldReply(
   replyToBot: boolean,
   isPrivate: boolean = false,
   groupChatBusy: boolean = false,
+  selfRecentlyReplied: boolean = false,
 ): { reply: boolean; forced: boolean } {
   const directCommand = !!command && directAiCommands.has(command);
   if (directCommand || atBot || replyToBot || isPrivate || isExplicitVoiceReplyRequest(text, command)) {
@@ -1608,6 +1651,9 @@ function shouldReply(
     return { reply: false, forced: false };
   }
 
+  // bot 自己刚回过话 30s 内：被动接话概率打 5 折
+  const selfCoolMultiplier = selfRecentlyReplied ? 0.5 : 1.0;
+
   const styleKeywordHit = includesAnyKeyword(text, [
     config.active_preset,
     '玩机器',
@@ -1618,16 +1664,16 @@ function shouldReply(
   ]);
   if (styleKeywordHit) {
     // 风格关键词（明确点名玩机器）：群聊忙时也不接话；不忙时降到 50%
-    return { reply: Math.random() < 0.5, forced: false };
+    return { reply: Math.random() < 0.5 * selfCoolMultiplier, forced: false };
   }
 
   const keywordHit = includesAnyKeyword(text, config.trigger_keywords);
   if (keywordHit || isKnowledgeTopic(text)) {
     // 普通CS/玩机器关键词：被动主动接话概率从 0.65 降到 0.15
-    return { reply: Math.random() < (config.related_reply_probability ?? 0.15), forced: false };
+    return { reply: Math.random() < (config.related_reply_probability ?? 0.15) * selfCoolMultiplier, forced: false };
   }
   if (isCsDiscussionHint(text) && !isLowInformationPassiveText(text, config)) {
-    return { reply: Math.random() < (config.related_reply_probability ?? 0.15), forced: false };
+    return { reply: Math.random() < (config.related_reply_probability ?? 0.15) * selfCoolMultiplier, forced: false };
   }
 
   switch (config.trigger_mode) {
@@ -1638,7 +1684,7 @@ function shouldReply(
         return { reply: false, forced: false };
       }
       // 完全无关键词的随机插话：默认极低（0.005）
-      return { reply: Math.random() < (config.trigger_probability || 0), forced: false };
+      return { reply: Math.random() < (config.trigger_probability || 0) * selfCoolMultiplier, forced: false };
     }
     case 'at':
     case 'command':
@@ -1737,6 +1783,11 @@ function cleanReplyCache(): void {
   if (sessionRecentOpeners.size > 200) {
     const keys = [...sessionRecentOpeners.keys()].slice(0, sessionRecentOpeners.size - 200);
     for (const key of keys) sessionRecentOpeners.delete(key);
+  }
+  // 清理 sessionRecentReplies 太长的记录
+  if (sessionRecentReplies.size > 200) {
+    const keys = [...sessionRecentReplies.keys()].slice(0, sessionRecentReplies.size - 200);
+    for (const key of keys) sessionRecentReplies.delete(key);
   }
   // 清理 groupQueueAges 太多
   if (groupQueueAges.size > 200) {
@@ -1933,6 +1984,9 @@ export const aiChatPlugin: Plugin = {
     // ===== 管理命令 =====
     if (ctx.command === 'reset' || ctx.command === 'clear') {
       cm.clearSession(sessionId);
+      sessionRecentOpeners.delete(sessionId);
+      sessionRecentReplies.delete(sessionId);
+      lastReplyAt.delete(sessionId);
       ctx.reply('行 清了');
       return true;
     }
@@ -2257,9 +2311,13 @@ export const aiChatPlugin: Plugin = {
     // 记录群消息频率，判断"群里正在快速对话中"
     const groupChatBusy = recordAndCheckBusy(sessionId, ctx.isPrivate);
 
+    // bot 自己刚回过话(30s内)：被动接话进一步降低
+    const lastSelfReply = lastReplyAt.get(sessionId) || 0;
+    const selfRecentlyReplied = !ctx.isPrivate && Date.now() - lastSelfReply < 30_000;
+
     const trigger = forceVoice
       ? { reply: true, forced: true }
-      : shouldReply(config, effectiveText, ctx.command, atBot, ctx.isReplyToBot, ctx.isPrivate, groupChatBusy);
+      : shouldReply(config, effectiveText, ctx.command, atBot, ctx.isReplyToBot, ctx.isPrivate, groupChatBusy, selfRecentlyReplied);
 
     const storedBaseText = effectiveText
       ? `[mid=${ctx.event.message_id} uid=${ctx.event.user_id}] ${senderName}: ${effectiveText}`
@@ -2659,6 +2717,26 @@ export const aiChatPlugin: Plugin = {
         }
         const openerResult = dedupeSessionOpener(job.sessionId, cleaned);
         cleaned = openerResult.text;
+
+        // 全句去重检查 - 如果跟最近 5 条 bot 回复内容重复，重新生成一次
+        if (isRecentReplyDuplicate(job.sessionId, cleaned) && !cacheHit) {
+          console.log(`[AI][${job.chatType}${job.chatId}] 检测到重复回复，重新生成 origin="${cleaned.slice(0, 30)}"`);
+          try {
+            const retryMessages: ChatMessage[] = [
+              ...apiMessages,
+              { role: 'assistant', content: cleaned },
+              { role: 'user', content: '这条跟你之前说过的太像了，换个角度或换种说法，别重复。' },
+            ];
+            const retryReply = await withGate('ai', () => callLLMWithRetry(config, retryMessages, usesVisionPayload, 1), job.forced);
+            const retryCleaned = postProcessReply(retryReply);
+            if (retryCleaned && !isRecentReplyDuplicate(job.sessionId, retryCleaned)) {
+              cleaned = retryCleaned;
+              patchReplyTrace(job.messageId, { sent: 'queued', replyLength: cleaned.length });
+            }
+          } catch { /* 失败就用原文 */ }
+        }
+        recordRecentReply(job.sessionId, cleaned);
+
         patchReplyTrace(job.messageId, {
           cacheHit,
           replyLength: cleaned.length,
