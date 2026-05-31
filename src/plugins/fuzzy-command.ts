@@ -265,7 +265,7 @@ export function detectCsTopicQuery(text: string): {
   if (!normalized) return { needsMatches: false, needsRanking: false, needsResults: false };
 
   // CS 上下文 - 包含选手名、队伍名、CS 关键词、选手昵称的小写都算
-  const csContext = /cs|csgo|cs2|玩机器|6657|major|战队|blast|iem|esl|epl|pgl|cct|vrs|valve|hltv|navi|vitality|spirit|faze|mouz|g2|falcons|astralis|liquid|furia|heroic|mongolz|tyloo|lynn|cloud9|complexity|virtuspro|ence|fnatic|3dmax|paIN|natusvincere|teamspirit|teamfalcons|teamvitality|teamliquid|zywoo|donk|niko|m0nesy|s1mple|ropz|sh1ro|magixx|jl|b1t|huNter|aleksib|karrigan|device|broky|frozen|apex|mezii|flamez|jimpphat|siuhy|kscerato|yuurih|cadian|aurora|忍者|玩处|玩神|玩÷/.test(normalized);
+  const csContext = /cs|csgo|cs2|玩机器|6657|major|战队|blast|iem|esl|epl|pgl|cct|vrs|valve|hltv|navi|vitality|spirit|faze|mouz|g2|falcons|astralis|liquid|furia|heroic|mongolz|tyloo|lynn|cloud9|complexity|virtuspro|ence|fnatic|3dmax|paIN|natusvincere|teamspirit|teamfalcons|teamvitality|teamliquid|zywoo|donk|niko|m0nesy|s1mple|ropz|sh1ro|magixx|jl|b1t|huNter|aleksib|karrigan|device|broky|frozen|apex|mezii|flamez|jimpphat|siuhy|kscerato|yuurih|cadian|aurora|dust2|mirage|inferno|nuke|ancient|anubis|train|overpass|忍者|玩处|玩神|玩÷/.test(normalized);
 
   // 关键词组：比赛/赛程
   const matchKeywords = [
@@ -299,12 +299,19 @@ export function detectCsTopicQuery(text: string): {
   // 强烈 ranking 短语（即使没明确 CS 上下文，也认为是问 CS 排名）
   const strongRankingPhrase = /(?:排名第[一二三四五六七八九十\d]+|hltv|top\d+|世界第一|现在第一|谁第一|谁是第一|谁最强|战队榜|战队排行|最强战队|最强队伍|最强选手)/.test(normalized);
 
+  // 任何 CS 上下文 + 实时性语气 → 全部都拉一遍（matches+results+ranking）
+  const realtimeIntent = /(?:现在|今天|当前|目前|最近|今晚|刚才|昨天|前天|这两天|这几天|本周|这周|本月)/.test(normalized);
+  const aggressiveCs = csContext && realtimeIntent;
+
   return {
-    needsMatches: matchKeywords.some((k) => normalized.includes(normalize(k))) && (csContext || /比赛|赛事|赛程/.test(normalized))
+    needsMatches: aggressiveCs
+      || matchKeywords.some((k) => normalized.includes(normalize(k))) && (csContext || /比赛|赛事|赛程/.test(normalized))
       || strongCsContext && /(最近|今天|昨天|现在|今晚|明天|怎么样|状态|表现)/.test(normalized),
-    needsRanking: rankingKeywords.some((k) => normalized.includes(normalize(k))) && csContext
+    needsRanking: aggressiveCs && /(top|排名|排行|第一|最强|最猛|最厉害|强队|实力)/.test(normalized)
+      || rankingKeywords.some((k) => normalized.includes(normalize(k))) && csContext
       || /(top|前几|第一|最强|排名|排行)/.test(normalized) && strongCsContext
       || strongRankingPhrase,
-    needsResults: resultsKeywords.some((k) => normalized.includes(normalize(k))) && (csContext || /战报|赛果/.test(normalized)),
+    needsResults: aggressiveCs && /(赢|输|结果|战报|比分|怎么打|表现)/.test(normalized)
+      || resultsKeywords.some((k) => normalized.includes(normalize(k))) && (csContext || /战报|赛果/.test(normalized)),
   };
 }

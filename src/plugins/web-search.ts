@@ -250,6 +250,33 @@ async function bingRssSearch(query: string, timeoutMs: number): Promise<string> 
   return results.join('\n');
 }
 
+/**
+ * Google News 兜底 - 通过 Google News RSS 获取最新新闻
+ * 比 Bing/DuckDuckGo 时效性更好
+ */
+async function googleNewsSearch(query: string, timeoutMs: number): Promise<string> {
+  const encodedQuery = encodeURIComponent(query);
+  const url = `https://news.google.com/rss/search?q=${encodedQuery}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
+  const xml = await httpsGet(url, timeoutMs);
+  if (!xml) return '';
+
+  const results: string[] = [];
+  const itemPattern = /<item>([\s\S]*?)<\/item>/g;
+  let match: RegExpExecArray | null;
+  while ((match = itemPattern.exec(xml)) && results.length < 5) {
+    const item = match[1];
+    const title = decodeXml((item.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || '');
+    const link = decodeXml((item.match(/<link>([\s\S]*?)<\/link>/) || [])[1] || '');
+    const pubDate = decodeXml((item.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1] || '');
+    const description = stripHtml(decodeXml((item.match(/<description>([\s\S]*?)<\/description>/) || [])[1] || ''));
+    if (title || description) {
+      const datePrefix = pubDate ? `[${pubDate.slice(0, 16)}] ` : '';
+      results.push(`${datePrefix}${title}\n${description}${link ? `\n${link}` : ''}`.slice(0, 480));
+    }
+  }
+  return results.join('\n\n');
+}
+
 function remainingTimeout(deadline: number): number {
   return Math.max(0, deadline - Date.now());
 }
@@ -258,8 +285,16 @@ async function runSearchWithBudget(query: string, timeoutMs: number): Promise<st
   const deadline = Date.now() + timeoutMs;
   let value = '';
 
-  const instantBudget = Math.max(250, Math.floor(timeoutMs * 0.4));
-  if (remainingTimeout(deadline) > 200) {
+  // 时效性查询(含 "最新/今天/最近/现在/昨天" 等) 优先用 Google News
+  const realtimeIntent = /(最新|今天|最近|现在|昨天|今晚|刚才|本周|上周|本月|今年|最新|发布|官宣|宣布|公布|确认|曝光|消息|动态|战报|赛果|结果)/.test(query);
+
+  if (realtimeIntent && remainingTimeout(deadline) > 300) {
+    const newsBudget = Math.max(400, Math.floor(timeoutMs * 0.5));
+    value = await googleNewsSearch(query, Math.min(newsBudget, remainingTimeout(deadline)));
+  }
+
+  if (!value && remainingTimeout(deadline) > 200) {
+    const instantBudget = Math.max(250, Math.floor(timeoutMs * 0.4));
     value = await instantAnswerSearch(query, Math.min(instantBudget, remainingTimeout(deadline)));
   }
   if (!value && remainingTimeout(deadline) > 250) {
@@ -269,7 +304,11 @@ async function runSearchWithBudget(query: string, timeoutMs: number): Promise<st
   if (!value && remainingTimeout(deadline) > 250) {
     value = await bingRssSearch(query, remainingTimeout(deadline));
   }
-  return value.slice(0, 1000);
+  // Google News 作为最后兜底（如果之前都没用过）
+  if (!value && !realtimeIntent && remainingTimeout(deadline) > 250) {
+    value = await googleNewsSearch(query, remainingTimeout(deadline));
+  }
+  return value.slice(0, 1500);
 }
 
 /** 轻量联网搜索：先 Instant Answer，再 HTML/Bing RSS 兜底，带 single-flight。 */

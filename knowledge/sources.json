@@ -374,5 +374,29 @@
     "trusted": true,
     "autoCommitEligible": true,
     "intervalMinutes": 2880
+  },
+  {
+    "id": "cs2-news-this-week",
+    "query": "CS2 news this week 2026 results matches major",
+    "sourceType": "public_fact",
+    "trusted": true,
+    "autoCommitEligible": true,
+    "intervalMinutes": 120
+  },
+  {
+    "id": "cs2-current-events-2026",
+    "query": "CS2 esports current events 2026 IEM BLAST PGL",
+    "sourceType": "public_fact",
+    "trusted": true,
+    "autoCommitEligible": true,
+    "intervalMinutes": 240
+  },
+  {
+    "id": "hltv-recent-coverage",
+    "query": "HLTV recent CS2 coverage news this week",
+    "sourceType": "public_fact",
+    "trusted": true,
+    "autoCommitEligible": true,
+    "intervalMinutes": 240
   }
 ]

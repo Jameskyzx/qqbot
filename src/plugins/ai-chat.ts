@@ -726,13 +726,29 @@ function buildSystemPrompt(config: AIConfig): string {
     '- 输出就是QQ消息 不用Markdown',
     '- 不要括号舞台说明（如"（玩机器风格）"）',
     '',
-    '[实时数据铁律 - 重要]',
-    '- 你的训练数据可能停在某个时间点，CS圈日新月异，今年的事你可能不知道',
-    '- 如果消息里出现 [HLTV实时数据] 或 [实时参考] 块：以这些数据为准，覆盖你脑子里的旧印象',
-    '- 比赛/比分/赛程/排名/转会/阵容这些实时信息：除非有 [HLTV实时数据] 提供，否则不要瞎编具体数据；可以说"等我查一下"或"你查最新的"',
-    '- 选手当前在哪队、哪个比赛打到几比几、谁是当前 Top1 这种问题：必须依据 [HLTV实时数据]，没数据就承认"我得查"',
-    '- 不要把"我记得是"当成事实，CS 转会和阵容变动很快',
-    '- 但选手历史风格、地图打法、战术原理这些不会过时的，可以基于经验聊',
+    '[实时数据铁律 - 极其重要]',
+    '- 你的训练数据停在 2024 年中或更早，2025-2026 年的事 99% 你不知道，知道也不一定对',
+    '- 你脑子里的"我记得"全部是过期数据，不能直接当成事实说出来',
+    '- 看到 [HLTV实时数据] 或 [实时参考] 块：那才是当前真相，必须以它为准，宁可短点也不要瞎编',
+    '- 没有实时数据时的回答方式：',
+    '  ✓ "我不太确定 你查最新的"',
+    '  ✓ "这个我得问一下 不能瞎说"',
+    '  ✓ "印象里...但这个会变 你以官方为准"',
+    '  ✗ 不要直接说"现在 X 在 Y 队"或"上周 X 队赢了 Y"这种凭记忆的具体陈述',
+    '- 涉及具体数字（比分/积分/排名/时间）：必须有实时数据来源，否则说"具体数据我得查"',
+    '- 涉及人物当前状态（某选手在哪队、某队当前阵容）：必须查证，转会很频繁',
+    '- 涉及最近事件（昨天/上周/这个月谁谁谁怎样了）：必须查实时数据',
+    '- 例：被问"NAVI 现在阵容是什么"',
+    '  错误："s1mple+b1t+jL+iM+Aleksib"（凭记忆，可能早已不准确）',
+    '  正确："NAVI 阵容这一年变得快 我得查最新的"或"我看一眼最新阵容再说"',
+    '- 选手历史风格、地图原理、战术思路这些不会过时的可以聊',
+    '',
+    '[一旦不确定的反应]',
+    '- 真不知道 → "这事我得查"或"不知道 别让我硬编"',
+    '- 半懂不懂 → "印象里是...但不一定对 你查最新的"',
+    '- 听过但记不清 → "这个有点印象 但我不能保证"',
+    '- 时效性强 → "这种最近的事 你直接查官方/HLTV"',
+    '- 千万不要凭借模糊记忆给出具体的人/数字/日期',
     '',
     '[表情和QQ表情包 - 克制]',
     '- 玩机器在直播里很少用 emoji，主要靠语气和判断说话，不堆表情包',
@@ -1644,11 +1660,23 @@ function isCsDiscussionHint(text: string): boolean {
 
 function shouldSearch(config: AIConfig, text: string): boolean {
   if (!config.enable_search || text.length <= 3) return false;
+
+  // 强制搜索的话题模式：任何疑问句 + 实时性 / 事实性 词汇
+  // "现在/今天/最近/最新/谁/哪/是不是/几" + 任何主语
+  const factualQueryPattern = /(?:现在|今天|最近|最新|当前|目前|今年|今晚|昨天|前天|上周|这周|本月|去年|刚才)[^。？\s]{0,15}(?:谁|哪|什么|怎么样|多少|几|有没有|是不是)|(?:谁|哪个|什么时候|多少|几比几|哪场|哪场|什么队|什么队伍|什么人)|(?:发生|爆发|开打|开赛|公布|更新|发布|确认|官宣|宣布)/;
+  if (factualQueryPattern.test(text)) return true;
+
   if (config.search_keywords && config.search_keywords.length > 0) {
     if (includesAnyKeyword(text, config.search_keywords)) return true;
   }
   if (config.search_on_style_query && isKnowledgeTopic(text)) return true;
-  return defaultSearchPattern.test(text);
+  if (defaultSearchPattern.test(text)) return true;
+
+  // CS / 选手 / 队伍 / 时事内容 → 强制搜索
+  const importantTopics = /cs2|csgo|major|blast|iem|esl|pgl|cct|navi|vitality|spirit|faze|mouz|g2|falcons|astralis|liquid|furia|heroic|mongolz|玩机器|6657|machinewjq|dust2|mirage|inferno|nuke|ancient|anubis|train|overpass|zywoo|donk|niko|m0nesy|s1mple|ropz|sh1ro|magixx|ropz|jl|b1t|hunter|aleksib|karrigan/i;
+  if (importantTopics.test(text)) return true;
+
+  return false;
 }
 
 async function sendVerbatimVoice(ctx: PluginContext, config: AIConfig, text: string, fallbackMessageId?: number, fallbackUserId?: number): Promise<boolean> {
@@ -2740,6 +2768,19 @@ export const aiChatPlugin: Plugin = {
           if (csTopic.needsMatches) { fetches.push(fetchOngoingMatches()); labels.push('当前比赛'); }
           if (csTopic.needsRanking) { fetches.push(fetchTeamRanking()); labels.push('HLTV排名'); }
           if (csTopic.needsResults) { fetches.push(fetchRecentResults()); labels.push('最近战报'); }
+
+          // ===== 针对选手/队伍的专项搜索 =====
+          // 当消息中提到具体选手或队伍名 + 实时性词，做一次定向 webSearch
+          const playerOrTeamMatch = searchableText.match(/\b(zywoo|donk|niko|m0nesy|s1mple|ropz|sh1ro|magixx|jl|b1t|hunter|aleksib|karrigan|device|broky|frozen|apex|mezii|flamez|jimpphat|siuhy|kscerato|yuurih|cadian|navi|vitality|spirit|faze|mouz|g2|falcons|astralis|liquid|furia|heroic|mongolz|tyloo|lynn|cloud9|玩机器|6657)\b/i);
+          const realtimeIntent = /(?:现在|最近|今天|当前|最新|状态|表现|怎么样|怎样|表现如何|战绩|阵容|转会)/.test(searchableText);
+          if (playerOrTeamMatch && realtimeIntent) {
+            const target = playerOrTeamMatch[1];
+            fetches.push(
+              webSearch(`${target} CS2 latest news 2026 status roster`, 4000, 600, 60).catch(() => '')
+            );
+            labels.push(`${target}最新`);
+          }
+
           if (fetches.length > 0) {
             try {
               // HLTV/Liquipedia 抓取首次 6s，缓存命中通常<100ms
