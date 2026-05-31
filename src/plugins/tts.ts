@@ -285,6 +285,8 @@ function buildTtsPayloadVariants(
           { role: 'assistant', content: text },
         ],
         audio,
+        temperature: 0.8,
+        top_p: 0.95,
       },
     },
     {
@@ -296,6 +298,7 @@ function buildTtsPayloadVariants(
           { role: 'assistant', content: text },
         ],
         audio: useClone ? { voice: sample.dataUrl } : {},
+        temperature: 0.8,
       },
     },
     {
@@ -308,6 +311,7 @@ function buildTtsPayloadVariants(
           { role: 'assistant', content: text },
         ],
         audio,
+        temperature: 0.8,
       },
     },
   ];
