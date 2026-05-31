@@ -75,6 +75,7 @@ import {
   previewText,
   formatTime,
   parseFaceMarkers,
+  softenUnverifiedClaims,
 } from './reply-postprocess';
 import { parseStickerMarkers } from './sticker-pack';
 import * as https from 'https';
@@ -3076,6 +3077,9 @@ export const aiChatPlugin: Plugin = {
           const maxAttempts = job.forced ? 4 : 2;
           const reply = await withGate('ai', () => callLLMWithRetry(config, apiMessages, usesVisionPayload, maxAttempts), job.forced);
           cleaned = postProcessReply(reply);
+          // 反幻觉：如果没有实时数据，但 AI 给出了具体的"现在 X 在 Y 队"这种断言，加上不确定后缀
+          const hasRealtimeData = !!hltvInfo || !!searchInfo;
+          cleaned = softenUnverifiedClaims(cleaned, hasRealtimeData);
           if (replyCacheKey && cleaned) {
             setCachedReply(replyCacheKey, cleaned, config.ai_reply_cache_seconds ?? 180);
           }

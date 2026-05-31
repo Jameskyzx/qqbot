@@ -51,6 +51,47 @@ export function naturalLengthTrim(text: string, maxLen: number): string {
   return cutoff.trim();
 }
 
+/**
+ * 弱化具体未经证实的声明 - 当 AI 回复里出现"现在/目前/今年" + 具体人/数字/日期，
+ * 但没有实时数据来源时，把绝对断言改为不确定。
+ *
+ * 例:
+ *   "现在 Top1 是 Vitality" + 无实时数据 → "Top1 我得查最新的"
+ *   "donk 现在在 Spirit"   + 无实时数据 → "donk 印象里在 Spirit 但这种事你查最新的"
+ */
+export function softenUnverifiedClaims(text: string, hasRealtimeData: boolean): string {
+  if (hasRealtimeData) return text;
+  if (!text) return text;
+
+  // 检测高风险断言模式
+  const claimPatterns = [
+    // "X 现在/目前 在/是/属于 Y"
+    /([\w\u4e00-\u9fa5]{2,12})\s*(?:现在|目前|今年)\s*(?:在|是|属于|加入|签了|阵容)/g,
+    // "现在 Top X 是 Y"
+    /现在\s*top\s*\d+\s*(?:是|队伍是)\s*[\w\u4e00-\u9fa5]+/gi,
+    // "现在/目前 第X 是 Y"
+    /(?:现在|目前)\s*(?:第[一二三四五]|排第\d|排名第\d)/g,
+    // "上周/昨天/这周 X 队赢了 Y"
+    /(?:上周|昨天|今天|这周|本周|前天)\s*[\w\u4e00-\u9fa5]{2,10}\s*(?:赢了|战胜|拿下|淘汰)/g,
+    // "X 现在/目前 阵容/状态"
+    /(?:阵容|状态)\s*(?:是|为|有)\s*[\w\u4e00-\u9fa5]{2,12}/g,
+  ];
+  // 如果检测到任何强断言，返回原文 + 不确定后缀
+  let hasStrongClaim = false;
+  for (const pat of claimPatterns) {
+    pat.lastIndex = 0;
+    if (pat.test(text)) {
+      hasStrongClaim = true;
+      break;
+    }
+  }
+  if (!hasStrongClaim) return text;
+  // 如果文本已经含"我得查/印象里/不确定/可能"等不确定词，就不再加
+  if (/(?:我得查|得查最新|印象里|不一定对|不太确定|具体我得|你查最新)/.test(text)) return text;
+  // 否则在文末追加一句不确定的补充
+  return text.replace(/[。.!！]?\s*$/, '') + '。这种事变得快 你以最新为准';
+}
+
 /** 完整后处理 — AI 输出 → 清理后的最终文本 */
 export function postProcessReply(text: string): string {
   text = text.trim();

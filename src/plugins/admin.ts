@@ -96,6 +96,32 @@ export const adminPlugin: Plugin = {
       return true;
     }
 
+    // ===== /update 一键 git pull + build + 重启（admin） =====
+    if (ctx.command === 'update' || ctx.command === 'upgrade') {
+      if (!isAdmin) {
+        ctx.replyAt('⛔ 权限不足，仅管理员可用');
+        return true;
+      }
+      ctx.reply('开始 git pull + 编译，完成后会触发 PM2 自动重启...');
+      const { exec } = require('child_process') as typeof import('child_process');
+      const projectRoot = require('path').resolve(__dirname, '..', '..');
+      // 串行: git fetch + git reset --hard + npm install + npm run build
+      const cmd = 'git fetch --all && git reset --hard origin/main && git clean -fd && npm install && npm run build';
+      const child = exec(cmd, { cwd: projectRoot, timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 }, (err: Error | null, stdout: string, stderr: string) => {
+        if (err) {
+          ctx.reply(`❌ 更新失败: ${err.message}\n\n最后输出:\n${(stderr || stdout).slice(-300)}`);
+          return;
+        }
+        const tail = stdout.slice(-200);
+        ctx.reply(`✅ 更新完成 即将重启\n\n${tail}`);
+        // 延迟 2 秒退出，让消息先发出去
+        setTimeout(() => process.exit(0), 2000);
+      });
+      // 防止 promise unhandled
+      void child;
+      return true;
+    }
+
     // ===== 重载配置 =====
     if (ctx.command === 'reload') {
       if (!isAdmin) {
