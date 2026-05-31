@@ -2,6 +2,7 @@ import { Bot } from './bot';
 import { MessageHandler } from './handler';
 import { GroupMessageEvent } from './types';
 import { CONFIG_PATH, loadConfig } from './config';
+import { startWebServer } from './web-server';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -120,6 +121,16 @@ function main(): void {
   });
 
   bot.connect();
+
+  // ===== 启动 Web 管理后台 =====
+  const webPort = config.web_admin_port || 0;
+  if (webPort > 0 && webPort < 65536) {
+    try {
+      startWebServer(bot, webPort);
+    } catch (err) {
+      console.error('[Web] 启动失败:', err instanceof Error ? err.message : err);
+    }
+  }
 
   // 优雅退出
   let shuttingDown = false;

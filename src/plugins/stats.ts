@@ -1,12 +1,44 @@
 import { Plugin } from '../types';
 
 // ============ 消息统计 ============
+interface UserDetail {
+  count: number;
+  nickname: string;
+  /** 每天的消息数 (key: YYYY-MM-DD) */
+  daily: Map<string, number>;
+  /** 每小时的消息数(0-23) */
+  hourly: number[];
+  firstSeen: number;
+  lastActive: number;
+}
+
 interface GroupStats {
   totalMessages: number;
-  userMessages: Map<number, { count: number; nickname: string }>;
+  userMessages: Map<number, UserDetail>;
   hourly: number[];
   lastReset: number;
   lastActive: number;
+}
+
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function calcStreak(daily: Map<string, number>): number {
+  // 从今天往回数，连续有消息的天数
+  const d = new Date();
+  let streak = 0;
+  for (let i = 0; i < 365; i++) {
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (daily.has(key) && (daily.get(key) || 0) > 0) {
+      streak++;
+    } else if (i > 0) {
+      break; // 今天可以没消息（午夜情况），但中间断了就停
+    }
+    d.setDate(d.getDate() - 1);
+  }
+  return streak;
 }
 
 class StatsManager {
@@ -14,6 +46,7 @@ class StatsManager {
   private readonly maxGroups = 200;
   private readonly maxUsersPerGroup = 1000;
   private readonly keepUsersPerGroup = 800;
+  private readonly maxDailyEntriesPerUser = 60;
 
   private getGroupStats(groupId: number): GroupStats {
     if (!this.stats.has(groupId)) {
@@ -34,14 +67,37 @@ class StatsManager {
     stats.totalMessages++;
     stats.lastActive = Date.now();
 
-    const user = stats.userMessages.get(userId) || { count: 0, nickname };
+    let user = stats.userMessages.get(userId);
+    if (!user) {
+      user = {
+        count: 0,
+        nickname,
+        daily: new Map(),
+        hourly: new Array(24).fill(0),
+        firstSeen: Date.now(),
+        lastActive: Date.now(),
+      };
+    }
     user.count++;
     user.nickname = nickname;
-    stats.userMessages.set(userId, user);
-    this.pruneUsersIfNeeded(stats);
+    user.lastActive = Date.now();
+
+    const day = todayKey();
+    user.daily.set(day, (user.daily.get(day) || 0) + 1);
+    if (user.daily.size > this.maxDailyEntriesPerUser) {
+      // 删掉最旧的
+      const sorted = [...user.daily.keys()].sort();
+      for (const k of sorted.slice(0, user.daily.size - this.maxDailyEntriesPerUser)) {
+        user.daily.delete(k);
+      }
+    }
 
     const hour = new Date().getHours();
+    user.hourly[hour]++;
     stats.hourly[hour]++;
+
+    stats.userMessages.set(userId, user);
+    this.pruneUsersIfNeeded(stats);
   }
 
   getSummary(groupId: number): string {
@@ -75,6 +131,44 @@ class StatsManager {
     ];
 
     return lines.join('\n');
+  }
+
+  /** 单用户活跃度查询 */
+  getUserStats(groupId: number, userId: number): string | null {
+    const stats = this.stats.get(groupId);
+    if (!stats) return null;
+    const user = stats.userMessages.get(userId);
+    if (!user) return null;
+
+    // 排名
+    const sorted = [...stats.userMessages.entries()].sort((a, b) => b[1].count - a[1].count);
+    const rank = sorted.findIndex(([id]) => id === userId) + 1;
+    const total = stats.userMessages.size;
+    const peakHour = user.hourly.indexOf(Math.max(...user.hourly));
+    const streak = calcStreak(user.daily);
+    const today = user.daily.get(todayKey()) || 0;
+    const days = user.daily.size;
+    const avgPerDay = days > 0 ? Math.round(user.count / days) : 0;
+
+    // 排名段位
+    let badge = '🆕';
+    const pct = (rank / total) * 100;
+    if (rank === 1) badge = '👑';
+    else if (pct <= 5) badge = '🔥';
+    else if (pct <= 20) badge = '⭐';
+    else if (pct <= 50) badge = '💬';
+    else badge = '🐢';
+
+    return [
+      `${badge} 你在本群的活跃度`,
+      '',
+      `📝 总发言: ${user.count} 条`,
+      `🏆 排名: ${rank}/${total}`,
+      `📅 今日: ${today} 条`,
+      `🔥 连续活跃: ${streak} 天`,
+      `📊 日均: ${avgPerDay} 条`,
+      `🕐 最活跃时段: ${peakHour}:00-${peakHour + 1}:00`,
+    ].join('\n');
   }
 
   reset(groupId: number): void {
@@ -112,6 +206,16 @@ export const statsPlugin: Plugin = {
     // 只处理命令
     if (ctx.command === 'stats' || ctx.command === 'stat') {
       ctx.reply(statsManager.getSummary(ctx.groupId));
+      return true;
+    }
+
+    if (ctx.command === 'me' || ctx.command === '我') {
+      const result = statsManager.getUserStats(ctx.groupId, ctx.event.user_id);
+      if (result) {
+        ctx.replyAt(result);
+      } else {
+        ctx.replyAt('🆕 你在本群还没说过话，先聊几句');
+      }
       return true;
     }
 

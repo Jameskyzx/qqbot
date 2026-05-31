@@ -10,6 +10,7 @@ import {
   flushNow,
 } from './context-store';
 import { ChatMessage } from './llm-api';
+import { indexMessage, searchSimilar, clearSessionIndex, flushAllEmbeddings } from './embedding-store';
 
 /**
  * 上下文管理器 - 内存+磁盘双层
@@ -80,15 +81,15 @@ export class ContextManager {
   appendMessage(sessionId: string, message: ChatMessage): void {
     const session = this.getSession(sessionId);
     // 存储统一为纯文字（不存图片DataURL，节省内存和token）
+    const textContent = typeof message.content === 'string'
+      ? message.content
+      : message.content
+          .filter((c) => c.type === 'text')
+          .map((c) => c.text || '')
+          .join(' ');
     const stored: ChatMessage = {
       role: message.role,
-      content:
-        typeof message.content === 'string'
-          ? message.content
-          : message.content
-              .filter((c) => c.type === 'text')
-              .map((c) => c.text || '')
-              .join(' '),
+      content: textContent,
     };
     session.messages.push(stored);
     if (session.messages.length > this.hardLimit) {
@@ -96,6 +97,32 @@ export class ContextManager {
     }
     session.lastActiveTime = Date.now();
     markDirty(sessionId);
+
+    // 同时索引到向量存储（仅user和assistant消息，且长度>=8）
+    if ((message.role === 'user' || message.role === 'assistant') && textContent && textContent.length >= 8) {
+      try {
+        indexMessage(sessionId, message.role, textContent);
+      } catch (err) {
+        // 索引失败不阻塞主流程
+      }
+    }
+  }
+
+  /** 检索语义相似的历史消息（基于向量相似度） */
+  retrieveSimilar(
+    sessionId: string,
+    query: string,
+    topK: number = 3,
+  ): Array<{ role: 'user' | 'assistant'; text: string; similarity: number }> {
+    try {
+      return searchSimilar(sessionId, query, topK).map((r) => ({
+        role: r.role,
+        text: r.text,
+        similarity: r.similarity,
+      }));
+    } catch {
+      return [];
+    }
   }
 
   needsCompression(sessionId: string): boolean {
@@ -128,6 +155,7 @@ export class ContextManager {
   clearSession(sessionId: string): void {
     this.sessions.delete(sessionId);
     deleteSession(sessionId);
+    clearSessionIndex(sessionId);
   }
 
   /** 批量将脏会话写盘 */
@@ -167,6 +195,7 @@ export class ContextManager {
   shutdown(): void {
     clearInterval(this.cleanupTimer);
     flushNow();
+    flushAllEmbeddings();
   }
 
   getSessionCount(): number {

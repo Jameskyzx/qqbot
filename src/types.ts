@@ -1,10 +1,23 @@
 /** OneBot v11 事件类型定义 */
 
 // ============ 配置 ============
+export interface BotPoolEntry {
+  ws_url: string;
+  qq?: number;
+  /** 1=主, 2=备1, 3=备2, 数字越小优先级越高 */
+  priority?: number;
+  /** 备注名 */
+  name?: string;
+}
+
 export interface BotConfig {
   /** 配置模板版本，用于部署预检和配置漂移提示 */
   config_version?: number;
   ws_url: string;
+  /** 多机器人主备池(可选)。若设置则取代 ws_url + bot_qq 单连接逻辑，按 priority 自动 failover */
+  bot_pool?: BotPoolEntry[];
+  /** 主备切换阈值：连续断开多少秒后切到备用 */
+  bot_pool_failover_seconds?: number;
   /** QQ登录态主动检查间隔秒，0为关闭；用于识别NapCat还在但QQ已下线 */
   login_check_interval_seconds?: number;
   /** QQ登录态检查的OneBot API超时毫秒 */
@@ -15,6 +28,8 @@ export interface BotConfig {
   command_prefix: string;
   admin_qq: number[];
   enabled_groups: number[];
+  /** Web管理后台监听端口，0或不设置则不启动 */
+  web_admin_port?: number;
   ai: AIConfig;
 }
 

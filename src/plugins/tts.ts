@@ -797,3 +797,122 @@ export function getVoiceStats(config?: AIConfig): {
     };
   }
 }
+
+
+// ============ Voice Clone Sample 自动安装 ============
+
+function downloadAudioToBuffer(url: string, timeoutMs: number = 20000): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      reject(new Error('音频URL无效'));
+      return;
+    }
+    const transport = parsed.protocol === 'https:' ? https : http;
+    const req = transport.get({
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path: parsed.pathname + parsed.search,
+      headers: { 'User-Agent': 'Mozilla/5.0 QQ/9.0' },
+    }, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        downloadAudioToBuffer(res.headers.location, timeoutMs).then(resolve, reject);
+        return;
+      }
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP ${res.statusCode}`));
+        res.resume();
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let total = 0;
+      const max = 16 * 1024 * 1024; // 16MB 上限保护
+      res.on('data', (chunk: Buffer) => {
+        total += chunk.length;
+        if (total > max) {
+          reject(new Error('音频过大'));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => {
+      reject(new Error('音频下载超时'));
+      req.destroy();
+    });
+  });
+}
+
+/** 从远程URL或本地路径下载并安装为voice_sample */
+export async function installVoiceSample(
+  config: AIConfig,
+  source: string,
+): Promise<{ ok: boolean; reason?: string; size?: number; mime?: string; filepath?: string }> {
+  const targetPath = resolveProjectPath(config.tts_sample_path, 'voice_sample.mp3');
+  const targetDir = path.dirname(targetPath);
+  if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+  let buffer: Buffer;
+  try {
+    if (/^https?:\/\//i.test(source)) {
+      buffer = await downloadAudioToBuffer(source);
+    } else if (source.startsWith('file://')) {
+      const localPath = source.slice('file://'.length);
+      if (!fs.existsSync(localPath)) return { ok: false, reason: '本地音频文件不存在' };
+      buffer = fs.readFileSync(localPath);
+    } else if (source.startsWith('base64://')) {
+      buffer = Buffer.from(source.slice('base64://'.length), 'base64');
+    } else if (fs.existsSync(source)) {
+      buffer = fs.readFileSync(source);
+    } else {
+      return { ok: false, reason: '无效的音频来源' };
+    }
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : '下载失败' };
+  }
+
+  if (buffer.length < 8 * 1024) {
+    return { ok: false, reason: `音频太小(${buffer.length}字节)，至少需要8KB` };
+  }
+  const maxBytes = Math.max(1, config.tts_sample_max_mb || 8) * 1024 * 1024;
+  if (buffer.length > maxBytes) {
+    return { ok: false, reason: `音频太大(${Math.round(buffer.length / 1024 / 1024)}MB)，最多${config.tts_sample_max_mb || 8}MB` };
+  }
+
+  const { mime, ext } = detectAudioMime(buffer, targetPath);
+
+  // 统一保存为 mp3 后缀（实际格式由内容决定）
+  const finalPath = targetPath.replace(/\.[^.]+$/, '') + '.' + ext;
+  try {
+    fs.writeFileSync(finalPath, buffer);
+    // 如果配置目标和实际后缀不一致，也复制一份到目标路径
+    if (finalPath !== targetPath) {
+      fs.copyFileSync(finalPath, targetPath);
+    }
+    voiceSampleCache = null; // 让下次读重新缓存
+    return { ok: true, size: buffer.length, mime, filepath: targetPath };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : '保存失败' };
+  }
+}
+
+/** 删除当前voice sample */
+export function removeVoiceSample(config: AIConfig): boolean {
+  const targetPath = resolveProjectPath(config.tts_sample_path, 'voice_sample.mp3');
+  try {
+    if (fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
+    voiceSampleCache = null;
+    return true;
+  } catch {
+    return false;
+  }
+}

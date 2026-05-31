@@ -21,6 +21,12 @@ function readyStateName(state: number | undefined): string {
 export class Bot {
   private ws: WebSocket | null = null;
   private config: BotConfig;
+  /** 多机器人池 - 按优先级排序的 ws_url 列表 */
+  private wsUrlPool: string[] = [];
+  /** 当前正在使用的池索引 */
+  private currentPoolIdx: number = 0;
+  /** 当前激活的 ws_url - 实际连接的 */
+  private currentWsUrl: string;
   private readonly startedAt = Date.now();
   private readonly minReconnectInterval = 1000;
   private readonly maxReconnectInterval = 60000;
@@ -71,6 +77,15 @@ export class Bot {
 
   constructor(config: BotConfig) {
     this.config = config;
+    // 构建 ws_url 池：优先 bot_pool（按 priority 排序），fallback 到 ws_url
+    if (config.bot_pool && config.bot_pool.length > 0) {
+      const sorted = [...config.bot_pool].sort((a, b) => (a.priority || 99) - (b.priority || 99));
+      this.wsUrlPool = sorted.map((e) => e.ws_url).filter(Boolean);
+    }
+    if (this.wsUrlPool.length === 0) {
+      this.wsUrlPool = [config.ws_url];
+    }
+    this.currentWsUrl = this.wsUrlPool[0];
   }
 
   /** 心跳保活 */
@@ -112,8 +127,9 @@ export class Bot {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
 
     this.connecting = true;
-    console.log(`[Bot] 正在连接 ${this.config.ws_url} ...`);
-    const ws = new WebSocket(this.config.ws_url);
+    const poolInfo = this.wsUrlPool.length > 1 ? ` [pool ${this.currentPoolIdx + 1}/${this.wsUrlPool.length}]` : '';
+    console.log(`[Bot] 正在连接 ${this.currentWsUrl}${poolInfo} ...`);
+    const ws = new WebSocket(this.currentWsUrl);
     this.ws = ws;
 
     ws.on('open', () => {
@@ -193,6 +209,13 @@ export class Bot {
 
   private scheduleReconnect(): void {
     if (this.manuallyClosed || this.reconnectTimer) return;
+    // 如果有多个池成员且当前频繁失败，切换到下一个
+    if (this.wsUrlPool.length > 1 && this.consecutiveEarlyDisconnects >= 2) {
+      this.currentPoolIdx = (this.currentPoolIdx + 1) % this.wsUrlPool.length;
+      this.currentWsUrl = this.wsUrlPool[this.currentPoolIdx];
+      this.consecutiveEarlyDisconnects = 0;
+      console.log(`[Bot] 切换到备用 ws_url: ${this.currentWsUrl}`);
+    }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
@@ -476,6 +499,8 @@ export class Bot {
   getRuntimeStats(): {
     startedAt: number;
     wsUrl: string;
+    poolUrls: string[];
+    poolActiveIdx: number;
     readyState: string;
     connected: boolean;
     connecting: boolean;
@@ -519,7 +544,9 @@ export class Bot {
   } {
     return {
       startedAt: this.startedAt,
-      wsUrl: this.config.ws_url,
+      wsUrl: this.currentWsUrl,
+      poolUrls: [...this.wsUrlPool],
+      poolActiveIdx: this.currentPoolIdx,
       readyState: readyStateName(this.ws?.readyState),
       connected: this.ws?.readyState === WebSocket.OPEN,
       connecting: this.connecting,

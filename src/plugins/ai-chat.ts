@@ -2,7 +2,7 @@ import { Plugin, PluginContext, AIConfig, MessageEvent, MessageSegment } from '.
 import { Bot } from '../bot';
 import { hasUsableApiKey } from '../config';
 import { cleanSearchCache, configureSearchCache, webSearch } from './web-search';
-import { cleanVoiceCache, generateVoice, getVoiceStats } from './tts';
+import { cleanVoiceCache, generateVoice, getVoiceStats, installVoiceSample, removeVoiceSample } from './tts';
 import { cleanSttCache, getSttStats, transcribeRecords } from './stt';
 import { cleanupCache as cleanImageCache, configureImageCache, getCacheStats as getImageCacheStats, getImageDataUrl } from './image-cache';
 import { configureGates, getGateStats, withGate } from './concurrency';
@@ -448,6 +448,7 @@ function buildApiMessages(
   currentMessage: ChatMessage,
   searchInfo?: string,
   knowledgeInfo?: string,
+  similarMemories?: string,
 ): ChatMessage[] {
   const result: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
 
@@ -457,6 +458,10 @@ function buildApiMessages(
 
   if (summary) {
     result.push({ role: 'system', content: `[历史摘要]\n${summary}` });
+  }
+
+  if (similarMemories) {
+    result.push({ role: 'system', content: `[相关历史片段，仅供参考，不要直接复述]\n${similarMemories}` });
   }
 
   result.push(...history);
@@ -1944,6 +1949,79 @@ export const aiChatPlugin: Plugin = {
         return true;
       }
 
+      // ===== /voice clone <音频URL或附件> 自动训练样本 =====
+      if (subCommand === 'clone') {
+        const sub2 = (ctx.args[1] || '').toLowerCase();
+        if (sub2 === 'reset' || sub2 === 'remove' || sub2 === 'clear') {
+          // 仅 admin 可清空样本
+          if (!isAdmin(ctx)) {
+            ctx.replyAt('⛔ 权限不足');
+            return true;
+          }
+          const ok = removeVoiceSample(config);
+          ctx.reply(ok ? '已清空 voice sample，回到默认TTS。' : '清空失败，可能没有样本文件。');
+          return true;
+        }
+
+        if (sub2 === 'status' || sub2 === '') {
+          const stats = getVoiceStats(config);
+          if (stats.cloneReady) {
+            ctx.reply([
+              '🎤 Voice Clone 状态',
+              `样本: ${stats.samplePath}`,
+              `大小: ${stats.sampleSizeMB}MB`,
+              `状态: ✅ 可用`,
+              '',
+              '清空: /voice clone reset (admin)',
+              '更新: /voice clone <音频附件> 或 /voice clone <https URL>',
+            ].join('\n'));
+          } else {
+            ctx.reply([
+              '🎤 Voice Clone 状态',
+              `样本: ${stats.samplePath}`,
+              `状态: ❌ ${stats.sampleReason || '不可用'}`,
+              '',
+              '安装: 直接发语音 + /voice clone',
+              '或: /voice clone <https音频URL>',
+              '建议时长: 10-30秒',
+            ].join('\n'));
+          }
+          return true;
+        }
+
+        // 优先尝试当前消息附带的 record
+        const recordSources = await resolveOneBotRecordSources(ctx, config, ctx.event.message);
+        let source = ctx.args.slice(1).join(' ').trim();
+        if (!source && recordSources.length > 0) source = recordSources[0];
+
+        if (!source) {
+          ctx.reply([
+            '🎤 安装 Voice Clone 样本',
+            '用法 1: 录一段语音 + /voice clone (10-30秒)',
+            '用法 2: /voice clone <https音频URL>',
+            '用法 3: /voice clone reset (admin清空样本)',
+          ].join('\n'));
+          return true;
+        }
+
+        ctx.reply('正在下载安装语音样本，请稍候...');
+        const result = await installVoiceSample(config, source);
+        if (result.ok) {
+          const sizeMB = ((result.size || 0) / 1024 / 1024).toFixed(2);
+          ctx.reply([
+            '✅ Voice Clone 样本安装成功',
+            `路径: ${result.filepath}`,
+            `大小: ${sizeMB}MB`,
+            `格式: ${result.mime}`,
+            '',
+            '试试 /voice test 兄弟们好',
+          ].join('\n'));
+        } else {
+          ctx.reply(`❌ 安装失败: ${result.reason || '未知错误'}`);
+        }
+        return true;
+      }
+
       if (subCommand === 'stt' || subCommand === 'listen' || subCommand === 'transcribe') {
         const resolvedRecords = await resolveOneBotRecordSources(ctx, config, ctx.event.message);
         const input = ctx.args.slice(1).join(' ').trim() || resolvedRecords[0] || '';
@@ -1972,7 +2050,7 @@ export const aiChatPlugin: Plugin = {
         ? (ctx.args.slice(1).join(' ').trim() || '这波语音测试一下。')
         : ctx.args.join(' ').trim();
       if (!text) {
-        ctx.reply('/voice <内容>\n/voice status\n/voice last\n/voice test [内容]\n/voice stt <语音URL>\n/voice clean');
+        ctx.reply('/voice <内容>\n/voice status\n/voice last\n/voice test [内容]\n/voice stt <语音URL>\n/voice clone [URL或附件] - 安装克隆样本\n/voice clean');
         return true;
       }
       return sendVerbatimVoice(ctx, config, text);
@@ -2328,7 +2406,23 @@ export const aiChatPlugin: Plugin = {
         });
         const systemPrompt = buildSystemPrompt(config);
 
-        const apiMessages = buildApiMessages(systemPrompt, job.contextSummary, history, apiCurrentMessage, searchInfo, knowledgeInfo);
+        // 检索相似历史（基于当前消息文本）- 仅当有有意义的查询文本时
+        let similarMemories = '';
+        if (job.effectiveText && job.effectiveText.length >= 4) {
+          try {
+            const recent = cm.retrieveSimilar(job.sessionId, job.effectiveText, 3);
+            // 过滤掉与最近history已经包含的重复
+            const recentTextSet = new Set(history.slice(-10).map((m) => typeof m.content === 'string' ? m.content : '').filter(Boolean));
+            const useful = recent.filter((r) => r.similarity >= 0.2 && !recentTextSet.has(r.text)).slice(0, 2);
+            if (useful.length > 0) {
+              similarMemories = useful
+                .map((r) => `[${r.role}] ${r.text.replace(/^\[mid=\d+\s+uid=\d+\]\s*/, '').slice(0, 200)}`)
+                .join('\n');
+            }
+          } catch { /* 失败不阻塞 */ }
+        }
+
+        const apiMessages = buildApiMessages(systemPrompt, job.contextSummary, history, apiCurrentMessage, searchInfo, knowledgeInfo, similarMemories);
 
         // ===== 调用 AI =====
         const canUseReplyCache = !job.forced && !job.hasImages && !job.hasRecords && !searchInfo && !!job.effectiveText && (config.ai_reply_cache_seconds ?? 180) > 0;

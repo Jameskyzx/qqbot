@@ -2,6 +2,7 @@ import { MessageSegment, Plugin } from '../types';
 import { getRandomKnowledgeLine } from './knowledge-base';
 import { getCacheStats, getImageDataUrl } from './image-cache';
 import { webSearch } from './web-search';
+import { fetchOngoingMatches, fetchTeamRanking, fetchRecentResults } from './hltv-api';
 
 /** 随机选择 */
 function randomPick(items: string[]): string {
@@ -585,6 +586,12 @@ export const funPlugin: Plugin = {
     // ===== /cs2news 实时CS新闻 =====
     if (ctx.command === 'cs2news' || ctx.command === 'csnews') {
       try {
+        // 优先用HLTV最近结果
+        const results = await fetchRecentResults();
+        if (results) {
+          ctx.reply(`📰 CS最近战报:\n${results}`);
+          return true;
+        }
         const result = await webSearch('CS2 latest news 2026', 3000);
         if (result) {
           ctx.reply(`📰 CS2近况:\n${result.slice(0, 800)}`);
@@ -600,6 +607,12 @@ export const funPlugin: Plugin = {
     // ===== /match 实时比赛 =====
     if (ctx.command === 'match' || ctx.command === 'matches' || ctx.command === '比赛') {
       try {
+        // 优先用 HLTV 抓取
+        const matches = await fetchOngoingMatches();
+        if (matches) {
+          ctx.reply(`🎮 当前比赛:\n${matches}`);
+          return true;
+        }
         const result = await webSearch('CS2 ongoing matches today HLTV', 3000);
         if (result) {
           ctx.reply(`🎮 当前比赛:\n${result.slice(0, 800)}`);
@@ -615,6 +628,12 @@ export const funPlugin: Plugin = {
     // ===== /ranking 当前排名 =====
     if (ctx.command === 'ranking' || ctx.command === 'rank' || ctx.command === '排名') {
       try {
+        // 优先用 HLTV 抓取
+        const ranking = await fetchTeamRanking();
+        if (ranking) {
+          ctx.reply(`🏆 HLTV 战队排名:\n${ranking}`);
+          return true;
+        }
         const result = await webSearch('HLTV CS2 team ranking 2026 top10', 3000);
         if (result) {
           ctx.reply(`🏆 CS2 排名:\n${result.slice(0, 800)}`);
