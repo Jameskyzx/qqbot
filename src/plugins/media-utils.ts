@@ -92,25 +92,56 @@ export async function resolveOneBotImageSources(
   const raw = uniqueNonEmpty(extractImageUrls(message));
   const resolved: string[] = [];
   for (const source of raw) {
+    // 1. 已经是 base64 / data URL / file:// / 本地路径 - 直接用
     if (isDirectMediaSource(source)) {
       resolved.push(source);
       continue;
     }
-    // 尝试get_image拿真实URL
+
+    // 2. 用 get_image 拿 NapCat 缓存的真实文件
+    //    NapCat 通常会返回 { file: "/data/.napcat/cache/xxx.jpg", url: "https://...", base64?: "..." }
+    //    优先级: base64 > 本地 file path > 重定向后的 url
+    let bestSource = '';
+    let napcatErr = '';
     try {
-      const res = await ctx.bot.callApiAsync('get_image', { file: source }, 5000);
+      const res = await ctx.bot.callApiAsync('get_image', { file: source }, 6000);
       const data = (res as any)?.data || res;
-      const next = firstMediaString(data, 'image/jpeg');
-      if (next) {
-        resolved.push(next);
-      } else {
-        // get_image没拿到 但source可能仍可下载，记录原始source
-        console.warn(`[Vision] get_image返回空 source=${source.slice(0, 80)} keys=${data ? Object.keys(data).join(',') : 'null'}`);
-        resolved.push(source);
+
+      // 先看有没有 base64（NapCat 部分版本会直接给）
+      const b64 = data?.base64 || data?.b64 || data?.base64_file || data?.file_base64;
+      if (typeof b64 === 'string' && b64.length > 80 && /^[A-Za-z0-9+/_=-]+$/.test(b64.replace(/\s+/g, ''))) {
+        bestSource = `base64://${b64.replace(/\s+/g, '')}`;
+      }
+
+      // 再看本地路径（最稳定）
+      if (!bestSource) {
+        const filePath = data?.file || data?.path || data?.file_path
+          || data?.data?.file || data?.data?.path || data?.data?.file_path;
+        if (typeof filePath === 'string' && filePath.trim() && !filePath.startsWith('http') && !filePath.startsWith('data:')) {
+          // NapCat 返回的通常是绝对路径，存在就用
+          const cleaned = filePath.replace(/^file:\/\//, '');
+          // 仅在路径看起来像本地文件才用（避免 cache key 被当成路径）
+          if (/^[/\\]|^[a-zA-Z]:/.test(cleaned)) {
+            bestSource = `file://${cleaned}`;
+          }
+        }
+      }
+
+      // 最后才是 URL
+      if (!bestSource) {
+        const url = firstMediaString(data, 'image/jpeg');
+        if (url) bestSource = url;
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[Vision] get_image失败 source=${source.slice(0, 80)} err=${msg}`);
+      napcatErr = err instanceof Error ? err.message : String(err);
+      console.warn(`[Vision] get_image失败 source=${source.slice(0, 80)} err=${napcatErr}`);
+    }
+
+    if (bestSource) {
+      resolved.push(bestSource);
+    } else {
+      console.warn(`[Vision] get_image无可用source 退回原始 source=${source.slice(0, 80)} err=${napcatErr}`);
+      // 即使 get_image 失败，原始 source 可能仍然是可下载的 URL
       resolved.push(source);
     }
   }

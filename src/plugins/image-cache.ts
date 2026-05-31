@@ -90,11 +90,23 @@ function detectMime(buffer: Buffer): { mime: string; ext: string } {
 
 function readLocalImage(input: string): { dataUrl: string; hash: string } | null {
   try {
-    const filepath = input.startsWith('file://') ? input.slice('file://'.length) : input;
-    if (!filepath || /^https?:\/\//i.test(filepath) || !fs.existsSync(filepath)) return null;
+    let filepath = input;
+    if (filepath.startsWith('file://')) filepath = filepath.slice('file://'.length);
+    // Windows 路径处理：file:///C:/foo -> C:/foo
+    filepath = filepath.replace(/^\/+([a-zA-Z]:)/, '$1');
+    if (!filepath || /^https?:\/\//i.test(filepath)) return null;
+    if (!fs.existsSync(filepath)) {
+      // NapCat 跑在 Docker 时返回的可能是容器内路径，bot 跑在宿主机就找不到
+      // 这种情况就静默 fallback 到 url 下载，不打印误导性 error
+      return null;
+    }
     const stat = fs.statSync(filepath);
-    if (!stat.isFile() || stat.size <= 0 || stat.size > maxFileSizeBytes) {
-      setImageError(`local image size out of range: ${stat.size}/${maxFileSizeBytes}`);
+    if (!stat.isFile() || stat.size <= 0) {
+      setImageError(`local image empty: ${stat.size}`);
+      return null;
+    }
+    if (stat.size > maxFileSizeBytes) {
+      setImageError(`local image too large: ${Math.round(stat.size / 1024 / 1024)}MB > ${Math.round(maxFileSizeBytes / 1024 / 1024)}MB`);
       return null;
     }
     const buffer = fs.readFileSync(filepath);
@@ -136,7 +148,7 @@ function readInlineImage(input: string): string | null {
 }
 
 /** 下载图片并缓存到磁盘 */
-function downloadAndCache(url: string, redirectCount: number = 0, cacheKeyUrl: string = url): Promise<CacheEntry | null> {
+function downloadAndCache(url: string, redirectCount: number = 0, cacheKeyUrl: string = url, uaIndex: number = 0): Promise<CacheEntry | null> {
   return new Promise((resolve) => {
     let settled = false;
     const safeResolve = (value: CacheEntry | null): void => {
@@ -165,14 +177,24 @@ function downloadAndCache(url: string, redirectCount: number = 0, cacheKeyUrl: s
     const isHttps = parsedUrl.protocol === 'https:';
     const transport = isHttps ? https : http;
 
+    // 多 UA 重试 - QQ CDN 对不同 UA 反应不一样
+    const userAgents = [
+      'Mozilla/5.0 (Linux; Android 12; PCRT00) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/107.0.5304.141 Mobile Safari/537.36 V1_AND_SQ_9.0.10_5395_YYB_D A_9001000 QQ/9.0.10.18435 NetType/WIFI WebP/0.4.1 AppId/537230910',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QQ/9.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 QQ/9.0.0',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    ];
+    const ua = userAgents[uaIndex % userAgents.length];
+
     const req = transport.get({
       hostname: parsedUrl.hostname,
       port: parsedUrl.port || (isHttps ? 443 : 80),
       path: parsedUrl.pathname + parsedUrl.search,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QQ/9.0.0.0 Safari/537.36',
+        'User-Agent': ua,
         'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
         'Accept-Language': 'zh-CN,zh;q=0.9',
+        'Referer': 'https://im.qq.com/',
       },
     }, (res) => {
       const statusCode = res.statusCode || 0;
@@ -195,12 +217,19 @@ function downloadAndCache(url: string, redirectCount: number = 0, cacheKeyUrl: s
           return;
         }
         res.resume();
-        void downloadAndCache(nextUrl, redirectCount + 1, cacheKeyUrl).then(safeResolve);
+        void downloadAndCache(nextUrl, redirectCount + 1, cacheKeyUrl, uaIndex).then(safeResolve);
         return;
       }
 
+      // 非 200 状态：如果是 403/404 且还有 UA 可换，自动换 UA 重试
       if (statusCode !== 200) {
-        setImageError(`HTTP ${res.statusCode}`);
+        if ((statusCode === 403 || statusCode === 401) && uaIndex < userAgents.length - 1) {
+          res.resume();
+          console.warn(`[ImageCache] HTTP ${statusCode} ua=${uaIndex}，换UA重试 url=${url.slice(0, 80)}`);
+          void downloadAndCache(url, redirectCount, cacheKeyUrl, uaIndex + 1).then(safeResolve);
+          return;
+        }
+        setImageError(`HTTP ${res.statusCode} ${url.slice(0, 80)}`);
         downloadFailures++;
         safeResolve(null);
         res.resume();
@@ -229,6 +258,23 @@ function downloadAndCache(url: string, redirectCount: number = 0, cacheKeyUrl: s
         if (aborted) return;
         try {
           const buffer = Buffer.concat(chunks);
+
+          // 防御：检查内容是不是真的图片
+          if (buffer.length < 32) {
+            setImageError(`image too small ${buffer.length}B`);
+            downloadFailures++;
+            safeResolve(null);
+            return;
+          }
+          // 检查是不是 HTML 错误页（QQ CDN 偶尔返回错误时可能是 200 但 HTML）
+          const head = buffer.slice(0, 64).toString('latin1');
+          if (/<!doctype html|<html/i.test(head)) {
+            setImageError(`got HTML instead of image (probably auth fail)`);
+            downloadFailures++;
+            safeResolve(null);
+            return;
+          }
+
           const { mime, ext } = detectMime(buffer);
           const hash = urlHash(cacheKeyUrl);
           const filename = `${hash}.${ext}`;
@@ -269,7 +315,7 @@ function downloadAndCache(url: string, redirectCount: number = 0, cacheKeyUrl: s
       safeResolve(null);
     });
     req.setTimeout(15000, () => {
-      setImageError('download timeout');
+      setImageError(`download timeout url=${url.slice(0, 80)}`);
       downloadFailures++;
       safeResolve(null);
       req.destroy();

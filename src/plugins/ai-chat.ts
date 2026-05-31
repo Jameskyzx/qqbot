@@ -1924,6 +1924,19 @@ export const aiChatPlugin: Plugin = {
       const subCommand = (ctx.args[0] || '').toLowerCase();
       const stats = getImageCacheStats();
       if (!subCommand || subCommand === 'status') {
+        // 如果消息附带图片，顺便测试 get_image 解析
+        let attachedInfo = '';
+        const attachedImages = await resolveOneBotImageSources(ctx, ctx.event.message);
+        if (attachedImages.length > 0) {
+          const lines = attachedImages.slice(0, 2).map((s, i) => {
+            let kind = 'url';
+            if (s.startsWith('base64://')) kind = 'base64';
+            else if (s.startsWith('file://')) kind = 'file';
+            else if (s.startsWith('data:')) kind = 'data';
+            return `  [${i}] ${kind}: ${s.slice(0, 80)}${s.length > 80 ? '...' : ''}`;
+          });
+          attachedInfo = '\n附带图片源:\n' + lines.join('\n');
+        }
         ctx.reply([
           '识图状态',
           `开关: ${config.enable_vision ? 'on' : 'off'}`,
@@ -1933,8 +1946,10 @@ export const aiChatPlugin: Plugin = {
           `缓存: ${stats.count}/${stats.maxFiles}张 ${stats.sizeMB}/${stats.maxSizeMB}MB 命中${stats.hits}/${stats.misses} 失败${stats.downloadFailures} 飞行${stats.inFlight}`,
           `单图上限: ${stats.maxFileMB}MB 跳转${stats.maxRedirects} 清理${stats.cleanupIntervalMinutes}m`,
           ...(stats.lastError ? [`最近错误: ${stats.lastError}`] : []),
+          attachedInfo,
           '/vision test <图片URL>',
-        ].join('\n'));
+          '提示: 直接发图+/vision test 也可以诊断',
+        ].filter(Boolean).join('\n'));
         return true;
       }
       if (subCommand === 'test') {
@@ -2355,6 +2370,37 @@ export const aiChatPlugin: Plugin = {
             }
           }
 
+          // 兜底：若全部 URL 下载失败，尝试通过 get_msg 重新拉消息（NapCat会重新生成下载URL）
+          if (dataUrls.length === 0 && limitedUrls.length > 0 && ctx.event.message_id) {
+            try {
+              console.warn(`[Vision] 群${job.chatId} 一阶段失败，尝试 get_msg 重取`);
+              const msgRes = await ctx.bot.callApiAsync('get_msg', { message_id: ctx.event.message_id }, 6000);
+              const msgData = (msgRes as any)?.data || msgRes;
+              const msgSegs = Array.isArray(msgData?.message) ? msgData.message : [];
+              const reextracted: string[] = [];
+              for (const seg of msgSegs) {
+                if (seg && seg.type === 'image' && seg.data) {
+                  const u = seg.data.url || seg.data.file;
+                  if (typeof u === 'string' && u) reextracted.push(u);
+                }
+              }
+              if (reextracted.length > 0) {
+                const reresolved = await resolveOneBotImageSources(ctx, msgSegs);
+                for (const r of reresolved.slice(0, limit)) {
+                  try {
+                    const d = await withGate('vision', () => getImageDataUrl(r), job.forced);
+                    if (d) dataUrls.push(d);
+                  } catch { /* */ }
+                }
+                if (dataUrls.length > 0) {
+                  console.log(`[Vision] 群${job.chatId} get_msg 兜底成功 拿到${dataUrls.length}张图`);
+                }
+              }
+            } catch (err) {
+              console.warn(`[Vision] get_msg兜底也失败 ${err instanceof Error ? err.message : err}`);
+            }
+          }
+
           if (dataUrls.length > 0) {
             const parts: MessageContent[] = [{ type: 'text', text: targetText }];
             for (const dataUrl of dataUrls) {
@@ -2368,7 +2414,7 @@ export const aiChatPlugin: Plugin = {
             const imageStats = getImageCacheStats();
             if (imageStats.lastError) patchReplyTrace(job.messageId, { visionError: imageStats.lastError });
             console.error(`[Vision] 群${job.chatId} 图片下载失败 url数=${job.imageUrls.length} 最后错误=${imageStats.lastError}`);
-            targetText += '\n注意：当前消息含图片，但图片下载或缓存失败，模型实际上看不到图。不要编造图片细节，可以让对方重发或补充文字。';
+            targetText += `\n注意：当前消息含${job.imageUrls.length}张图片，但图片下载失败(${(imageStats.lastError || 'unknown').slice(0, 50)})，模型实际上看不到图。不要编造图片细节，可以让对方重发或补充文字。`;
             apiCurrentMessage = { role: 'user', content: targetText };
           }
         } else {
