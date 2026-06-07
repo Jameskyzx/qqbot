@@ -91,6 +91,13 @@ function migrateQuietAiDefaults(target, template, changes) {
       targetAi.passive_random_min_chars = templateAi.passive_random_min_chars;
     }
   }
+
+  if (typeof templateAi.api_timeout_ms === 'number' && typeof targetAi.api_timeout_ms === 'number' && targetAi.api_timeout_ms <= 60000) {
+    if (targetAi.api_timeout_ms !== templateAi.api_timeout_ms) {
+      changes.push(`migrate ai.api_timeout_ms ${targetAi.api_timeout_ms} -> ${templateAi.api_timeout_ms}`);
+      targetAi.api_timeout_ms = templateAi.api_timeout_ms;
+    }
+  }
 }
 
 function main() {

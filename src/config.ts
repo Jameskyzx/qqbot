@@ -3,7 +3,7 @@ import * as path from 'path';
 import { AIConfig, BotConfig, PresetConfig } from './types';
 
 export const CONFIG_PATH = path.resolve(__dirname, '..', 'config.json');
-export const CONFIG_VERSION = 20260608;
+export const CONFIG_VERSION = 20260609;
 
 type PlainObject = Record<string, unknown>;
 
@@ -29,7 +29,7 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   context_expire_minutes: 120,
   enable_search: false,
   search_timeout_ms: 1200,
-  api_timeout_ms: 60000,
+  api_timeout_ms: 120000,
   search_keywords: [],
   search_on_style_query: false,
   search_cache_seconds: 300,

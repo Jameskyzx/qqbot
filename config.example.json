@@ -1,5 +1,5 @@
 {
-  "config_version": 20260608,
+  "config_version": 20260609,
   "ws_url": "ws://127.0.0.1:3001",
   "bot_pool": [],
   "bot_pool_failover_seconds": 30,

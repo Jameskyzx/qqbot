@@ -194,7 +194,7 @@ pm2 restart wanjier --update-env
 
 ```json
 {
-  "config_version": 20260608,
+  "config_version": 20260609,
   "ai": {
     "api_url": "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
     "api_key": "在这里填入你的API密钥",
@@ -213,7 +213,7 @@ pm2 restart wanjier --update-env
     "cooldown_seconds": 0,
     "enable_search": true,
     "search_timeout_ms": 1200,
-    "api_timeout_ms": 60000,
+    "api_timeout_ms": 120000,
     "enable_knowledge": true,
     "knowledge_max_chars": 2600,
     "knowledge_force_style": true,
@@ -261,7 +261,7 @@ pm2 restart wanjier --update-env
 }
 ```
 
-`config_version` 不是功能开关，但它很有用：升级后 `npm run doctor`、`/maint status`、`/maint config` 会拿它和当前示例配置比对。如果 VPS 的 `config.json` 没有这个字段，或者小于 `20260608`，说明你大概率还没同步最新字段和 prompt。
+`config_version` 不是功能开关，但它很有用：升级后 `npm run doctor`、`/maint status`、`/maint config` 会拿它和当前示例配置比对。如果 VPS 的 `config.json` 没有这个字段，或者小于 `20260609`，说明你大概率还没同步最新字段和 prompt。
 
 当前 `wanjier` 预设提示词在 `config.example.json` 的 `ai.presets.wanjier.system_prompt`，核心要求是：
 
@@ -668,7 +668,7 @@ pm2 restart wanjier
 
 | 字段 | 说明 |
 |---|---|
-| `config_version` | 配置模板版本，当前为 `20260608`；`npm run doctor` 和 `/maint config` 会用它判断 VPS 配置是否落后 |
+| `config_version` | 配置模板版本，当前为 `20260609`；`npm run doctor` 和 `/maint config` 会用它判断 VPS 配置是否落后 |
 | `ws_url` | OneBot WebSocket 地址，通常是 `ws://127.0.0.1:3001` |
 | `login_check_interval_seconds` | QQ 登录态主动检查间隔，推荐 `60`；`0` 表示关闭 |
 | `login_check_api_timeout_ms` | 登录态检查调用 `get_login_info` 的超时，推荐 `5000` |
@@ -689,7 +689,7 @@ AI 核心字段：
 | `vision_model` | 按供应商填写 | 识图模型 |
 | `max_tokens` | `1600` | 单次模型输出预算；被模型截断时会自动续写补全 |
 | `temperature` | `0.9-0.95` | 推荐偏活一点，降低公式化；太飘再降回 `0.85` |
-| `api_timeout_ms` | `60000` | 单次模型请求等待时间，慢接口可继续调高 |
+| `api_timeout_ms` | `120000` | 单次模型请求等待时间，强触发会多次重试；慢接口可继续调高 |
 
 `config.example.json` 里的 `api_key` 是占位值。运行时会把包含“在这里填入”“your api”“example”“placeholder”等占位特征的 key 视为未配置，避免无效请求排进队列后白等超时。
 
@@ -1485,7 +1485,7 @@ knowledge/inbox/
     "context_send_messages": 30,
     "knowledge_max_chars": 2600,
     "search_timeout_ms": 1200,
-    "api_timeout_ms": 60000,
+    "api_timeout_ms": 120000,
     "search_cache_max_entries": 1000,
     "ai_reply_cache_seconds": 45,
     "vision_max_images": 2,
@@ -1895,7 +1895,7 @@ pm2 logs wanjier --lines 0
 
 然后群里发 `/ping`。如果日志完全没出现群消息，说明消息没进 bot，查 NapCat。
 如果日志出现群消息但没有回复，查插件报错或白名单。
-如果日志出现 `AI接口没配`，查 `config.json`。
+如果 `/diag` 提示 AI 接口未配置或仍是占位值，查 `config.json` 和 `.env` 里的 `WANJIER_API_KEY`。
 如果日志出现 `发送群消息失败 retcode=...`，查 bot 是否在群里、是否被禁言、NapCat API 权限。
 
 ### 常见命令敲错
@@ -2093,10 +2093,11 @@ npm run config:sync -- --apply
 
 ```json
 {
-  "config_version": 20260608,
+  "config_version": 20260609,
   "login_check_interval_seconds": 60,
   "login_check_api_timeout_ms": 5000,
   "ai": {
+    "api_timeout_ms": 120000,
     "temperature": 0.92,
     "trigger_probability": 0.08,
     "related_reply_probability": 0.65,

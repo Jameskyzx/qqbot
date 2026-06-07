@@ -762,7 +762,7 @@ function buildTargetText(job: ReplyJob, recordTranscripts: string[] = []): strin
   if (job.hasRecords) mediaHints.push(`(消息含${job.recordUrls.length}条语音${transcriptText ? '' : ' 但无听写文本'})`);
   if (transcriptText) mediaHints.push(`(语音听写: ${transcriptText})`);
   if (job.forceVoice) mediaHints.push('(对方要求语音回复 短一点 适合念)');
-  if (job.repliedMessageId) mediaHints.push('(对方在引用之前的消息追问)');
+  if (job.repliedMessageId) mediaHints.push('(对方在引用之前的消息追问，要像接弹幕一样顺着上一句回，不要像处理工单)');
 
   const recentOpeners = buildRecentAssistantOpeningHints(job.contextMessages.slice(0, -1));
   const openerHint = recentOpeners ? `\n【提示】别复读这些开头: ${recentOpeners.replace(/\n/g, ' / ')}` : '';
@@ -782,7 +782,9 @@ function buildTargetText(job: ReplyJob, recordTranscripts: string[] = []): strin
     '===现在你要回复这一条===',
     `${job.senderName}: ${body}${mediaText}`,
     '===',
-    `只回应这个人这句话 不要替历史里其他人补答${openerHint}`,
+    job.isReplyToBot
+      ? `这是对方在回复你上一条，按玩机器直播间接弹幕的语气顺着回。短一点、像真人，不要解释触发机制。${openerHint}`
+      : `只回应这个人这句话 不要替历史里其他人补答${openerHint}`,
   ].filter(Boolean).join('\n');
 }
 
@@ -1197,28 +1199,33 @@ function forcedFallbackReply(job: ReplyJob, recordTranscripts: string[] = []): s
     '哥们 我顿了一下 你那条是啥',
     '稍等 我现在脑子不太转',
     '我看了一眼 你那条没看清 你重发',
+    '这下卡了一拍 你再甩一遍',
+    '我刚才断片了 你重新问',
+    '没接稳 再来一句',
+    '这波我没吃到信息 你补一下',
   ];
   return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+}
+
+function apiNotReadyChatReply(ctx: PluginContext): string {
+  if (ctx.command && directAiCommands.has(ctx.command)) {
+    return '我这边现在接不住，等后面那根线捋明白再问。';
+  }
+  if (ctx.isReplyToBot) {
+    return '我刚才那下没续上，你换个问法再追一句。';
+  }
+  if (ctx.isPrivate) {
+    return '我这边现在接不住，先别硬拷问我，等会儿再聊。';
+  }
+  return '我这边现在接不住，先别硬拷问我，等会儿再来。';
 }
 
 function forcedApiFailureReply(job: ReplyJob, errMsg: string, recordTranscripts: string[] = []): string {
   if (recordTranscripts.length > 0) return forcedFallbackReply(job, recordTranscripts);
   if (job.hasRecords && !job.effectiveText) return forcedFallbackReply(job, recordTranscripts);
   if (job.hasImages && !job.effectiveText) return forcedFallbackReply(job, recordTranscripts);
-  const normalized = errMsg.toLowerCase();
-  if (/401|403|unauthorized|forbidden|api key|invalid[_\s-]?key|鉴权|认证|密钥|key/.test(normalized)) {
-    return 'AI接口没打通 像是key或权限问题 管理员看 /trace last';
-  }
-  if (/quota|余额|额度|insufficient|payment|billing/.test(normalized)) {
-    return 'AI接口没回 像是额度问题 管理员看 /trace last';
-  }
-  if (/timeout|超时|timed out|etimedout|econnreset|socket|network|网络/.test(normalized)) {
-    return 'AI接口超时了 管理员看 /trace last';
-  }
-  if (/无内容|empty|returned empty|no content/.test(normalized)) {
-    return 'AI接口返回空了 管理员看 /trace last';
-  }
-  return 'AI接口这下没回 管理员看 /trace last';
+  void errMsg;
+  return forcedFallbackReply(job, recordTranscripts);
 }
 
 function looksLikeInactiveActivationReply(text: string): boolean {
@@ -2172,7 +2179,7 @@ async function sendVerbatimVoice(ctx: PluginContext, config: AIConfig, text: str
   }
   const ttsNeedsApi = (config.tts_provider || 'api') === 'api' || ((config.tts_provider || 'api') === 'auto' && !(config.tts_local_command || '').trim());
   if (ttsNeedsApi && !hasUsableApiKey(config.api_key)) {
-    const message = 'AI接口没配，语音也就别想了';
+    const message = '嗓子这边没接上，这句先发文字吧';
     if (fallbackMessageId && fallbackUserId) ctx.replyQuoteTo(fallbackMessageId, fallbackUserId, message);
     else ctx.reply(message);
     const error = 'api key missing';
@@ -2953,11 +2960,11 @@ export const aiChatPlugin: Plugin = {
 
     if (!apiReady) {
       if (ctx.command && directAiCommands.has(ctx.command)) {
-        ctx.reply('AI接口没配，/ai 现在打不出去。');
+        ctx.reply(apiNotReadyChatReply(ctx));
         return true;
       }
       if (ctx.isPrivate || isAtBot(ctx.event) || ctx.isReplyToBot) {
-        ctx.replyQuote('AI接口没配，我现在只能查本地命令。');
+        ctx.replyQuote(apiNotReadyChatReply(ctx));
         return true;
       }
       return false;
@@ -3401,7 +3408,7 @@ export const aiChatPlugin: Plugin = {
         }
         if (!cleaned) {
           if (replyCacheKey) replyCacheMisses++;
-          const maxAttempts = job.forced ? 4 : 2;
+          const maxAttempts = job.forced ? 5 : 2;
           const reply = await withGate('ai', () => callLLMWithRetry(config, apiMessages, usesVisionPayload, maxAttempts), job.forced);
           cleaned = postProcessReply(reply);
           if (looksLikeInactiveActivationReply(cleaned)) {

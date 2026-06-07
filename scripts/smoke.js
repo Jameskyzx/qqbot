@@ -28,6 +28,14 @@ function firstText(message) {
   return message.find((seg) => seg.type === 'text')?.data.text;
 }
 
+function assertNoTechnicalChatFallback(text, label) {
+  assert.ok(text && text.length > 0, `${label} should send a visible chat fallback`);
+  assert.ok(
+    !/API|HTTP|key|接口|trace|错误|超时|模型链路/i.test(text),
+    `${label} should not leak technical failure wording: ${text}`,
+  );
+}
+
 async function testOutgoingSanitize() {
   assert.strictEqual(sanitize.sanitizeOutgoingText('普通 😂 笑哭 🤣'), '普通 😂 笑哭 🤣');
   const softened = sanitize.sanitizeOutgoingText('不是哥们 这句需要去开头');
@@ -127,7 +135,7 @@ async function withPreservedFile(filepath, fn) {
 
 async function testConfig() {
   const config = readConfig();
-  assert.strictEqual(config.config_version, 20260608);
+  assert.strictEqual(config.config_version, 20260609);
   assert.strictEqual(config.login_check_interval_seconds, 30);
   assert.strictEqual(config.login_check_api_timeout_ms, 8000);
   assert.strictEqual(config.ai.trigger_probability, 0.08);
@@ -136,6 +144,7 @@ async function testConfig() {
   assert.strictEqual(config.ai.knowledge_max_chars, 2600);
   assert.strictEqual(config.ai.knowledge_force_style, true);
   assert.strictEqual(config.ai.related_reply_probability, 0.65);
+  assert.strictEqual(config.ai.api_timeout_ms, 120000);
   assert.strictEqual(config.ai.aggression_level, 'medium');
   assert.strictEqual(config.ai.poke_reply_probability, 1);
   assert.strictEqual(config.ai.ai_global_concurrency, 2);
@@ -259,6 +268,7 @@ async function testConfigSyncScript() {
       trigger_mode: 'smart',
       trigger_keywords: ['玩机器'],
       trigger_probability: 0.01,
+      api_timeout_ms: 60000,
       cooldown_seconds: 1,
       context_expire_minutes: 120,
       enable_vision: true,
@@ -282,11 +292,12 @@ async function testConfigSyncScript() {
     });
     assert.strictEqual(applied.status, 0, `sync apply should pass: ${applied.stdout}\n${applied.stderr}`);
     const synced = JSON.parse(fs.readFileSync(tmpConfig, 'utf-8'));
-    assert.strictEqual(synced.config_version, 20260608);
+    assert.strictEqual(synced.config_version, 20260609);
     assert.strictEqual(synced.ai.api_key, 'sk-real-user-key-should-stay', 'sync must not overwrite user api key');
     assert.strictEqual(synced.ai.trigger_probability, 0.08, 'sync should migrate old too-quiet passive trigger probability');
     assert.strictEqual(synced.ai.related_reply_probability, 0.65, 'sync should migrate old too-quiet related reply probability');
     assert.strictEqual(synced.ai.passive_random_min_chars, 4, 'sync should migrate old passive min chars');
+    assert.strictEqual(synced.ai.api_timeout_ms, 120000, 'sync should migrate old too-short API timeout');
     assert.strictEqual(synced.ai.enable_memory_retrieval, true);
     assert.strictEqual(synced.ai.memory_top_k, 4);
     assert.notStrictEqual(synced.ai.presets.wanjier.system_prompt, 'old prompt', 'old built-in preset prompt should refresh on version lag');
@@ -962,6 +973,7 @@ async function testMessageReplyTargeting() {
       inactiveAttempts++;
       return inactiveAttempts === 1 ? '未激活回答' : '这下接住了';
     }
+    if (id === '110') throw new Error('HTTP 503: upstream timeout');
     return `reply-${id}`;
   });
 
@@ -1036,11 +1048,68 @@ async function testMessageReplyTargeting() {
     await waitFor(() => sent.length === beforeInactive + 2, 'trace after inactive retry');
     assert.ok(firstText(sent.at(-1).message).includes('修复: inactive activation reply retried'), 'trace should show inactive activation repair');
 
+    const beforeApiFailure = sent.length;
+    handler.handleEvent(makeEvent(110, 20, ' 你这把怎么看'));
+    await waitFor(() => sent.length === beforeApiFailure + 1, 'api failure human fallback', 15000);
+    const apiFallbackText = sent.at(-1).message.find((seg) => seg.type === 'text')?.data.text || '';
+    assertNoTechnicalChatFallback(apiFallbackText, 'forced API failure fallback');
+
+    handler.handleEvent(makePlainEvent(910, 20, '/trace last'));
+    await waitFor(() => sent.length === beforeApiFailure + 2, 'trace after api failure fallback');
+    assert.ok(firstText(sent.at(-1).message).includes('HTTP 503'), 'trace should keep the real API error for admins');
+
     const before = sent.length;
     handler.handleEvent(makeEvent(201, 21, ' 回复旧消息', [{ type: 'reply', data: { id: '77777' } }]));
     await waitFor(() => sent.length === before + 1, 'reply-to-bot forced reply');
     assert.strictEqual(getMsgCalls.some((call) => call.action === 'get_msg' && call.params.message_id === 77777), true);
     assert.strictEqual(sent.at(-1).message.find((seg) => seg.type === 'reply')?.data.id, '201');
+    assert.ok(
+      prompts.some((prompt) => prompt.includes('message_id: 201') && prompt.includes('按玩机器直播间接弹幕的语气顺着回')),
+      'reply-to-bot prompt should explicitly request live-style follow-up',
+    );
+  } finally {
+    aiChat.__setLLMCallerForTests();
+    aiChat.shutdownAiChat();
+  }
+}
+
+async function testNoApiKeyHumanFallback() {
+  const config = makeConfigForHandler();
+  config.ai.api_key = '在这里填入你的API密钥';
+  const sent = [];
+  const bot = {
+    getConfig: () => config,
+    sendGroupMessage: async (groupId, message, onMessageId) => {
+      sent.push({ groupId, message });
+      if (onMessageId) onMessageId(95_000 + sent.length);
+      return true;
+    },
+    callApiAsync: async (action) => {
+      if (action === 'get_msg') {
+        return { retcode: 0, data: { sender: { user_id: 3853043835 } } };
+      }
+      return { retcode: 0, data: {} };
+    },
+  };
+  const handler = new MessageHandler(bot);
+  handler.use(aiChat.aiChatPlugin);
+  let llmCalls = 0;
+  aiChat.__setLLMCallerForTests(async () => {
+    llmCalls++;
+    return '不应该调用模型';
+  });
+
+  try {
+    handler.handleEvent(makeEvent(111, 31, ' 你现在能聊吗'));
+    await waitFor(() => sent.length === 1, 'missing API key @ fallback');
+    assert.strictEqual(sent[0].message.find((seg) => seg.type === 'reply')?.data.id, '111');
+    assertNoTechnicalChatFallback(firstText(sent[0].message), 'missing API key @ fallback');
+
+    handler.handleEvent(makeEvent(112, 32, ' 上一句继续说', [{ type: 'reply', data: { id: '95001' } }]));
+    await waitFor(() => sent.length === 2, 'missing API key reply-to-bot fallback');
+    assert.strictEqual(sent[1].message.find((seg) => seg.type === 'reply')?.data.id, '112');
+    assertNoTechnicalChatFallback(firstText(sent[1].message), 'missing API key reply-to-bot fallback');
+    assert.strictEqual(llmCalls, 0, 'missing API key should not call LLM');
   } finally {
     aiChat.__setLLMCallerForTests();
     aiChat.shutdownAiChat();
@@ -1646,6 +1715,7 @@ async function main() {
   await testSearchSingleFlight();
   await testAdminMaintenanceCommands();
   await testMessageReplyTargeting();
+  await testNoApiKeyHumanFallback();
   await testExplicitVoiceReply();
   await testOpaqueOneBotRecordResolution();
   await testOpaqueOneBotImageResolution();
