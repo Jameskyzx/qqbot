@@ -127,7 +127,7 @@ async function withPreservedFile(filepath, fn) {
 
 async function testConfig() {
   const config = readConfig();
-  assert.strictEqual(config.config_version, 20260524);
+  assert.strictEqual(config.config_version, 20260607);
   assert.strictEqual(config.login_check_interval_seconds, 30);
   assert.strictEqual(config.login_check_api_timeout_ms, 8000);
   assert.strictEqual(config.ai.trigger_probability, 0.005);
@@ -179,6 +179,12 @@ async function testConfig() {
   assert.strictEqual(config.ai.stt_cache_hours, 24);
   assert.strictEqual(config.ai.stt_cache_max_mb, 96);
   assert.strictEqual(config.ai.stt_cache_max_files, 1500);
+  assert.strictEqual(config.ai.enable_memory_retrieval, true);
+  assert.strictEqual(config.ai.memory_top_k, 4);
+  assert.strictEqual(config.ai.memory_min_similarity, 0.18);
+  assert.strictEqual(config.ai.memory_inject_max_chars, 700);
+  assert.strictEqual(config.ai.memory_max_messages_per_session, 700);
+  assert.strictEqual(config.ai.memory_max_sessions_in_memory, 80);
   assert.strictEqual(config.ai.search_negative_cache_seconds, 60);
   assert.strictEqual(config.ai.knowledge_aggressive_auto_commit, true);
   assert.strictEqual(config.ai.knowledge_quarantine_long_quotes, false);
@@ -217,6 +223,108 @@ async function testConfigEnvApiKeyOverride() {
     else delete process.env.WANJIER_API_KEY;
     if (typeof oldOpenAi === 'string') process.env.OPENAI_API_KEY = oldOpenAi;
     else delete process.env.OPENAI_API_KEY;
+  }
+}
+
+async function testConfigSyncScript() {
+  const tmpDir = path.resolve(__dirname, '..', 'logs', `sync-config-smoke-${process.pid}-${Date.now()}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const tmpConfig = path.join(tmpDir, 'config.json');
+  const tmpExample = path.resolve(__dirname, '..', 'config.example.json');
+  const oldConfig = {
+    config_version: 20260524,
+    ws_url: 'ws://127.0.0.1:3001',
+    bot_qq: 3853043835,
+    bot_name: '玩机器',
+    command_prefix: '/',
+    admin_qq: [123456789],
+    enabled_groups: [],
+    ai: {
+      api_url: 'https://example.com/v1/chat/completions',
+      api_key: 'sk-real-user-key-should-stay',
+      model: 'mimo-v2.5-pro',
+      vision_model: 'mimo-v2.5-pro',
+      active_preset: 'wanjier',
+      presets: {
+        wanjier: {
+          name: '玩机器',
+          description: 'old',
+          system_prompt: 'old prompt',
+        },
+      },
+      max_context_rounds: 30,
+      max_context_messages: 30,
+      max_tokens: 1000,
+      temperature: 0.8,
+      trigger_mode: 'smart',
+      trigger_keywords: ['玩机器'],
+      trigger_probability: 0.01,
+      cooldown_seconds: 1,
+      context_expire_minutes: 120,
+      enable_vision: true,
+      enable_tts: false,
+      tts_probability: 0.1,
+    },
+  };
+  try {
+    fs.writeFileSync(tmpConfig, `${JSON.stringify(oldConfig, null, 2)}\n`);
+    const preview = spawnSync(process.execPath, [path.resolve(__dirname, 'sync-config.js'), '--config', tmpConfig, '--example', tmpExample], {
+      cwd: path.resolve(__dirname, '..'),
+      encoding: 'utf-8',
+    });
+    assert.strictEqual(preview.status, 0, `sync preview should pass: ${preview.stdout}\n${preview.stderr}`);
+    assert.ok(preview.stdout.includes('将补齐'), 'sync preview should show pending changes');
+    assert.strictEqual(JSON.parse(fs.readFileSync(tmpConfig, 'utf-8')).config_version, 20260524, 'preview must not write config');
+
+    const applied = spawnSync(process.execPath, [path.resolve(__dirname, 'sync-config.js'), '--config', tmpConfig, '--example', tmpExample, '--apply'], {
+      cwd: path.resolve(__dirname, '..'),
+      encoding: 'utf-8',
+    });
+    assert.strictEqual(applied.status, 0, `sync apply should pass: ${applied.stdout}\n${applied.stderr}`);
+    const synced = JSON.parse(fs.readFileSync(tmpConfig, 'utf-8'));
+    assert.strictEqual(synced.config_version, 20260607);
+    assert.strictEqual(synced.ai.api_key, 'sk-real-user-key-should-stay', 'sync must not overwrite user api key');
+    assert.strictEqual(synced.ai.enable_memory_retrieval, true);
+    assert.strictEqual(synced.ai.memory_top_k, 4);
+    assert.notStrictEqual(synced.ai.presets.wanjier.system_prompt, 'old prompt', 'old built-in preset prompt should refresh on version lag');
+    assert.ok(synced.ai.presets.wanjier.system_prompt.includes('上下文使用'), 'synced preset should contain current prompt rules');
+    assert.ok(fs.existsSync(path.join(tmpDir, 'backups')), 'sync should create a local backup');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+async function testMemoryEnvOverrides() {
+  const keys = [
+    'WANJIER_ENABLE_MEMORY_RETRIEVAL',
+    'WANJIER_MEMORY_TOP_K',
+    'WANJIER_MEMORY_MIN_SIMILARITY',
+    'WANJIER_MEMORY_INJECT_MAX_CHARS',
+    'WANJIER_MEMORY_MAX_MESSAGES_PER_SESSION',
+    'WANJIER_MEMORY_MAX_SESSIONS_IN_MEMORY',
+  ];
+  const oldValues = new Map(keys.map((key) => [key, process.env[key]]));
+  try {
+    process.env.WANJIER_ENABLE_MEMORY_RETRIEVAL = 'false';
+    process.env.WANJIER_MEMORY_TOP_K = '0';
+    process.env.WANJIER_MEMORY_MIN_SIMILARITY = '0.25';
+    process.env.WANJIER_MEMORY_INJECT_MAX_CHARS = '0';
+    process.env.WANJIER_MEMORY_MAX_MESSAGES_PER_SESSION = '88';
+    process.env.WANJIER_MEMORY_MAX_SESSIONS_IN_MEMORY = '9';
+
+    const config = readConfig();
+    assert.strictEqual(config.ai.enable_memory_retrieval, false);
+    assert.strictEqual(config.ai.memory_top_k, 0);
+    assert.strictEqual(config.ai.memory_min_similarity, 0.25);
+    assert.strictEqual(config.ai.memory_inject_max_chars, 0);
+    assert.strictEqual(config.ai.memory_max_messages_per_session, 88);
+    assert.strictEqual(config.ai.memory_max_sessions_in_memory, 9);
+  } finally {
+    for (const key of keys) {
+      const oldValue = oldValues.get(key);
+      if (typeof oldValue === 'string') process.env[key] = oldValue;
+      else delete process.env[key];
+    }
   }
 }
 
@@ -786,6 +894,20 @@ async function testAdminMaintenanceCommands() {
   handler.handleEvent(makePlainEvent(804, 2, '/maint status'));
   await waitFor(() => sent.length === 5, 'maint non-admin denial');
   assert.ok(firstText(sent[4].message).includes('权限不足'), 'maint should be admin-only');
+
+  handler.handleEvent(makePlainEvent(806, 2, '/mem'));
+  await waitFor(() => sent.length === 6, 'mem status');
+  assert.ok(firstText(sent[5].message).includes('RAG记忆'), 'mem should show RAG memory status');
+  assert.ok(firstText(sent[5].message).includes('/mem search'), 'mem should show search usage');
+
+  handler.handleEvent(makePlainEvent(807, 2, '/mem recent'));
+  await waitFor(() => sent.length === 7, 'mem recent');
+  assert.ok(firstText(sent[6].message).includes('最近上下文'), 'mem recent should show recent context');
+  assert.ok(firstText(sent[6].message).includes('最近RAG索引'), 'mem recent should show recent index snapshot');
+
+  handler.handleEvent(makePlainEvent(808, 2, '/mem clear'));
+  await waitFor(() => sent.length === 8, 'mem clear non-admin denial');
+  assert.ok(firstText(sent[7].message).includes('管理员'), 'mem clear should be admin-only');
 }
 
 async function waitFor(condition, label, timeoutMs = 3000) {
@@ -1412,6 +1534,11 @@ async function testFunCsPlayer() {
   await waitFor(() => sent.length === 13, 'short daily cs fuzzy');
   assert.ok(firstText(sent[12].message).includes('今日CS套餐'), 'short daily CS should trigger loadout');
   assert.ok(sent[12].message.some((seg) => seg.type === 'image'), 'short daily CS should include image');
+
+  handler.handleEvent(makePlainEvent(614, 74, '/scene 白给'));
+  await waitFor(() => sent.length === 14, 'scene template command');
+  assert.ok(firstText(sent[13].message).includes('直播场景'), 'scene command should render a scene template');
+  assert.ok(firstText(sent[13].message).includes('逐字原话'), 'scene command should remind not to use verbatim quotes');
   } finally {
     funTest.__setImageResolverForTests();
   }
@@ -1472,6 +1599,8 @@ async function main() {
   await testConfig();
   await testDoctorScript();
   await testConfigEnvApiKeyOverride();
+  await testConfigSyncScript();
+  await testMemoryEnvOverrides();
   await testKnowledge();
   await testKnowledgeSourceState();
   await testVoiceStats();

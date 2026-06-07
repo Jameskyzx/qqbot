@@ -703,13 +703,14 @@ export function extractKnowledgeTitles(markdown: string, limit: number = 6): str
   return titles;
 }
 
-export function getRandomKnowledgeLine(kind: 'quote' | 'gift' | 'player' | 'team' | 'style', query: string = ''): string {
+export function getRandomKnowledgeLine(kind: 'quote' | 'gift' | 'player' | 'team' | 'style' | 'scene', query: string = ''): string {
   const sectionMap: Record<typeof kind, RegExp> = {
     quote: /公开索引|已核验短语锚点|短语锚点|戳一戳短句池/,
     gift: /礼物感谢拟态模板|礼物感谢话术/,
     player: /选手|人物/,
     team: /队伍/,
     style: /低攻击|活人感|非公式化|去口癖|反应|直播/,
+    scene: /直播场景模板|切片长句摘要|CS2 解说模板|礼物感谢话术|反应强度/,
   };
   loadKnowledge();
   const sections = cachedSections.filter((section) => sectionMap[kind].test(section.title));
@@ -728,6 +729,10 @@ export function getRandomKnowledgeLine(kind: 'quote' | 'gift' | 'player' | 'team
       if (kind === 'style') {
         if (line.length > 90) return false;
         if (/不是哥们/.test(line)) return false;
+      }
+      if (kind === 'scene') {
+        if (line.length > 180) return false;
+        if (/^(知识来源类型|置信度|核验状态|内容类型|自动写入资格|证据链接|来源|使用规则)[：:]/.test(line)) return false;
       }
       if (kind === 'gift' && /不是哥们/.test(line)) return false;
       return true;

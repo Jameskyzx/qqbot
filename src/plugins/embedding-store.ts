@@ -35,8 +35,29 @@ interface SessionIndex {
 }
 
 const sessions: Map<string, SessionIndex> = new Map();
-const MAX_MESSAGES_PER_SESSION = 500; // 每个session最多保留500条历史
-const MAX_SESSIONS_IN_MEMORY = 50;
+let maxMessagesPerSession = 500; // 每个session最多保留500条历史
+let maxSessionsInMemory = 50;
+let searchQueries = 0;
+let searchHits = 0;
+let searchMisses = 0;
+let lastError = '';
+
+export function configureEmbeddingStore(config: {
+  memory_max_messages_per_session?: number;
+  memory_max_sessions_in_memory?: number;
+}): void {
+  const nextMaxMessages = Number(config.memory_max_messages_per_session ?? 500);
+  const nextMaxSessions = Number(config.memory_max_sessions_in_memory ?? 50);
+  maxMessagesPerSession = Math.max(50, Math.min(5000, Math.floor(Number.isFinite(nextMaxMessages) ? nextMaxMessages : 500)));
+  maxSessionsInMemory = Math.max(5, Math.min(500, Math.floor(Number.isFinite(nextMaxSessions) ? nextMaxSessions : 50)));
+  for (const session of sessions.values()) {
+    if (session.messages.length > maxMessagesPerSession) {
+      session.messages = session.messages.slice(-maxMessagesPerSession);
+      session.dirty = true;
+    }
+  }
+  evictSessionsIfNeeded();
+}
 
 function ensureDir(): void {
   if (!fs.existsSync(STORE_DIR)) {
@@ -48,6 +69,16 @@ function sessionPath(sessionId: string): string {
   // sanitize: only allow [a-zA-Z0-9_-]
   const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
   return path.join(STORE_DIR, `${safe}.jsonl`);
+}
+
+function listDiskIndexFiles(): string[] {
+  try {
+    ensureDir();
+    return fs.readdirSync(STORE_DIR).filter((file) => file.endsWith('.jsonl'));
+  } catch (err) {
+    lastError = err instanceof Error ? err.message.slice(0, 180) : String(err).slice(0, 180);
+    return [];
+  }
 }
 
 /** 提取特征：字+2-gram (中文) + 单词 (英文) */
@@ -98,14 +129,7 @@ function cosineSimilarity(a: IndexedMessage, b: IndexedMessage): number {
 function loadSession(sessionId: string): SessionIndex {
   if (sessions.has(sessionId)) return sessions.get(sessionId)!;
 
-  // LRU eviction
-  if (sessions.size >= MAX_SESSIONS_IN_MEMORY) {
-    const sorted = [...sessions.entries()].sort((a, b) => a[1].lastWrite - b[1].lastWrite);
-    for (const [id, s] of sorted.slice(0, sessions.size - MAX_SESSIONS_IN_MEMORY + 1)) {
-      if (s.dirty) flushSession(id);
-      sessions.delete(id);
-    }
-  }
+  evictSessionsIfNeeded(1);
 
   ensureDir();
   const filepath = sessionPath(sessionId);
@@ -119,8 +143,8 @@ function loadSession(sessionId: string): SessionIndex {
   if (fs.existsSync(filepath)) {
     try {
       const lines = fs.readFileSync(filepath, 'utf-8').split('\n').filter(Boolean);
-      // 只读最后 MAX_MESSAGES_PER_SESSION 条
-      const recent = lines.slice(-MAX_MESSAGES_PER_SESSION);
+      // 只读最后 maxMessagesPerSession 条
+      const recent = lines.slice(-maxMessagesPerSession);
       for (const line of recent) {
         try {
           const obj = JSON.parse(line);
@@ -138,11 +162,37 @@ function loadSession(sessionId: string): SessionIndex {
           }
         } catch { /* skip malformed line */ }
       }
-    } catch { /* skip */ }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message.slice(0, 180) : String(err).slice(0, 180);
+    }
   }
 
   sessions.set(sessionId, session);
   return session;
+}
+
+export function getSessionIndexSnapshot(sessionId: string, limit: number = 8): Array<{
+  role: 'user' | 'assistant';
+  text: string;
+  ts: number;
+}> {
+  const session = loadSession(sessionId);
+  const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+  return session.messages.slice(-safeLimit).map((message) => ({
+    role: message.role,
+    text: message.text,
+    ts: message.ts,
+  }));
+}
+
+function evictSessionsIfNeeded(reserveSlots: number = 0): void {
+  const targetSize = Math.max(0, maxSessionsInMemory - reserveSlots);
+  if (sessions.size <= targetSize) return;
+  const sorted = [...sessions.entries()].sort((a, b) => a[1].lastWrite - b[1].lastWrite);
+  for (const [id, s] of sorted.slice(0, sessions.size - targetSize)) {
+    if (s.dirty) flushSession(id);
+    sessions.delete(id);
+  }
 }
 
 /** 添加一条消息到索引 */
@@ -159,8 +209,8 @@ export function indexMessage(sessionId: string, role: 'user' | 'assistant', text
   };
   msg.norm = vectorNorm(msg.vec || new Map());
   session.messages.push(msg);
-  if (session.messages.length > MAX_MESSAGES_PER_SESSION) {
-    session.messages = session.messages.slice(-MAX_MESSAGES_PER_SESSION);
+  if (session.messages.length > maxMessagesPerSession) {
+    session.messages = session.messages.slice(-maxMessagesPerSession);
   }
   session.dirty = true;
   session.lastWrite = Date.now();
@@ -194,6 +244,7 @@ function flushSession(sessionId: string): void {
     fs.renameSync(tmp, filepath);
     session.dirty = false;
   } catch (err) {
+    lastError = err instanceof Error ? err.message.slice(0, 180) : String(err).slice(0, 180);
     console.error('[Embedding] flush 失败', err);
   }
 }
@@ -205,13 +256,23 @@ export function searchSimilar(
   topK: number = 3,
   minSimilarity: number = 0.15,
 ): Array<{ role: 'user' | 'assistant'; text: string; ts: number; similarity: number }> {
-  if (!query || query.length < 4) return [];
+  searchQueries++;
+  if (!query || query.length < 4) {
+    searchMisses++;
+    return [];
+  }
   const session = loadSession(sessionId);
-  if (session.messages.length === 0) return [];
+  if (session.messages.length === 0) {
+    searchMisses++;
+    return [];
+  }
 
   const queryVec = extractFeatures(query);
   const queryNorm = vectorNorm(queryVec);
-  if (queryNorm === 0) return [];
+  if (queryNorm === 0) {
+    searchMisses++;
+    return [];
+  }
 
   const queryMsg: IndexedMessage = { id: '', ts: 0, role: 'user', text: query, vec: queryVec, norm: queryNorm };
 
@@ -233,6 +294,9 @@ export function searchSimilar(
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, topK);
 
+  if (scored.length > 0) searchHits++;
+  else searchMisses++;
+
   return scored.map((item) => ({
     role: item.msg.role,
     text: item.msg.text,
@@ -252,12 +316,28 @@ export function clearSessionIndex(sessionId: string): void {
 export function getEmbeddingStats(): {
   sessionsInMemory: number;
   totalIndexed: number;
+  diskSessions: number;
+  pendingFlushes: number;
+  maxMessagesPerSession: number;
+  maxSessionsInMemory: number;
+  queries: number;
+  hits: number;
+  misses: number;
+  lastError: string;
 } {
   let total = 0;
   for (const s of sessions.values()) total += s.messages.length;
   return {
     sessionsInMemory: sessions.size,
     totalIndexed: total,
+    diskSessions: listDiskIndexFiles().length,
+    pendingFlushes: flushTimers.size,
+    maxMessagesPerSession,
+    maxSessionsInMemory,
+    queries: searchQueries,
+    hits: searchHits,
+    misses: searchMisses,
+    lastError,
   };
 }
 

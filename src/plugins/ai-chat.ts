@@ -50,6 +50,7 @@ import {
 } from './knowledge-base';
 import { closeKnowledgeDb } from './knowledge-db';
 import { loadContext, writeSession, deleteSession, markDirty, setFlushHandler, getDirtySessions, listAllSessions, clearDirtySession, flushNow } from './context-store';
+import { clearSessionIndex, getEmbeddingStats } from './embedding-store';
 import {
   ChatMessage,
   MessageContent,
@@ -135,6 +136,7 @@ interface ReplyTrace {
   contextMessagesSent?: number;
   contextFocused?: boolean;
   memoryHits?: number;
+  memoryPreview?: string[];
   searchUsed: boolean;
   searchChars: number;
   knowledgeInjected: boolean;
@@ -1583,10 +1585,20 @@ const compressionInFlight: Set<string> = new Set();
 function getContextManager(config: AIConfig): ContextManager {
   if (!contextManager) {
     contextManager = new ContextManager(
-      config.max_context_messages || 50,
-      config.context_expire_minutes || 120
+      config.max_context_messages ?? 50,
+      config.context_expire_minutes ?? 120
     );
   }
+  contextManager.configure({
+    maxMessages: config.max_context_messages ?? 50,
+    expireMinutes: config.context_expire_minutes ?? 120,
+    enableMemoryRetrieval: config.enable_memory_retrieval !== false,
+    memoryTopK: config.memory_top_k ?? 3,
+    memoryMinSimilarity: config.memory_min_similarity ?? 0.15,
+    memoryInjectMaxChars: config.memory_inject_max_chars ?? 700,
+    memoryMaxMessagesPerSession: config.memory_max_messages_per_session ?? 500,
+    memoryMaxSessionsInMemory: config.memory_max_sessions_in_memory ?? 50,
+  });
   return contextManager;
 }
 
@@ -1623,6 +1635,7 @@ function formatReplyTrace(trace: ReplyTrace | null): string {
     `媒体: 图片${trace.hasImages ? '有' : '无'} 语音${trace.hasRecords ? '有' : '无'} 听写${trace.recordTranscripts}`,
     `队列: 等待${Math.round(trace.queueAgeMs / 1000)}s`,
     trace.contextMessagesSent ? `上下文: ${trace.contextMessagesSent}条${trace.contextFocused ? ' (聚焦)' : ''}${trace.memoryHits ? ` 命中${trace.memoryHits}` : ''}` : '',
+    trace.memoryPreview && trace.memoryPreview.length > 0 ? `记忆: ${trace.memoryPreview.join(' / ')}` : '',
     `增强: 知识${trace.knowledgeInjected ? `${trace.knowledgeChars}字` : '未注入'}${trace.knowledgeTopic ? '/话题命中' : ''} 搜索${trace.searchUsed ? `${trace.searchChars}字` : '未用'} 识图${trace.visionPayload ? '已传图' : '未传图'}`,
     trace.hltvUsed ? `HLTV实时: 已注入${trace.hltvChars}字` : '',
     trace.hltvError ? `HLTV错误: ${trace.hltvError}` : '',
@@ -2400,6 +2413,8 @@ export function getAiChatStats(): {
   lastOpenerDeduped: boolean;
   knowledgeAutoIntervalMinutes: number;
   knowledgeAutoRunning: boolean;
+  memoryEnabled: boolean;
+  memory: ReturnType<typeof getEmbeddingStats>;
 } {
   let pendingJobs = 0;
   let forcedJobs = 0;
@@ -2427,7 +2442,69 @@ export function getAiChatStats(): {
     lastOpenerDeduped: lastReplyTrace?.openerDeduped === true,
     knowledgeAutoIntervalMinutes,
     knowledgeAutoRunning,
+    memoryEnabled: contextManager ? contextManager.isMemoryEnabled() : knowledgeAutoConfig?.enable_memory_retrieval !== false,
+    memory: getEmbeddingStats(),
   };
+}
+
+export function getMemoryDiagnostics(config: AIConfig, sessionId: string): {
+  enabled: boolean;
+  session: ReturnType<ContextManager['getSessionMeta']>;
+  embeddings: ReturnType<typeof getEmbeddingStats>;
+  injectMaxChars: number;
+} {
+  const cm = getContextManager(config);
+  return {
+    enabled: cm.isMemoryEnabled(),
+    session: cm.getSessionMeta(sessionId),
+    embeddings: getEmbeddingStats(),
+    injectMaxChars: cm.getMemoryInjectMaxChars(),
+  };
+}
+
+export function searchSessionMemory(
+  config: AIConfig,
+  sessionId: string,
+  query: string,
+  topK?: number,
+): Array<{ role: 'user' | 'assistant'; text: string; ts: number; similarity: number }> {
+  const cm = getContextManager(config);
+  return cm.retrieveSimilar(
+    sessionId,
+    query,
+    topK ?? config.memory_top_k ?? 4,
+    config.memory_min_similarity ?? 0.15,
+  );
+}
+
+export function getRecentSessionMemory(
+  config: AIConfig,
+  sessionId: string,
+  limit: number = 8,
+): {
+  context: Array<{ role: string; text: string }>;
+  indexed: Array<{ role: 'user' | 'assistant'; text: string; ts: number }>;
+} {
+  const cm = getContextManager(config);
+  return {
+    context: cm.getRecentMessages(sessionId, limit).map((message) => ({
+      role: message.role,
+      text: typeof message.content === 'string' ? message.content : '',
+    })),
+    indexed: cm.getRecentIndexedMessages(sessionId, limit),
+  };
+}
+
+export function clearAiSessionMemory(sessionId: string): void {
+  if (contextManager) {
+    contextManager.clearSession(sessionId);
+  } else {
+    deleteSession(sessionId);
+    clearSessionIndex(sessionId);
+  }
+  sessionRecentOpeners.delete(sessionId);
+  sessionRecentReplies.delete(sessionId);
+  lastReplyAt.delete(sessionId);
 }
 
 export const aiChatPlugin: Plugin = {
@@ -2518,10 +2595,7 @@ export const aiChatPlugin: Plugin = {
 
     // ===== 管理命令 =====
     if (ctx.command === 'reset' || ctx.command === 'clear') {
-      cm.clearSession(sessionId);
-      sessionRecentOpeners.delete(sessionId);
-      sessionRecentReplies.delete(sessionId);
-      lastReplyAt.delete(sessionId);
+      clearAiSessionMemory(sessionId);
       ctx.reply('行 清了');
       return true;
     }
@@ -3217,17 +3291,40 @@ export const aiChatPlugin: Plugin = {
         // 检索相似历史（基于当前消息文本）- 仅当有有意义的查询文本时
         let similarMemories = '';
         let memoryHits = 0;
-        if (job.effectiveText && job.effectiveText.length >= 4) {
+        let memoryPreview: string[] = [];
+        const memoryQuery = job.effectiveText || recordTranscriptText;
+        if (config.enable_memory_retrieval !== false && memoryQuery && memoryQuery.length >= 4) {
           try {
-            const recent = cm.retrieveSimilar(job.sessionId, job.effectiveText, 3);
-            memoryHits = recent.length;
+            const recent = cm.retrieveSimilar(
+              job.sessionId,
+              memoryQuery,
+              config.memory_top_k ?? 4,
+              config.memory_min_similarity ?? 0.18,
+            );
             // 过滤掉与最近history已经包含的重复
             const recentTextSet = new Set(history.slice(-10).map((m) => typeof m.content === 'string' ? m.content : '').filter(Boolean));
-            const useful = recent.filter((r) => r.similarity >= 0.2 && !recentTextSet.has(r.text)).slice(0, 2);
+            const minSimilarity = config.memory_min_similarity ?? 0.18;
+            const topK = config.memory_top_k ?? 4;
+            const useful = recent
+              .filter((r) => r.similarity >= minSimilarity && !recentTextSet.has(r.text))
+              .slice(0, Math.max(0, topK));
             if (useful.length > 0) {
-              similarMemories = useful
-                .map((r) => `[${r.role}] ${r.text.replace(/^\[mid=\d+\s+uid=\d+\]\s*/, '').slice(0, 200)}`)
-                .join('\n');
+              const budget = Math.max(0, config.memory_inject_max_chars ?? cm.getMemoryInjectMaxChars());
+              if (budget > 0) {
+                const lines: string[] = [];
+                let used = 0;
+                for (const r of useful) {
+                  const line = `[${r.role} sim=${r.similarity}] ${r.text.replace(/^\[mid=\d+\s+uid=\d+\]\s*/, '').slice(0, 220)}`;
+                  if (used + line.length > budget && lines.length > 0) break;
+                  lines.push(line);
+                  used += line.length;
+                }
+                similarMemories = lines.join('\n').slice(0, budget);
+                memoryPreview = useful
+                  .slice(0, 3)
+                  .map((r) => `${r.role}:${r.similarity} ${previewText(r.text.replace(/^\[mid=\d+\s+uid=\d+\]\s*/, ''), 44)}`);
+                memoryHits = lines.length;
+              }
             }
           } catch { /* 失败不阻塞 */ }
         }
@@ -3237,6 +3334,7 @@ export const aiChatPlugin: Plugin = {
           contextMessagesSent: history.length,
           contextFocused: focusedHistory.focused,
           memoryHits,
+          memoryPreview,
         });
 
         // ===== 调用 AI =====

@@ -331,6 +331,49 @@ function sourceName(source: CSPlayer['imageSource']): string {
   return source === 'liquipedia' ? 'Liquipedia' : 'Wikimedia';
 }
 
+function compactBriefBlock(title: string, value: string, maxChars: number): string {
+  const cleaned = (value || '').replace(/\n{3,}/g, '\n\n').trim();
+  if (!cleaned) return `${title}: 暂无准信`;
+  return [`【${title}】`, cleaned.slice(0, maxChars)].join('\n');
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      const timer = setTimeout(() => resolve(fallback), timeoutMs);
+      timer.unref();
+    }),
+  ]);
+}
+
+async function buildCsBrief(): Promise<string> {
+  const [matches, results, ranking] = await Promise.all([
+    withTimeout(fetchOngoingMatches().catch(() => ''), 6500, ''),
+    withTimeout(fetchRecentResults().catch(() => ''), 6500, ''),
+    withTimeout(fetchTeamRanking().catch(() => ''), 6500, ''),
+  ]);
+  const pulledAt = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  return [
+    `CS短报 | ${pulledAt}`,
+    compactBriefBlock('当前/即将比赛', matches, 700),
+    compactBriefBlock('最近赛果', results, 650),
+    compactBriefBlock('排名快照', ranking, 500),
+    '机器短评：实时东西会变，开喷前先看来源时间，别拿旧数据硬打新版本。',
+  ].join('\n\n');
+}
+
+function buildSceneTemplate(query: string): string {
+  const line = getRandomKnowledgeLine('scene', query) || getRandomKnowledgeLine('style', query);
+  if (!line) return '场景库暂时没货。把授权切片笔记放 knowledge/inbox/，再用 /kb ingest 进候选。';
+  const topic = query || '随机';
+  return [
+    `直播场景 | ${topic}`,
+    line,
+    '用法：先按这个结构接情绪，再补一句具体判断；别把它当逐字原话复读。',
+  ].join('\n');
+}
+
 function dailyCardImagePlan(card: DailyCard): string {
   const parts: string[] = [];
   if (card.liquipediaPage) parts.push('Liquipedia队伍图');
@@ -930,6 +973,16 @@ export const funPlugin: Plugin = {
       return true;
     }
 
+    // ===== /csbrief CS短报 =====
+    if (ctx.command === 'csbrief' || ctx.command === 'csreport' || ctx.command === '日报' || ctx.command === '短报' || fuzzy === 'csbrief') {
+      try {
+        ctx.reply(await buildCsBrief());
+      } catch {
+        ctx.reply('CS短报拉取失败，先跑 /data 看实时数据链路。');
+      }
+      return true;
+    }
+
     // ===== /cs2news 实时CS新闻 =====
     if (ctx.command === 'cs2news' || ctx.command === 'csnews' || fuzzy === 'cs2news') {
       try {
@@ -1017,6 +1070,13 @@ export const funPlugin: Plugin = {
       } else {
         ctx.reply(tag ? `没找到「${tag}」相关的语录，换个词` : '语录库暂时没货');
       }
+      return true;
+    }
+
+    // ===== /scene 直播场景模板 =====
+    if (ctx.command === 'scene' || ctx.command === '场景' || ctx.command === 'template' || fuzzy === 'scene') {
+      const query = ctx.args.join(' ').trim();
+      ctx.reply(buildSceneTemplate(query));
       return true;
     }
 

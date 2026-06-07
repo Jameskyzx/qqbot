@@ -18,6 +18,7 @@
 - 知识库自动刷新：`/kb refresh`、`/kb refresh --aggressive`、`/kb batches`、`/kb rollback`。
 - 联网搜索：DuckDuckGo Instant、DuckDuckGo HTML、Bing RSS 兜底，带 single-flight、正/负缓存和磁盘缓存。
 - 上下文记忆：每群持久化到 `context_store/`，旧消息异步压缩，不阻塞回复。
+- RAG 记忆：每群/私聊会话会把历史消息写入轻量 n-gram 索引，回复时只注入相似历史；`/mem search <关键词>` 和 `/trace last` 可排查召回内容。
 - 图片识别缓存：图片下载后缓存到 `image_cache/`，减少重复识图成本。
 - NapCat 只给图片 `file` 不给 `url` 时，会自动调用 OneBot `get_image`；返回 URL、本地路径或 base64 都能继续识图。
 - 识图自动兼容多种 payload：`image_url` 对象、`image_url` 字符串、`input_image`、`image` 四种格式自动重试。
@@ -27,6 +28,7 @@
 - Docker NapCat 默认用 `base64://` 发送 TTS 语音，避免容器读不到宿主机 `voice_cache/` 文件。
 - 表情会走 QQ face/本地贴纸链路：AI 的常见 emoji 会转成 QQ 经典表情并限制数量，避免一眼 AI 味刷屏。
 - `/status`、`/diag` 和 `/maint` 提供队列、缓存、知识库、并发、内存、配置漂移和清理维护能力。
+- `/csbrief` 提供今日 CS 短报：当前/即将比赛、最近赛果、排名快照，全部走实时数据链路。
 
 ## 项目结构
 
@@ -192,7 +194,7 @@ pm2 restart wanjier --update-env
 
 ```json
 {
-  "config_version": 20260524,
+  "config_version": 20260607,
   "ai": {
     "api_url": "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
     "api_key": "在这里填入你的API密钥",
@@ -215,6 +217,12 @@ pm2 restart wanjier --update-env
     "enable_knowledge": true,
     "knowledge_max_chars": 2600,
     "knowledge_force_style": true,
+    "enable_memory_retrieval": true,
+    "memory_top_k": 4,
+    "memory_min_similarity": 0.18,
+    "memory_inject_max_chars": 700,
+    "memory_max_messages_per_session": 700,
+    "memory_max_sessions_in_memory": 80,
     "persona_mode": "first_person_bot",
     "aggression_level": "medium",
     "max_group_queue": 5,
@@ -253,7 +261,7 @@ pm2 restart wanjier --update-env
 }
 ```
 
-`config_version` 不是功能开关，但它很有用：升级后 `npm run doctor`、`/maint status`、`/maint config` 会拿它和当前示例配置比对。如果 VPS 的 `config.json` 没有这个字段，或者小于 `20260524`，说明你大概率还没同步最新字段和 prompt。
+`config_version` 不是功能开关，但它很有用：升级后 `npm run doctor`、`/maint status`、`/maint config` 会拿它和当前示例配置比对。如果 VPS 的 `config.json` 没有这个字段，或者小于 `20260607`，说明你大概率还没同步最新字段和 prompt。
 
 当前 `wanjier` 预设提示词在 `config.example.json` 的 `ai.presets.wanjier.system_prompt`，核心要求是：
 
@@ -660,7 +668,7 @@ pm2 restart wanjier
 
 | 字段 | 说明 |
 |---|---|
-| `config_version` | 配置模板版本，当前为 `20260524`；`npm run doctor` 和 `/maint config` 会用它判断 VPS 配置是否落后 |
+| `config_version` | 配置模板版本，当前为 `20260607`；`npm run doctor` 和 `/maint config` 会用它判断 VPS 配置是否落后 |
 | `ws_url` | OneBot WebSocket 地址，通常是 `ws://127.0.0.1:3001` |
 | `login_check_interval_seconds` | QQ 登录态主动检查间隔，推荐 `60`；`0` 表示关闭 |
 | `login_check_api_timeout_ms` | 登录态检查调用 `get_login_info` 的超时，推荐 `5000` |
@@ -732,6 +740,17 @@ AI 核心字段：
 | `knowledge_manual_batch_max_sources` | `10` | 手动刷新每批最多来源 |
 | `knowledge_auto_max_block_chars` | `1200` | 自动写入单块最大字符数 |
 | `knowledge_auto_log_retention_days` | `14` | 自动日志保留天数 |
+
+RAG 记忆：
+
+| 字段 | 推荐值 | 说明 |
+|---|---:|---|
+| `enable_memory_retrieval` | `true` | 是否启用当前会话轻量历史召回 |
+| `memory_top_k` | `4` | 每次最多召回几条相似历史，设为 `0` 可只保留上下文不注入 RAG |
+| `memory_min_similarity` | `0.18` | 召回最低相似度，越高越保守 |
+| `memory_inject_max_chars` | `700` | 注入模型的相关历史最大字符数，设为 `0` 可禁止注入 |
+| `memory_max_messages_per_session` | `700` | 每个会话最多索引多少条历史 |
+| `memory_max_sessions_in_memory` | `80` | 最多把多少个会话索引留在内存 |
 
 并发与 2G1C：
 
@@ -1156,6 +1175,7 @@ apt install -y ffmpeg
 | 命令 | 权限 | 说明 |
 |---|---|---|
 | `/quote [关键词]` | 所有人 | 查本地语录/口癖/拟态短句 |
+| `/scene [场景词]` | 所有人 | 抽直播场景模板，如白给、礼物、残局、切片语感 |
 | `/player <名字>` | 所有人 | 查选手倾向，遇到“最新/阵容/转会/排名”会联网融合 |
 | `/team <队伍>` | 所有人 | 查队伍倾向，遇到实时词会联网融合 |
 | `/gift <礼物名>` | 所有人 | 生成礼物感谢拟态模板 |
@@ -1188,6 +1208,10 @@ apt install -y ffmpeg
 | `/maint config` | 管理员查看关键运行配置和配置漂移 |
 | `/maint clean` | 管理员清理搜索、图片、TTS、STT 缓存并跑知识库审计 |
 | `/maint gc` | 管理员手动触发 Node GC，需要 PM2 `--expose-gc` |
+| `/mem` | 查看当前会话上下文、RAG 索引、检索命中和内存占用 |
+| `/mem recent [条数]` | 查看最近上下文和最近 RAG 索引，定位模型到底看到什么 |
+| `/mem search <关键词>` | 检索当前会话相似历史 |
+| `/mem clear` | 管理员清空当前会话上下文和 RAG 索引 |
 | `/time` | 当前时间 |
 | `/stats` | 群统计 |
 | `/reload` | 管理员重载配置，并重新应用并发闸门、缓存和知识库后台参数 |
@@ -2054,20 +2078,22 @@ cd /opt/wanjier-bot
 mkdir -p backups
 cp knowledge/wanjier.md backups/wanjier.vps.$(date +%F-%H%M%S).md
 git stash push -m "vps local knowledge before update" -- knowledge/wanjier.md || true
-git pull --ff-only
-npm run doctor
-npm install
-npm run build
-npm run smoke
-pm2 restart wanjier --update-env
-pm2 logs wanjier --lines 80
+bash scripts/update.sh --hard --smoke
+```
+
+`scripts/update.sh` 会打印更新前提交、本地 HEAD、远端 HEAD、更新后提交和 PM2 重启结果。如果末尾显示“本地提交仍未等于 origin/main”，说明 VPS 目录、分支或本地改动还没对齐。
+
+更新脚本还会运行 `node scripts/sync-config.js --apply`，把 `config.example.json` 里新增的字段补到现有 `config.json`，并在 `backups/` 下备份旧配置；不会覆盖你的 `api_key`。如果 `config_version` 落后，它会刷新内置 `wanjier` 预设 prompt，否则 VPS 代码更新了但说话规则还可能停在旧版。手动只同步配置可跑：
+
+```bash
+npm run config:sync -- --apply
 ```
 
 如果你之前已经复制过旧版 `config.json`，本次升级后建议同步这些关键配置：
 
 ```json
 {
-  "config_version": 20260524,
+  "config_version": 20260607,
   "login_check_interval_seconds": 60,
   "login_check_api_timeout_ms": 5000,
   "ai": {
@@ -2078,6 +2104,12 @@ pm2 logs wanjier --lines 80
     "enable_knowledge": true,
     "knowledge_force_style": true,
     "knowledge_max_chars": 2600,
+    "enable_memory_retrieval": true,
+    "memory_top_k": 4,
+    "memory_min_similarity": 0.18,
+    "memory_inject_max_chars": 700,
+    "memory_max_messages_per_session": 700,
+    "memory_max_sessions_in_memory": 80,
     "enable_vision": true,
     "vision_payload_mode": "auto",
     "enable_stt": true,
@@ -2120,7 +2152,7 @@ pm2 logs wanjier --lines 80 --nostream
 /maint status
 ```
 
-`/reload` 会热应用并发、缓存、知识库自动刷新和多模态开关；`/maint config` 如果还提示 `config_version` 偏旧，就继续对照 `config.example.json` 补字段。
+`/reload` 会热应用并发、缓存、知识库自动刷新和多模态开关；`/maint config` 如果还提示 `config_version` 偏旧，就跑 `npm run config:sync -- --apply` 后再 `/reload`。
 
 本次升级后建议在 VPS 上额外检查：
 
@@ -2139,6 +2171,8 @@ pm2 logs wanjier --lines 80 --nostream
 /ping
 /whoami
 /maint status
+/mem recent
+/scene 白给
 /csplayer
 今天抽个CS选手
 戳一戳 bot

@@ -20,12 +20,14 @@ export type FuzzyCommandKey =
   | 'csutility'
   | 'cstactic'
   | 'csclutch'
+  | 'csbrief'
   | 'match'
   | 'ranking'
   | 'cs2news'
   | 'cs2live'
   | 'csmood'
   | 'forecast'
+  | 'scene'
   | 'jrrp'
   | 'voice_clone'
   | 'voice_clone_status'
@@ -79,6 +81,18 @@ const FUZZY_RULES: FuzzyRule[] = [
     ],
     pairs: [
       { left: ['群'], right: ['统计', '活跃度', '排行', '话痨'] },
+    ],
+  },
+  // ===== /match 当前比赛 =====
+  {
+    key: 'csbrief',
+    exact: [
+      'cs短报', 'cs2短报', 'cs日报', 'cs2日报', '今日cs短报', '今日cs日报',
+      '今天cs短报', '今天cs日报', '今天cs有什么看点', '今天cs看点',
+      '给我来份cs日报', '来份cs日报', '最近cs总结', '今日cs总结',
+    ],
+    pairs: [
+      { left: ['cs', 'cs2'], right: ['短报', '日报', '总结', '看点'] },
     ],
   },
   // ===== /match 当前比赛 =====
@@ -159,6 +173,18 @@ const FUZZY_RULES: FuzzyRule[] = [
       '今天cs运势', '今日cs运势', '我今天怎么打',
     ],
     contains: [],
+  },
+  // ===== 直播场景模板 =====
+  {
+    key: 'scene',
+    exact: [
+      '直播场景', '场景模板', '来个场景', '来个直播场景',
+      '玩机器场景', '切片模板', '语录场景', '学个切片',
+      '礼物场景', '白给场景', '残局场景',
+    ],
+    pairs: [
+      { left: ['直播', '切片', '语录', '礼物', '白给', '残局'], right: ['场景', '模板', '怎么说', '话术'] },
+    ],
   },
   // ===== /jrrp 今日人品 =====
   {

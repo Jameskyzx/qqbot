@@ -41,6 +41,8 @@ echo "  玩机器 Bot VPS 更新"
 echo "========================================="
 echo "模式: $MODE"
 echo "目标分支: origin/main"
+echo "当前目录: $ROOT_DIR"
+echo "更新前提交: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
 backup_file() {
   local file="$1"
@@ -67,15 +69,20 @@ fi
 
 echo "[3/8] 拉取远端更新..."
 git fetch origin
+REMOTE_HEAD="$(git rev-parse --short origin/main)"
+LOCAL_HEAD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+echo "  本地HEAD: $LOCAL_HEAD"
+echo "  远端HEAD: $REMOTE_HEAD"
 if [ "$MODE" = "hard" ]; then
   BEFORE_HEAD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  TARGET_HEAD="$(git rev-parse --short origin/main)"
+  TARGET_HEAD="$REMOTE_HEAD"
   echo "  HEAD: $BEFORE_HEAD -> $TARGET_HEAD"
   git reset --hard origin/main
 else
   git pull --ff-only origin main
 fi
-echo "  当前提交: $(git log --oneline -1)"
+AFTER_HEAD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+echo "  更新后提交: $(git log --oneline -1)"
 
 echo "[4/8] 校验运行配置..."
 if [ ! -f config.json ]; then
@@ -90,6 +97,9 @@ fi
 
 if [ ! -f .env ] && [ -f .env.example ]; then
   echo "  提示: 你可以用 .env 管理敏感配置"
+fi
+if [ -f scripts/sync-config.js ]; then
+  node scripts/sync-config.js --apply
 fi
 
 echo "[5/8] 安装依赖..."
@@ -125,6 +135,10 @@ pm2 save 2>/dev/null || true
 echo "========================================="
 echo "  ✅ 更新完成"
 echo "========================================="
+echo "提交变化: $LOCAL_HEAD -> $AFTER_HEAD (远端 $REMOTE_HEAD)"
+if [ "$AFTER_HEAD" != "$REMOTE_HEAD" ]; then
+  echo "警告: 本地提交仍未等于 origin/main；检查分支、stash 或本地改动。"
+fi
 echo "备份目录: $BACKUP_DIR"
 echo "查看日志:  pm2 logs wanjier --lines 80 --nostream"
 echo "看状态:    pm2 status"

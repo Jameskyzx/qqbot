@@ -96,9 +96,9 @@ function checkConfig(config, example) {
 
   if (expectedVersion > 0) {
     if (!currentVersion) {
-      risk.push(`config_version 未填写；建议同步为 ${expectedVersion}，方便后续判断配置是否落后`);
+      risk.push(`config_version 未填写；运行 npm run config:sync -- --apply 可补齐为 ${expectedVersion}`);
     } else if (currentVersion < expectedVersion) {
-      risk.push(`config_version 偏旧: ${currentVersion} < ${expectedVersion}；建议对照 config.example.json 补齐新字段`);
+      risk.push(`config_version 偏旧: ${currentVersion} < ${expectedVersion}；运行 npm run config:sync -- --apply 补齐新字段`);
     } else if (currentVersion > expectedVersion) {
       suggest.push(`config_version 高于示例: ${currentVersion} > ${expectedVersion}；如果不是你手动升级模板，请确认配置来源`);
     } else {

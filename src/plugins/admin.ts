@@ -1,6 +1,13 @@
 import { CONFIG_VERSION, loadConfig, updateConfigFile } from '../config';
 import { Plugin } from '../types';
-import { getAiChatStats, startAiChatBackgroundTasks } from './ai-chat';
+import {
+  clearAiSessionMemory,
+  getAiChatStats,
+  getMemoryDiagnostics,
+  getRecentSessionMemory,
+  searchSessionMemory,
+  startAiChatBackgroundTasks,
+} from './ai-chat';
 import { cleanupCache as cleanImageCache, getCacheStats as getImageCacheStats } from './image-cache';
 import { auditKnowledge, getKnowledgeStats, pruneKnowledgeAutoLog } from './knowledge-base';
 import { cleanSttCache, getSttStats } from './stt';
@@ -28,6 +35,20 @@ function formatLoginTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
 }
 
+function sessionIdForContext(ctx: Parameters<Plugin['handler']>[0]): string {
+  return ctx.isPrivate
+    ? `private_${ctx.event.user_id}`
+    : `group_${ctx.groupId}`;
+}
+
+function cleanMemoryLine(text: string, maxChars: number): string {
+  return text
+    .replace(/^\[mid=\d+\s+uid=\d+\]\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxChars);
+}
+
 export const adminPlugin: Plugin = {
   name: 'admin',
   description: '管理员命令 - 群管理、配置重载等',
@@ -41,6 +62,51 @@ export const adminPlugin: Plugin = {
 
     // ===== /mem 内存状态（任何人可查）=====
     if (ctx.command === 'mem' || ctx.command === 'memory' || fuzzy === 'mem') {
+      const action = (ctx.args[0] || 'status').toLowerCase();
+      const sessionId = sessionIdForContext(ctx);
+      if (action === 'search' || action === 'find' || action === '查') {
+        const query = ctx.args.slice(1).join(' ').trim();
+        if (!query) {
+          ctx.reply('/mem search <关键词>');
+          return true;
+        }
+        const hits = searchSessionMemory(config.ai, sessionId, query, 6);
+        ctx.reply(hits.length > 0
+          ? ['记忆检索', ...hits.map((hit, index) => `${index + 1}. ${hit.role} sim=${hit.similarity}\n${hit.text.replace(/^\[mid=\d+\s+uid=\d+\]\s*/, '').slice(0, 180)}`)].join('\n\n')
+          : '没搜到相关历史，可能还没聊够或者相似度不够。');
+        return true;
+      }
+      if (action === 'recent' || action === 'last' || action === '最近') {
+        const limit = Math.max(1, Math.min(parseInt(ctx.args[1] || '8', 10) || 8, 20));
+        const recent = getRecentSessionMemory(config.ai, sessionId, limit);
+        const contextLines = recent.context
+          .slice(-limit)
+          .map((item, index) => `${index + 1}. ${item.role} ${cleanMemoryLine(item.text, 160) || '[空]'}`);
+        const indexedLines = recent.indexed
+          .slice(-Math.min(limit, 8))
+          .map((item, index) => {
+            const time = item.ts ? new Date(item.ts).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '-';
+            return `${index + 1}. ${item.role} ${time} ${cleanMemoryLine(item.text, 120) || '[空]'}`;
+          });
+        ctx.reply([
+          `最近上下文 ${sessionId}`,
+          contextLines.length > 0 ? contextLines.join('\n') : '上下文为空',
+          '',
+          '最近RAG索引',
+          indexedLines.length > 0 ? indexedLines.join('\n') : '索引为空',
+        ].join('\n'));
+        return true;
+      }
+      if (action === 'clear' || action === 'reset' || action === '清空') {
+        if (!isAdmin) {
+          ctx.replyAt('清记忆得管理员来，别一手把上下文扬了。');
+          return true;
+        }
+        clearAiSessionMemory(sessionId);
+        ctx.reply('当前会话上下文和RAG索引已清空。');
+        return true;
+      }
+
       const usage = process.memoryUsage();
       const heapMB = Math.round(usage.heapUsed / 1024 / 1024);
       const heapTotalMB = Math.round(usage.heapTotal / 1024 / 1024);
@@ -49,12 +115,19 @@ export const adminPlugin: Plugin = {
       const uptime = Math.floor(process.uptime());
       const hours = Math.floor(uptime / 3600);
       const mins = Math.floor((uptime % 3600) / 60);
+      const memory = getMemoryDiagnostics(config.ai, sessionId);
       ctx.reply([
         '内存状态',
         `堆使用: ${heapMB}/${heapTotalMB} MB`,
         `RSS: ${rssMB} MB`,
         `外部: ${externalMB} MB`,
         `运行: ${hours}h ${mins}m`,
+        `当前会话: ${sessionId} 消息${memory.session.messages} 摘要${memory.session.summaryChars}字 ${memory.session.loaded ? '已在内存' : '从磁盘按需加载'}`,
+        `RAG记忆: ${memory.enabled ? 'on' : 'off'} 注入上限${memory.injectMaxChars}字`,
+        `索引: 内存${memory.embeddings.sessionsInMemory}/${memory.embeddings.maxSessionsInMemory}会话 ${memory.embeddings.totalIndexed}条 磁盘${memory.embeddings.diskSessions}会话 待写${memory.embeddings.pendingFlushes}`,
+        `检索: ${memory.embeddings.hits}/${memory.embeddings.misses} 查询${memory.embeddings.queries} 每会话上限${memory.embeddings.maxMessagesPerSession}`,
+        ...(memory.embeddings.lastError ? [`索引最近错误: ${memory.embeddings.lastError}`] : []),
+        '用法: /mem recent [条数]；/mem search <关键词>；管理员 /mem clear 清当前会话',
         `Node: ${process.version}`,
       ].join('\n'));
       return true;
@@ -106,7 +179,7 @@ export const adminPlugin: Plugin = {
       }
       ctx.reply('开始安全更新：备份配置、拉代码、npm ci、build、doctor、smoke、重启 PM2。');
       const projectRoot = path.resolve(__dirname, '..', '..');
-      const child = exec('bash scripts/update.sh', { cwd: projectRoot, timeout: 15 * 60 * 1000, maxBuffer: 8 * 1024 * 1024 }, (err: Error | null, stdout: string, stderr: string) => {
+      const child = exec('bash scripts/update.sh --smoke', { cwd: projectRoot, timeout: 15 * 60 * 1000, maxBuffer: 8 * 1024 * 1024 }, (err: Error | null, stdout: string, stderr: string) => {
         if (err) {
           ctx.reply(`❌ 更新失败: ${err.message}\n\n最后输出:\n${(stderr || stdout).slice(-400)}`);
           return;
@@ -268,6 +341,7 @@ export const adminPlugin: Plugin = {
           `登录检查: 间隔${currentConfig.login_check_interval_seconds ?? 60}s，超时${currentConfig.login_check_api_timeout_ms ?? 5000}ms`,
           `预设: ${currentConfig.ai.active_preset || '无'}，trigger=${currentConfig.ai.trigger_mode}，随机=${currentConfig.ai.trigger_probability}，相关=${currentConfig.ai.related_reply_probability}`,
           `知识: ${currentConfig.ai.enable_knowledge ? 'on' : 'off'}，强制风格=${currentConfig.ai.knowledge_force_style ? 'on' : 'off'}，max=${currentConfig.ai.knowledge_max_chars}`,
+          `记忆/RAG: ${currentConfig.ai.enable_memory_retrieval === false ? 'off' : 'on'} topK=${currentConfig.ai.memory_top_k} sim>=${currentConfig.ai.memory_min_similarity} 注入${currentConfig.ai.memory_inject_max_chars}字 索引上限${currentConfig.ai.memory_max_messages_per_session}/会话`,
           `多模态: 识图=${currentConfig.ai.enable_vision ? 'on' : 'off'}，听写=${currentConfig.ai.enable_stt ? 'on' : 'off'}，语音=${currentConfig.ai.enable_tts ? 'on' : 'off'}`,
           `缓存: 搜索${currentConfig.ai.search_cache_max_entries}条，图片${currentConfig.ai.image_cache_max_mb}MB/${currentConfig.ai.image_cache_max_files}文件，TTS${currentConfig.ai.tts_cache_max_mb}MB，STT${currentConfig.ai.stt_cache_max_mb}MB`,
           `并发: AI ${currentConfig.ai.ai_global_concurrency} / 搜索 ${currentConfig.ai.search_global_concurrency} / 图 ${currentConfig.ai.vision_global_concurrency} / 听写 ${currentConfig.ai.stt_global_concurrency} / 语音 ${currentConfig.ai.tts_global_concurrency}，普通排队上限 ${currentConfig.ai.gate_passive_queue_max}`,
@@ -307,6 +381,7 @@ export const adminPlugin: Plugin = {
         `队列: ${aiStats.queuedGroups}群 待处理${aiStats.pendingJobs} 强触发${aiStats.forcedJobs} 最老${Math.round(aiStats.oldestQueueAgeMs / 1000)}s`,
         `闸门: AI ${aiStats.gates.ai.active}/${aiStats.gates.ai.limit}+${aiStats.gates.ai.queued} 搜索 ${aiStats.gates.search.active}/${aiStats.gates.search.limit}+${aiStats.gates.search.queued} 图 ${aiStats.gates.vision.active}/${aiStats.gates.vision.limit}+${aiStats.gates.vision.queued} 听写 ${aiStats.gates.stt.active}/${aiStats.gates.stt.limit}+${aiStats.gates.stt.queued} 语音 ${aiStats.gates.tts.active}/${aiStats.gates.tts.limit}+${aiStats.gates.tts.queued}`,
         `知识库: ${knowledgeStats.sections}块 ${knowledgeStats.chars}字 注入${knowledgeStats.selectHits}/${knowledgeStats.selectMisses} 审计${knowledgeStats.auditIssues} 自动批次${knowledgeStats.batches}`,
+        `记忆/RAG: ${aiStats.memoryEnabled ? 'on' : 'off'} 内存${aiStats.memory.sessionsInMemory}/${aiStats.memory.maxSessionsInMemory}会话 磁盘${aiStats.memory.diskSessions}会话 索引${aiStats.memory.totalIndexed}条 检索${aiStats.memory.hits}/${aiStats.memory.misses}`,
         `知识自动刷新: ${knowledgeStats.autoEnabled && currentConfig.ai.knowledge_auto_update !== false ? 'on' : 'off'} ${aiStats.knowledgeAutoRunning ? '刷新中' : '空闲'} 间隔${aiStats.knowledgeAutoIntervalMinutes || currentConfig.ai.knowledge_auto_interval_minutes || '-'}m`,
         ...(aiStats.lastKnowledgeTitles.length > 0 ? [`最近知识分区: ${aiStats.lastKnowledgeTitles.join(' / ')}`] : []),
         `搜索缓存: ${searchStats.cacheEntries}/${searchStats.maxEntries} 空${searchStats.negativeEntries} 命中${searchStats.hits}/${searchStats.misses} 飞行${searchStats.inFlight}`,

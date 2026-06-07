@@ -191,6 +191,18 @@ export interface AIConfig {
   stt_cache_max_files?: number;
   /** 队列繁忙时是否延后上下文压缩 */
   context_compression_defer_when_busy?: boolean;
+  /** 是否启用轻量历史记忆/RAG召回 */
+  enable_memory_retrieval?: boolean;
+  /** 每次注入的相关历史条数上限 */
+  memory_top_k?: number;
+  /** 历史召回最低相似度，越高越保守 */
+  memory_min_similarity?: number;
+  /** 相关历史注入最大字符数 */
+  memory_inject_max_chars?: number;
+  /** 每个会话最多索引多少条历史消息 */
+  memory_max_messages_per_session?: number;
+  /** 最多同时把多少个会话索引留在内存 */
+  memory_max_sessions_in_memory?: number;
   /** 普通TTS模型 */
   tts_model?: string;
   /** TTS提供方 */

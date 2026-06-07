@@ -10,7 +10,14 @@ import {
   flushNow,
 } from './context-store';
 import { ChatMessage } from './llm-api';
-import { indexMessage, searchSimilar, clearSessionIndex, flushAllEmbeddings } from './embedding-store';
+import {
+  indexMessage,
+  searchSimilar,
+  clearSessionIndex,
+  flushAllEmbeddings,
+  configureEmbeddingStore,
+  getSessionIndexSnapshot,
+} from './embedding-store';
 
 /**
  * 上下文管理器 - 内存+磁盘双层
@@ -32,18 +39,26 @@ export interface SessionContext {
 
 export class ContextManager {
   private sessions: Map<string, SessionContext> = new Map();
-  private softLimit: number;
-  private hardLimit: number;
-  private keepRecent: number;
-  private expireMs: number;
+  private softLimit!: number;
+  private hardLimit!: number;
+  private keepRecent!: number;
+  private expireMs!: number;
   private cleanupTimer: NodeJS.Timeout;
+  private memoryEnabled: boolean = true;
+  private memoryTopK: number = 3;
+  private memoryMinSimilarity: number = 0.15;
+  private memoryInjectMaxChars: number = 700;
+  private configSignature = '';
 
   constructor(maxMessages: number, expireMinutes: number) {
-    this.softLimit = Math.max(5, Math.floor(maxMessages * 0.8));
-    this.hardLimit = Math.max(5, maxMessages);
-    this.keepRecent = Math.max(3, Math.floor(maxMessages * 0.4));
-    this.expireMs = expireMinutes * 60 * 1000;
-
+    this.configure({
+      maxMessages,
+      expireMinutes,
+      enableMemoryRetrieval: true,
+      memoryTopK: 3,
+      memoryMinSimilarity: 0.15,
+      memoryInjectMaxChars: 700,
+    });
     this.loadOnStartup();
     setFlushHandler(() => this.flushDirtyToDisk());
 
@@ -54,6 +69,50 @@ export class ContextManager {
   private loadOnStartup(): void {
     const ids = listAllSessions();
     console.log(`[Context] 磁盘有${ids.length}个历史会话(按需加载)`);
+  }
+
+  configure(options: {
+    maxMessages: number;
+    expireMinutes: number;
+    enableMemoryRetrieval?: boolean;
+    memoryTopK?: number;
+    memoryMinSimilarity?: number;
+    memoryInjectMaxChars?: number;
+    memoryMaxMessagesPerSession?: number;
+    memoryMaxSessionsInMemory?: number;
+  }): void {
+    const signature = [
+      options.maxMessages,
+      options.expireMinutes,
+      options.enableMemoryRetrieval === false ? 0 : 1,
+      options.memoryTopK ?? '',
+      options.memoryMinSimilarity ?? '',
+      options.memoryInjectMaxChars ?? '',
+      options.memoryMaxMessagesPerSession ?? '',
+      options.memoryMaxSessionsInMemory ?? '',
+    ].join('|');
+    if (signature === this.configSignature) return;
+    this.configSignature = signature;
+
+    const maxMessages = Math.max(5, Math.floor(options.maxMessages ?? 50));
+    this.softLimit = Math.max(5, Math.floor(maxMessages * 0.8));
+    this.hardLimit = Math.max(5, maxMessages);
+    this.keepRecent = Math.max(3, Math.floor(maxMessages * 0.4));
+    this.expireMs = Math.max(1, options.expireMinutes ?? 120) * 60 * 1000;
+    this.memoryEnabled = options.enableMemoryRetrieval !== false;
+    this.memoryTopK = Math.max(0, Math.min(12, Math.floor(options.memoryTopK ?? 3)));
+    this.memoryMinSimilarity = Math.max(0.05, Math.min(0.95, Number(options.memoryMinSimilarity ?? 0.15)));
+    this.memoryInjectMaxChars = Math.max(0, Math.min(3000, Math.floor(options.memoryInjectMaxChars ?? 700)));
+    configureEmbeddingStore({
+      memory_max_messages_per_session: options.memoryMaxMessagesPerSession,
+      memory_max_sessions_in_memory: options.memoryMaxSessionsInMemory,
+    });
+    for (const [sessionId, session] of this.sessions.entries()) {
+      if (session.messages.length > this.hardLimit) {
+        session.messages = session.messages.slice(-this.hardLimit);
+        markDirty(sessionId);
+      }
+    }
   }
 
   getSession(sessionId: string): SessionContext {
@@ -99,7 +158,7 @@ export class ContextManager {
     markDirty(sessionId);
 
     // 同时索引到向量存储（仅user和assistant消息，且长度>=8）
-    if ((message.role === 'user' || message.role === 'assistant') && textContent && textContent.length >= 8) {
+    if (this.memoryEnabled && (message.role === 'user' || message.role === 'assistant') && textContent && textContent.length >= 8) {
       try {
         indexMessage(sessionId, message.role, textContent);
       } catch (err) {
@@ -112,12 +171,15 @@ export class ContextManager {
   retrieveSimilar(
     sessionId: string,
     query: string,
-    topK: number = 3,
-  ): Array<{ role: 'user' | 'assistant'; text: string; similarity: number }> {
+    topK: number = this.memoryTopK,
+    minSimilarity: number = this.memoryMinSimilarity,
+  ): Array<{ role: 'user' | 'assistant'; text: string; ts: number; similarity: number }> {
+    if (!this.memoryEnabled) return [];
     try {
-      return searchSimilar(sessionId, query, topK).map((r) => ({
+      return searchSimilar(sessionId, query, topK, minSimilarity).map((r) => ({
         role: r.role,
         text: r.text,
+        ts: r.ts,
         similarity: r.similarity,
       }));
     } catch {
@@ -149,7 +211,45 @@ export class ContextManager {
 
   getFullContext(sessionId: string): { summary: string; messages: ChatMessage[] } {
     const session = this.getSession(sessionId);
-    return { summary: session.summary, messages: session.messages };
+    return { summary: session.summary, messages: [...session.messages] };
+  }
+
+  getSessionMeta(sessionId: string): {
+    summaryChars: number;
+    messages: number;
+    lastActiveTime: number;
+    loaded: boolean;
+  } {
+    const loaded = this.sessions.has(sessionId);
+    const session = this.getSession(sessionId);
+    return {
+      summaryChars: session.summary.length,
+      messages: session.messages.length,
+      lastActiveTime: session.lastActiveTime,
+      loaded,
+    };
+  }
+
+  getRecentMessages(sessionId: string, limit: number = 8): ChatMessage[] {
+    const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+    const session = this.getSession(sessionId);
+    return session.messages.slice(-safeLimit).map((message) => ({ ...message }));
+  }
+
+  getRecentIndexedMessages(sessionId: string, limit: number = 8): Array<{
+    role: 'user' | 'assistant';
+    text: string;
+    ts: number;
+  }> {
+    return getSessionIndexSnapshot(sessionId, limit);
+  }
+
+  getMemoryInjectMaxChars(): number {
+    return this.memoryInjectMaxChars;
+  }
+
+  isMemoryEnabled(): boolean {
+    return this.memoryEnabled;
   }
 
   clearSession(sessionId: string): void {

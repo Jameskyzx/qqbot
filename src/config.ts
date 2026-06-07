@@ -3,7 +3,7 @@ import * as path from 'path';
 import { AIConfig, BotConfig, PresetConfig } from './types';
 
 export const CONFIG_PATH = path.resolve(__dirname, '..', 'config.json');
-export const CONFIG_VERSION = 20260524;
+export const CONFIG_VERSION = 20260607;
 
 type PlainObject = Record<string, unknown>;
 
@@ -88,6 +88,12 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   stt_cache_max_mb: 128,
   stt_cache_max_files: 3000,
   context_compression_defer_when_busy: true,
+  enable_memory_retrieval: true,
+  memory_top_k: 4,
+  memory_min_similarity: 0.18,
+  memory_inject_max_chars: 700,
+  memory_max_messages_per_session: 700,
+  memory_max_sessions_in_memory: 80,
   tts_model: 'mimo-v2.5-tts',
   tts_provider: 'api',
   tts_local_command: '',
@@ -321,6 +327,12 @@ function normalizeAiConfig(value: unknown): AIConfig {
     stt_cache_max_mb: Math.floor(asNumber(raw.stt_cache_max_mb, DEFAULT_AI_CONFIG.stt_cache_max_mb || 128, 8, 4096)),
     stt_cache_max_files: Math.floor(asNumber(raw.stt_cache_max_files, DEFAULT_AI_CONFIG.stt_cache_max_files || 3000, 50, 100000)),
     context_compression_defer_when_busy: asBoolean(raw.context_compression_defer_when_busy, DEFAULT_AI_CONFIG.context_compression_defer_when_busy !== false),
+    enable_memory_retrieval: envBoolean('WANJIER_ENABLE_MEMORY_RETRIEVAL') ?? asBoolean(raw.enable_memory_retrieval, DEFAULT_AI_CONFIG.enable_memory_retrieval !== false),
+    memory_top_k: Math.floor(asNumber(envNumber('WANJIER_MEMORY_TOP_K') ?? raw.memory_top_k, DEFAULT_AI_CONFIG.memory_top_k ?? 4, 0, 12)),
+    memory_min_similarity: asNumber(envNumber('WANJIER_MEMORY_MIN_SIMILARITY') ?? raw.memory_min_similarity, DEFAULT_AI_CONFIG.memory_min_similarity ?? 0.18, 0.05, 0.95),
+    memory_inject_max_chars: Math.floor(asNumber(envNumber('WANJIER_MEMORY_INJECT_MAX_CHARS') ?? raw.memory_inject_max_chars, DEFAULT_AI_CONFIG.memory_inject_max_chars ?? 700, 0, 3000)),
+    memory_max_messages_per_session: Math.floor(asNumber(envNumber('WANJIER_MEMORY_MAX_MESSAGES_PER_SESSION') ?? raw.memory_max_messages_per_session, DEFAULT_AI_CONFIG.memory_max_messages_per_session ?? 700, 50, 5000)),
+    memory_max_sessions_in_memory: Math.floor(asNumber(envNumber('WANJIER_MEMORY_MAX_SESSIONS_IN_MEMORY') ?? raw.memory_max_sessions_in_memory, DEFAULT_AI_CONFIG.memory_max_sessions_in_memory ?? 80, 5, 500)),
     tts_model: asString(raw.tts_model, DEFAULT_AI_CONFIG.tts_model || 'mimo-v2.5-tts'),
     tts_provider: validAudioProviders.has(ttsProvider) ? ttsProvider as AIConfig['tts_provider'] : 'api',
     tts_local_command: asString(raw.tts_local_command, DEFAULT_AI_CONFIG.tts_local_command || ''),
