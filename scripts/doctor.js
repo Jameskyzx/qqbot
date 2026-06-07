@@ -31,6 +31,36 @@ function readJson(filepath) {
   }
 }
 
+function loadDotEnv() {
+  const envPath = path.join(root, '.env');
+  if (!fs.existsSync(envPath)) return false;
+  try {
+    const content = fs.readFileSync(envPath, 'utf-8');
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let value = trimmed.slice(eq + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      const existing = process.env[key];
+      const shouldOverridePlaceholderKey = key === 'WANJIER_API_KEY'
+        && value.trim()
+        && !hasUsableApiKey(existing)
+        && hasUsableApiKey(value);
+      if (key && (existing === undefined || existing.trim() === '' || shouldOverridePlaceholderKey)) {
+        process.env[key] = value;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -172,6 +202,7 @@ function checkConfig(config, example) {
 }
 
 function main() {
+  loadDotEnv();
   let config = null;
   let example = null;
 

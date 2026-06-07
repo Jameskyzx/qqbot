@@ -7,6 +7,7 @@
     "build": "tsc",
     "smoke": "node scripts/smoke.js",
     "doctor": "node scripts/doctor.js",
+    "api:test": "node scripts/api-test.js",
     "config:sync": "node scripts/sync-config.js",
     "data:test": "node scripts/check-cs-data.js",
     "update": "bash scripts/update.sh",

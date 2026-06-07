@@ -1208,16 +1208,33 @@ function forcedFallbackReply(job: ReplyJob, recordTranscripts: string[] = []): s
 }
 
 function apiNotReadyChatReply(ctx: PluginContext): string {
+  const direct = [
+    '我这边线还没接稳，先别上强度。',
+    '等一下，我这边还没热起来。',
+    '这波我没连上，等我缓一手。',
+    '先停一拍，我这边没连上。',
+  ];
+  const reply = [
+    '我刚才那下没续上，你换个角度再追一句。',
+    '这条我现在接不稳，等我缓过来再打。',
+    '刚才那波断节奏了，先别急。',
+  ];
+  const privateLines = [
+    '我这边还没接稳，等会儿再聊。',
+    '先别硬拷问我，我这边现在没续上。',
+    '这下没连上，等我回口血。',
+  ];
+  const pick = (items: string[]) => items[Math.floor(Math.random() * items.length)];
   if (ctx.command && directAiCommands.has(ctx.command)) {
-    return '我这边现在接不住，等后面那根线捋明白再问。';
+    return pick(direct);
   }
   if (ctx.isReplyToBot) {
-    return '我刚才那下没续上，你换个问法再追一句。';
+    return pick(reply);
   }
   if (ctx.isPrivate) {
-    return '我这边现在接不住，先别硬拷问我，等会儿再聊。';
+    return pick(privateLines);
   }
-  return '我这边现在接不住，先别硬拷问我，等会儿再来。';
+  return pick(direct);
 }
 
 function forcedApiFailureReply(job: ReplyJob, errMsg: string, recordTranscripts: string[] = []): string {
@@ -2568,7 +2585,7 @@ export const aiChatPlugin: Plugin = {
   handler: async (ctx) => {
     const config = ctx.bot.getConfig().ai;
     if (!config) return false;
-    const apiReady = hasUsableApiKey(config.api_key);
+    const apiReady = hasUsableApiKey(config.api_key) && !!config.api_url && !!config.model;
 
     ensureKnowledgeAutoTimer(config);
     ensureMaintenanceTimer();

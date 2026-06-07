@@ -1574,11 +1574,14 @@ knowledge/inbox/
 ```bash
 npm run doctor
 npm run build
+npm run api:test
 npm run data:test
 npm run smoke
 ```
 
 `doctor` 是本机/VPS 预检，不需要 QQ 在线，也不需要连接 NapCat。它会检查 `config.json`、`config.example.json`、`dist/index.js`、知识库、缓存目录写入权限、API Key 是否仍是占位值、`src` 是否比 `dist` 新、2G1C 并发配置是否过高。默认只有“硬伤”会返回非 0；如果想让风险项也阻断部署，可以跑 `node scripts/doctor.js --strict`。
+
+`api:test` 会读取 `.env` 和 `config.json`，真实请求一次 OpenAI 兼容 Chat Completions 接口。只有它显示 `[api:test] OK`，群里的 `/ai` 和 @ 对话才算真的通了；如果失败，它会直接提示是 key、模型名、API 地址还是 VPS 网络问题。
 
 `smoke` 覆盖：
 
@@ -1882,8 +1885,11 @@ NODE
 VPS 上可以简单测网络：
 
 ```bash
+npm run api:test
 curl -I https://你的接口域名
 ```
+
+`curl -I` 只能说明域名大致能连，不能证明模型可用。真正排聊天问题优先看 `npm run api:test`；它失败时按输出里的 `HTTP 401`、`HTTP 404/model`、`超时/网络` 处理。
 
 #### 9. 看实时日志定位
 

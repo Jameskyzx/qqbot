@@ -1,7 +1,7 @@
 import { Bot } from './bot';
 import { MessageHandler } from './handler';
 import { GroupMessageEvent } from './types';
-import { CONFIG_PATH, loadConfig } from './config';
+import { CONFIG_PATH, hasUsableApiKey, loadConfig } from './config';
 import { startWebServer } from './web-server';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -22,8 +22,13 @@ function loadDotEnv(): void {
       if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
         value = value.slice(1, -1);
       }
-      // 不覆盖已有环境变量（让pm2/system的优先）
-      if (key && process.env[key] === undefined) {
+      const existing = process.env[key];
+      const shouldOverridePlaceholderKey = key === 'WANJIER_API_KEY'
+        && !!value.trim()
+        && !hasUsableApiKey(existing)
+        && hasUsableApiKey(value);
+      // PM2 里可能残留旧的占位 key；这种情况允许 .env 的真实 key 覆盖。
+      if (key && (existing === undefined || existing.trim() === '' || shouldOverridePlaceholderKey)) {
         process.env[key] = value;
       }
     }

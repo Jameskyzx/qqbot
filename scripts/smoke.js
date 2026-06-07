@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const http = require('http');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const { hasUsableApiKey, normalizeConfig } = require('../dist/config');
 const kb = require('../dist/plugins/knowledge-base');
@@ -26,6 +26,26 @@ const SOURCE_STATE_PATH = path.resolve(__dirname, '..', 'knowledge', 'source-sta
 function firstText(message) {
   if (typeof message === 'string') return message;
   return message.find((seg) => seg.type === 'text')?.data.text;
+}
+
+function spawnNode(args, options = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, {
+      cwd: path.resolve(__dirname, '..'),
+      env: process.env,
+      ...options,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+    child.on('error', (err) => resolve({ status: -1, stdout, stderr: err.message }));
+  });
 }
 
 function assertNoTechnicalChatFallback(text, label) {
@@ -264,6 +284,72 @@ async function testDoctorScript() {
   assert.strictEqual(result.status, 0, `doctor should not fail without hard issues: ${result.stdout}\n${result.stderr}`);
   assert.ok(result.stdout.includes('doctor report'), 'doctor should print report header');
   assert.ok(result.stdout.includes('硬伤:'), 'doctor should print hard issue count');
+}
+
+async function testApiTestScript() {
+  const rootDir = path.resolve(__dirname, '..');
+  const configPath = path.join(rootDir, 'config.json');
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.WANJIER_API_KEY;
+  delete cleanEnv.OPENAI_API_KEY;
+  delete cleanEnv.WANJIER_API_URL;
+  delete cleanEnv.WANJIER_MODEL;
+  delete cleanEnv.WANJIER_VISION_MODEL;
+
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      const json = JSON.parse(body || '{}');
+      assert.strictEqual(req.method, 'POST', 'api-test should send POST');
+      assert.strictEqual(json.model, 'smoke-chat-model', 'api-test should use configured model');
+      assert.ok(req.headers.authorization.includes('sk-smoke-api-test-key'), 'api-test should send configured key');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: 'OK',
+            },
+            finish_reason: 'stop',
+          },
+        ],
+      }));
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  try {
+    await withPreservedFile(configPath, async () => {
+      const config = JSON.parse(fs.readFileSync(path.join(rootDir, 'config.example.json'), 'utf-8'));
+      config.ai.api_url = `http://127.0.0.1:${address.port}/v1/chat/completions`;
+      config.ai.api_key = 'sk-smoke-api-test-key-1234567890';
+      config.ai.model = 'smoke-chat-model';
+      config.ai.vision_model = 'smoke-chat-model';
+      fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+      const ok = await spawnNode([path.resolve(__dirname, 'api-test.js'), '--no-env', '--timeout', '5000'], {
+        cwd: rootDir,
+        env: cleanEnv,
+      });
+      assert.strictEqual(ok.status, 0, `api-test should pass against mock server: ${ok.stdout}\n${ok.stderr}`);
+      assert.ok(ok.stdout.includes('[api:test] OK'), 'api-test should report OK');
+
+      config.ai.api_key = 'tp-xxxxxxxxxxxxxxxx';
+      fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+      const missing = await spawnNode([path.resolve(__dirname, 'api-test.js'), '--no-env', '--timeout', '5000'], {
+        cwd: rootDir,
+        env: cleanEnv,
+      });
+      assert.strictEqual(missing.status, 3, `api-test should fail clearly without real key: ${missing.stdout}\n${missing.stderr}`);
+      assert.ok(missing.stderr.includes('配置不完整'), 'api-test should explain missing config');
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 async function testConfigEnvApiKeyOverride() {
@@ -1749,6 +1835,7 @@ async function main() {
   await testBotLoginStatusStrictness();
   await testConfig();
   await testDoctorScript();
+  await testApiTestScript();
   await testConfigEnvApiKeyOverride();
   await testConfigSyncScript();
   await testMemoryEnvOverrides();

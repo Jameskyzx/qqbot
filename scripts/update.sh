@@ -56,6 +56,7 @@ load_env_file() {
 }
 
 assert_chat_api_ready() {
+  echo "  配置完整性检查..."
   node - <<'NODE'
 const fs = require('fs');
 const { hasUsableApiKey } = require('./dist/config');
@@ -84,6 +85,8 @@ if (missing.length > 0) {
 
 console.log('[update] 聊天 API 配置看起来已就绪');
 NODE
+  echo "  真实模型接口探针..."
+  npm run api:test
 }
 
 backup_file() {
