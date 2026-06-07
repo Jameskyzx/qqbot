@@ -12,7 +12,7 @@ import { webSearch } from './web-search';
  * 3. webSearch 兜底 (DuckDuckGo/Bing)
  * 4. 缓存命中
  *
- * Liquipedia ToS: ≥2.5s 间隔，UA 带项目标识
+ * Liquipedia ToS: 普通API ≥2s；action=parse 更重，按 ≥30s 间隔处理，UA 带项目标识
  */
 
 interface CacheEntry {
@@ -26,7 +26,7 @@ const USER_AGENT = 'wanjier-bot/1.0 (https://github.com/2711944586/qqbot; CS2 gr
 const CS_API_BASE = 'https://api.csapi.de';
 
 let lastRequestAt = 0;
-const MIN_REQUEST_GAP_MS = 2500; // Liquipedia ToS: 至少 2s 间隔，加 0.5s margin
+const MIN_REQUEST_GAP_MS = 30000; // Liquipedia ToS: action=parse 请求不超过 1/30s
 let rateLimitedUntil = 0;
 
 // 共享的 HTML 缓存（fetchOngoingMatches 和 fetchRecentResults 都用同一页面）
@@ -723,6 +723,64 @@ export function getHltvStats(): { entries: number; keys: string[] } {
   return {
     entries: valid.length,
     keys: valid.map(([k]) => k),
+  };
+}
+
+export function getCsDataSourceInfo(): {
+  primary: string;
+  primaryBaseUrl: string;
+  fallback: string[];
+  note: string;
+} {
+  return {
+    primary: 'CS API (api.csapi.de) structured JSON, fed from public CS2/Valve/HLTV-like data',
+    primaryBaseUrl: CS_API_BASE,
+    fallback: [
+      'Liquipedia Counter-Strike MediaWiki API for schedule/ranking fallback',
+      'webSearch fallback for news and source snippets',
+      'short-lived in-process cache to reduce rate-limit pressure',
+    ],
+    note: 'HLTV.org 没有官方免 key 公共 API；本项目优先用 CS API 的 JSON 镜像和 Liquipedia 官方 MediaWiki API，回答里会标注来源快照。',
+  };
+}
+
+export async function checkCsDataHealth(): Promise<{
+  ok: boolean;
+  checks: Array<{ name: string; ok: boolean; lines: number; snippet: string }>;
+  cache: { entries: number; keys: string[] };
+  source: ReturnType<typeof getCsDataSourceInfo>;
+}> {
+  const tasks: Array<[string, () => Promise<string>]> = [
+    ['ranking', fetchTeamRanking],
+    ['recent-results', fetchRecentResults],
+    ['ongoing-matches', fetchOngoingMatches],
+    ['team-profile-vitality', () => fetchTeamProfile('Vitality 当前阵容 排名')],
+    ['player-profile-donk', () => fetchPlayerProfile('donk 最近状态 stats')],
+  ];
+  const checks = [];
+  for (const [name, fn] of tasks) {
+    try {
+      const value = await fn();
+      checks.push({
+        name,
+        ok: Boolean(value),
+        lines: value ? value.split('\n').filter(Boolean).length : 0,
+        snippet: value ? value.replace(/\s+/g, ' ').slice(0, 180) : '',
+      });
+    } catch (err) {
+      checks.push({
+        name,
+        ok: false,
+        lines: 0,
+        snippet: err instanceof Error ? err.message.slice(0, 180) : String(err).slice(0, 180),
+      });
+    }
+  }
+  return {
+    ok: checks.some((item) => item.ok),
+    checks,
+    cache: getHltvStats(),
+    source: getCsDataSourceInfo(),
   };
 }
 

@@ -4,7 +4,7 @@ import { getCacheStats, getImageDataUrl } from './image-cache';
 import { webSearch } from './web-search';
 import { fetchOngoingMatches, fetchTeamRanking, fetchRecentResults } from './hltv-api';
 import { detectFuzzyCommand } from './fuzzy-command';
-import { resolvePlayerImage, resolveTeamImage } from './liquipedia-image';
+import { getLiquipediaImageStats, resolvePlayerImage, resolveTeamImage } from './liquipedia-image';
 import { resolveFandomFileImage } from './fandom-image';
 import { buildDailyCardImageDataUrl } from './daily-card-image';
 
@@ -53,6 +53,14 @@ interface DailyCard {
 }
 
 type DailyCardKind = 'team' | 'map' | 'weapon' | 'role' | 'loadout' | 'utility' | 'tactic' | 'clutch';
+type CsImageProbeKind = DailyCardKind | 'player' | 'all';
+
+interface ImageCandidate {
+  url: string;
+  label: string;
+  source: 'liquipedia-team' | 'fandom-file' | 'representative-player-dynamic' | 'representative-player-static' | 'liquipedia-player' | 'static-url';
+}
+
 let imageDataUrlResolver: (url: string) => Promise<string | null> = getImageDataUrl;
 
 const csPlayers: CSPlayer[] = [
@@ -323,6 +331,17 @@ function sourceName(source: CSPlayer['imageSource']): string {
   return source === 'liquipedia' ? 'Liquipedia' : 'Wikimedia';
 }
 
+function dailyCardImagePlan(card: DailyCard): string {
+  const parts: string[] = [];
+  if (card.liquipediaPage) parts.push('Liquipedia队伍图');
+  if (card.fandomFile) parts.push('Counter-Strike Wiki/Fandom');
+  if (card.playerImageFallback) parts.push(`代表选手${card.playerImageFallback}`);
+  if (card.image) parts.push('静态真实图URL');
+  return parts.length > 0
+    ? `图源：${parts.join(' -> ')}；全失败才本地签位卡`
+    : '图源：Counter-Strike Wiki/Fandom；全失败才本地签位卡';
+}
+
 function playerRoleAdvice(player: CSPlayer, score?: number): { style: string; avoid: string } {
   const role = player.role.toLowerCase();
   let style = '先把默认和信息打清楚，别急着演集锦。';
@@ -370,6 +389,38 @@ function isCsPlayerStatusRequest(command: string | null, args: string[], rawText
   const first = (args[0] || '').toLowerCase();
   if (command === 'csplayer' && ['status', '状态'].includes(first)) return true;
   return /^(?:\/)?(?:csplayer|每日选手|今日选手|抽选手)(?:状态|status)$/.test(normalizeDrawText(rawText));
+}
+
+function isCsImageCommand(command: string | null, rawText: string): boolean {
+  if (['csimage', 'csimg', 'cs图', '图片测试'].includes(command || '')) return true;
+  return /^(?:\/)?(?:csimage|csimg|cs图|图片测试)/.test(normalizeDrawText(rawText));
+}
+
+function normalizeCsImageKind(input: string): CsImageProbeKind {
+  const text = normalizeDrawText(input || '');
+  if (/^(all|全部|全量|所有)$/.test(text)) return 'all';
+  if (/^(player|选手|csplayer|今日选手)$/.test(text)) return 'player';
+  if (/^(team|队伍|战队|csteam|今日队伍|今日战队)$/.test(text)) return 'team';
+  if (/^(map|地图|csmap|今日地图)$/.test(text)) return 'map';
+  if (/^(weapon|gun|枪|武器|枪械|csweapon|今日武器)$/.test(text)) return 'weapon';
+  if (/^(role|position|定位|位置|csrole|今日定位)$/.test(text)) return 'role';
+  if (/^(loadout|pack|套餐|套装|今日cs|csloadout)$/.test(text)) return 'loadout';
+  if (/^(utility|nade|道具|投掷物|csutility)$/.test(text)) return 'utility';
+  if (/^(tactic|strat|战术|cstactic)$/.test(text)) return 'tactic';
+  if (/^(clutch|残局|csclutch)$/.test(text)) return 'clutch';
+  return 'team';
+}
+
+function cardsForImageKind(kind: CsImageProbeKind): DailyCard[] {
+  if (kind === 'team') return csTeams;
+  if (kind === 'map') return csMaps;
+  if (kind === 'weapon') return csWeapons;
+  if (kind === 'role') return csRoles;
+  if (kind === 'loadout') return csTeams;
+  if (kind === 'utility') return csUtilities;
+  if (kind === 'tactic') return csTactics;
+  if (kind === 'clutch') return csClutches;
+  return [];
 }
 
 function isCsPlayerDrawRequest(command: string | null, rawText: string): boolean {
@@ -427,23 +478,12 @@ async function tryImageDataUrl(url: string, label: string): Promise<string | nul
   }
 }
 
-function localDailyCardImage(card: DailyCard, score?: number): MessageSegment {
-  const label = card.imageLabel || card.name || card.key;
-  const dataUrl = buildDailyCardImageDataUrl({
-    title: card.title,
-    label,
-    subtitle: card.subtitle,
-    score: typeof score === 'number' ? `${card.scoreLabel} ${score}/100` : card.scoreLabel,
-    seed: `${todayKey()}_${card.key}_${card.title}`,
-    footer: 'WANJIER DAILY CS',
-  });
-  return imageDataUrlToSegment(dataUrl);
+function shortUrl(url: string): string {
+  return url.length > 96 ? `${url.slice(0, 92)}...` : url;
 }
 
-async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fallbackCard?: DailyCard, score?: number): Promise<MessageSegment[]> {
-  if (!url && !fallbackPlayerNick && !fallbackCard) return [];
-
-  const candidateUrls: Array<{ url: string; label: string }> = [];
+async function buildImageCandidates(url?: string, fallbackPlayerNick?: string, fallbackCard?: DailyCard): Promise<ImageCandidate[]> {
+  const candidateUrls: ImageCandidate[] = [];
 
   if (fallbackCard?.liquipediaPage) {
     try {
@@ -451,7 +491,13 @@ async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fal
         resolveTeamImage(fallbackCard.liquipediaPage, fallbackCard.name),
         new Promise<null>((r) => setTimeout(() => r(null), 6000)),
       ]);
-      if (dynamicUrl) candidateUrls.push({ url: dynamicUrl, label: `${fallbackCard.name}/team-dynamic` });
+      if (dynamicUrl) {
+        candidateUrls.push({
+          url: dynamicUrl,
+          label: `${fallbackCard.name}/team-dynamic`,
+          source: 'liquipedia-team',
+        });
+      }
     } catch (err) {
       console.warn(`[fun] ${fallbackCard.name} Liquipedia队伍图解析失败:`, err instanceof Error ? err.message : err);
     }
@@ -463,7 +509,13 @@ async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fal
         resolveFandomFileImage(fallbackCard.fandomFile),
         new Promise<null>((r) => setTimeout(() => r(null), 6000)),
       ]);
-      if (fandomUrl) candidateUrls.push({ url: fandomUrl, label: `${fallbackCard.name}/fandom-file` });
+      if (fandomUrl) {
+        candidateUrls.push({
+          url: fandomUrl,
+          label: `${fallbackCard.name}/fandom-file`,
+          source: 'fandom-file',
+        });
+      }
     } catch (err) {
       console.warn(`[fun] ${fallbackCard.name} Fandom图片解析失败:`, err instanceof Error ? err.message : err);
     }
@@ -480,11 +532,21 @@ async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fal
           resolvePlayerImage(representative.nick),
           new Promise<null>((r) => setTimeout(() => r(null), 5000)),
         ]);
-        if (dynamicUrl) candidateUrls.push({ url: dynamicUrl, label: `${fallbackCard.name}/${representative.nick}-fallback-dynamic` });
+        if (dynamicUrl) {
+          candidateUrls.push({
+            url: dynamicUrl,
+            label: `${fallbackCard.name}/${representative.nick}-fallback-dynamic`,
+            source: 'representative-player-dynamic',
+          });
+        }
       } catch (err) {
         console.warn(`[fun] ${fallbackCard.name} 代表选手图动态解析失败:`, err instanceof Error ? err.message : err);
       }
-      candidateUrls.push({ url: representative.image, label: `${fallbackCard.name}/${representative.nick}-fallback-static` });
+      candidateUrls.push({
+        url: representative.image,
+        label: `${fallbackCard.name}/${representative.nick}-fallback-static`,
+        source: 'representative-player-static',
+      });
     }
   }
 
@@ -494,13 +556,128 @@ async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fal
         resolvePlayerImage(fallbackPlayerNick),
         new Promise<null>((r) => setTimeout(() => r(null), 5000)),
       ]);
-      if (dynamicUrl) candidateUrls.push({ url: dynamicUrl, label: `${fallbackPlayerNick}/player-dynamic` });
+      if (dynamicUrl) {
+        candidateUrls.push({
+          url: dynamicUrl,
+          label: `${fallbackPlayerNick}/player-dynamic`,
+          source: 'liquipedia-player',
+        });
+      }
     } catch (err) {
       console.warn(`[fun] ${fallbackPlayerNick} Liquipedia动态查图失败:`, err instanceof Error ? err.message : err);
     }
   }
 
-  if (url) candidateUrls.push({ url, label: fallbackPlayerNick || fallbackCard?.name || url });
+  if (url) {
+    candidateUrls.push({
+      url,
+      label: fallbackPlayerNick || fallbackCard?.name || url,
+      source: 'static-url',
+    });
+  }
+
+  const seen = new Set<string>();
+  return candidateUrls.filter((item) => {
+    if (!item.url || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  });
+}
+
+async function probeImageCandidates(title: string, candidates: ImageCandidate[], fallbackCard?: DailyCard, score?: number): Promise<MessageSegment[]> {
+  const lines = [
+    `CS真实图片测试 | ${title}`,
+    `候选真实图: ${candidates.length}`,
+  ];
+  let image: MessageSegment | null = null;
+  for (const candidate of candidates.slice(0, 8)) {
+    const dataUrl = await tryImageDataUrl(candidate.url, candidate.label);
+    if (dataUrl) {
+      lines.push(`OK ${candidate.source} ${candidate.label}`);
+      lines.push(shortUrl(candidate.url));
+      if (!image) image = imageDataUrlToSegment(dataUrl);
+      break;
+    }
+    lines.push(`FAIL ${candidate.source} ${candidate.label}`);
+  }
+  if (!image && fallbackCard) {
+    lines.push('LOCAL fallback 本地签位卡兜底；这不是外部真实图。');
+    image = localDailyCardImage(fallbackCard, score);
+  }
+  const stats = getCacheStats();
+  if (!image && stats.lastError) lines.push(`最近错误: ${stats.lastError}`);
+  return [
+    { type: 'text', data: { text: lines.join('\n') } },
+    ...(image ? [image] : []),
+  ];
+}
+
+async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: number): Promise<MessageSegment[]> {
+  if (kind === 'player') {
+    const player = dailyPlayerFor(userId, scopeId);
+    const candidates = await buildImageCandidates(player.image, player.nick);
+    return probeImageCandidates(`今日选手 ${player.nick}`, candidates);
+  }
+  if (kind === 'all') {
+    const kinds: CsImageProbeKind[] = ['player', 'team', 'map', 'weapon', 'role', 'utility', 'tactic', 'clutch'];
+    const lines = ['CS真实图片批量测试'];
+    for (const item of kinds) {
+      if (item === 'player') {
+        const player = dailyPlayerFor(userId, scopeId);
+        const candidates = await buildImageCandidates(player.image, player.nick);
+        let ok = false;
+        for (const candidate of candidates.slice(0, 4)) {
+          if (await tryImageDataUrl(candidate.url, candidate.label)) {
+            ok = true;
+            lines.push(`OK player ${player.nick} -> ${candidate.source}`);
+            break;
+          }
+        }
+        if (!ok) lines.push(`FAIL player ${player.nick}`);
+        continue;
+      }
+      const cards = cardsForImageKind(item);
+      const card = dailyCardFor(`cs${item}`, userId, scopeId, cards);
+      const candidates = await buildImageCandidates(card.image, undefined, card);
+      let ok = false;
+      for (const candidate of candidates.slice(0, 4)) {
+        if (await tryImageDataUrl(candidate.url, candidate.label)) {
+          ok = true;
+          lines.push(`OK ${item} ${card.name} -> ${candidate.source}`);
+          break;
+        }
+      }
+      if (!ok) lines.push(`FAIL ${item} ${card.name}`);
+    }
+    const stats = getCacheStats();
+    lines.push(`图片缓存: ${stats.count}/${stats.maxFiles} 命中${stats.hits}/${stats.misses} 失败${stats.downloadFailures}`);
+    if (stats.lastError) lines.push(`最近错误: ${stats.lastError}`);
+    return [{ type: 'text', data: { text: lines.join('\n') } }];
+  }
+  const cards = cardsForImageKind(kind);
+  const card = dailyCardFor(kind === 'loadout' ? 'csteam_pack' : `cs${kind}`, userId, scopeId, cards);
+  const score = dailyScoreForKind(kind === 'loadout' ? 'csloadout' : `cs${kind}`, userId, scopeId);
+  const candidates = await buildImageCandidates(card.image, undefined, card);
+  return probeImageCandidates(`${card.title} ${card.name}`, candidates, card, score);
+}
+
+function localDailyCardImage(card: DailyCard, score?: number): MessageSegment {
+  const label = card.imageLabel || card.name || card.key;
+  const dataUrl = buildDailyCardImageDataUrl({
+    title: card.title,
+    label,
+    subtitle: card.subtitle,
+    score: typeof score === 'number' ? `${card.scoreLabel} ${score}/100` : card.scoreLabel,
+    seed: `${todayKey()}_${card.key}_${card.title}`,
+    footer: 'WANJIER DAILY CS',
+  });
+  return imageDataUrlToSegment(dataUrl);
+}
+
+async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fallbackCard?: DailyCard, score?: number): Promise<MessageSegment[]> {
+  if (!url && !fallbackPlayerNick && !fallbackCard) return [];
+
+  const candidateUrls = await buildImageCandidates(url, fallbackPlayerNick, fallbackCard);
 
   for (const candidate of candidateUrls) {
     const dataUrl = await tryImageDataUrl(candidate.url, candidate.label);
@@ -536,6 +713,21 @@ async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fal
     return [localDailyCardImage(fallbackCard, score)];
   }
 
+  if (fallbackPlayerNick) {
+    console.log(`[fun] ${fallbackPlayerNick} 使用本地选手签位卡兜底`);
+    return [localDailyCardImage({
+      key: `player-${fallbackPlayerNick}`,
+      title: '今日CS选手',
+      name: fallbackPlayerNick,
+      subtitle: '外部真实图源暂时失败，先给签位卡兜底',
+      scoreLabel: '签位',
+      advice: '真实图源恢复后会自动优先发外部图片。',
+      avoid: '别把本地卡当真实头像。',
+      line: '图没拉下来，但签不能断。',
+      imageLabel: fallbackPlayerNick,
+    }, score)];
+  }
+
   return [{ type: 'text', data: { text: buildImageFailureLine() } }];
 }
 
@@ -556,7 +748,7 @@ async function buildCsPlayerMessage(userId: number, player: CSPlayer, score?: nu
     { type: 'at', data: { qq: String(userId) } },
     { type: 'text', data: { text: ` ${text}` } },
   ];
-  message.push(...await imageSegmentOrNote(player.image, player.nick));
+    message.push(...await imageSegmentOrNote(player.image, player.nick, undefined, score));
   return message;
 }
 
@@ -783,10 +975,10 @@ export const funPlugin: Plugin = {
     // ===== /ranking 当前排名 =====
     if (ctx.command === 'ranking' || ctx.command === 'rank' || ctx.command === '排名' || fuzzy === 'ranking') {
       try {
-        // 优先用 HLTV 抓取
+        // 优先用 CS API / VRS 结构化数据，失败再搜索
         const ranking = await fetchTeamRanking();
         if (ranking) {
-          ctx.reply(`🏆 HLTV 战队排名:\n${ranking}`);
+          ctx.reply(`🏆 CS2战队排名:\n${ranking}`);
           return true;
         }
         const result = await webSearch('HLTV CS2 team ranking 2026 top10', 3000);
@@ -851,15 +1043,31 @@ export const funPlugin: Plugin = {
     if (isCsPlayerStatusRequest(ctx.command, ctx.args, raw)) {
       const stats = getCacheStats();
       ctx.reply([
-        '每日CS选手状态',
+        '每日CS选手状态 / 图片状态',
         `选手池: ${csPlayers.length}人`,
         `队伍池: ${csTeams.length}队`,
+        `地图/武器/定位/道具/战术/残局: ${csMaps.length}/${csWeapons.length}/${csRoles.length}/${csUtilities.length}/${csTactics.length}/${csClutches.length}`,
+        `真实图策略: Liquipedia/Fandom/Wikimedia优先，外链全失败才发本地签位卡`,
+        `队伍示例: ${csTeams.slice(0, 3).map((item) => `${item.name}(${dailyCardImagePlan(item).replace(/^图源：/, '')})`).join(' | ')}`,
+        (() => {
+          const liq = getLiquipediaImageStats();
+          return `Liquipedia图解析: 缓存${liq.entries} 限流${liq.rateLimited ? 'yes' : 'no'}`;
+        })(),
         `图片缓存: ${stats.count}/${stats.maxFiles}张 ${stats.sizeMB}/${stats.maxSizeMB}MB`,
         `图片命中: ${stats.hits}/${stats.misses} 失败${stats.downloadFailures} 飞行${stats.inFlight}`,
         ...(stats.lastError ? [`最近图片错误: ${stats.lastError}`] : []),
         '',
+        '/csimage test team|map|weapon|role|utility|tactic|clutch|player|all 测真实图源',
         'admin: /csprewarm 预下载所有选手图(慢，受限流影响)',
       ].join('\n'));
+      return true;
+    }
+
+    if (isCsImageCommand(ctx.command, raw)) {
+      const normalizedArgs = ctx.args.map((item) => item.toLowerCase()).filter((item) => item !== 'test' && item !== '测试');
+      const kind = normalizeCsImageKind(normalizedArgs[0] || raw.replace(/^\/?(csimage|csimg|cs图|图片测试)/i, ''));
+      const scopeId = ctx.groupId || 0;
+      ctx.reply(await probeDailyCard(kind, ctx.event.user_id, scopeId));
       return true;
     }
 

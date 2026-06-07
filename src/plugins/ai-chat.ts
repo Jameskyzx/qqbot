@@ -513,6 +513,32 @@ function parseStoredMessageMeta(message: ChatMessage): { mid: number; uid: numbe
   };
 }
 
+function classifyImageSource(source: string): string {
+  if (!source) return 'empty';
+  if (source.startsWith('data:image/')) return 'data-url';
+  if (source.startsWith('base64://')) return 'base64';
+  if (source.startsWith('file://')) return 'file-url';
+  if (/^https?:\/\//i.test(source)) return 'http-url';
+  if (/^[a-zA-Z]:[\\/]/.test(source) || source.startsWith('/')) return 'local-path';
+  return 'unknown';
+}
+
+function describeDataUrl(dataUrl: string): string {
+  const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/s);
+  if (!match) return 'unknown-size';
+  const mime = match[1];
+  const rawLength = match[2].replace(/\s+/g, '').length;
+  const bytes = Math.floor(rawLength * 3 / 4);
+  return `${mime} ${(bytes / 1024 / 1024).toFixed(2)}MB`;
+}
+
+function looksLikeVisibleVisionDescription(text: string): boolean {
+  const cleaned = text.replace(/\s+/g, '');
+  if (cleaned.length < 8) return false;
+  if (/无法查看|无法看到|不能查看|不能看到|没有看到图片|未提供图片|只是文本|作为.*模型|看不到图片/i.test(text)) return false;
+  return /图|图片|画面|人物|队标|地图|武器|文字|截图|可见|看到|照片|界面|颜色|场景/.test(text);
+}
+
 function cleanHistoryMessage(message: ChatMessage): ChatMessage {
   if (message.role !== 'user' || typeof message.content !== 'string') return message;
   const meta = parseStoredMessageMeta(message);
@@ -871,10 +897,10 @@ const WANJIER_SCENARIOS: Array<{ scene: string; lines: string[] }> = [
   {
     scene: '看到失误送掉',
     lines: [
-      '"你认真的吗哥"',
-      '"这枪给的 离谱"',
-      '"这下默认控图给到对面了 不是哥们"',
-      '"你这站位放天梯都过不了夜"',
+      '"不是哥们 这枪是打算吓谁"',
+      '"这波给得太干脆了 对面都不用设计"',
+      '"默认控图控到自己家没了 你说这事"',
+      '"这个站位放天梯都很难活过十秒"',
     ],
   },
   {
@@ -896,9 +922,9 @@ const WANJIER_SCENARIOS: Array<{ scene: string; lines: string[] }> = [
   {
     scene: '弹幕嘴硬',
     lines: [
-      '"你这话说得像没看比赛"',
-      '"你认真的吗 你再想想"',
-      '"饶了我吧 这都能反驳"',
+      '"你这话说得像只看了比分没看回合"',
+      '"你认真的吗 这个理解要回炉一下"',
+      '"饶了我吧 这都能洗啊"',
     ],
   },
   {
@@ -937,9 +963,9 @@ const WANJIER_SCENARIOS: Array<{ scene: string; lines: string[] }> = [
   {
     scene: '看到道具失误',
     lines: [
-      '"这烟封到自己人了 你说这事"',
-      '"闪自己 这一波非常c2"',
-      '"道具是好道具 人是不是好人另说"',
+      '"这烟封完对面笑了 队友沉默了"',
+      '"闪自己这一波非常有节目 但回合真没了"',
+      '"道具是好道具 丢法有点像没交学费"',
     ],
   },
   {
@@ -1016,9 +1042,9 @@ function buildSystemPrompt(config: AIConfig): string {
   const aggressionRule = config.aggression_level === 'analysis'
     ? '以分析为主，少玩梗；先给判断，再讲依据。'
     : config.aggression_level === 'medium'
-      ? '攻击性比普通群友高一点，敢嘴硬、敢反问、敢损离谱操作；先喷决策和理解，再补一句具体判断。别追着人身攻击。'
+      ? '攻击性比普通群友高一点，敢嘴硬、敢反问、敢损离谱操作；第一句先抓漏洞，第二句给具体判断。喷操作、决策、理解，不追着人身攻击。'
       : config.aggression_level === 'high'
-        ? '攻击性拉高，允许短促毒舌、反问、阴阳怪气和直播间式对线；喷操作、喷逻辑、喷理解，别搞歧视和现实人身攻击。'
+        ? '攻击性拉高，像直播间接弹幕一样短促毒舌、反问、阴阳怪气；优先拆穿离谱理解和白给操作，句子要短，别长篇教育。只喷操作、逻辑、理解，禁止歧视、现实人身攻击和持续追骂。'
         : '轻嘴硬但不咬人，调侃点到为止，优先把话说准；不要动不动喷人。';
 
   // ===== 当前时间锚点（每条消息都注入） =====
@@ -2535,10 +2561,7 @@ export const aiChatPlugin: Plugin = {
         const attachedImages = await resolveOneBotImageSources(ctx, ctx.event.message);
         if (attachedImages.length > 0) {
           const lines = attachedImages.slice(0, 2).map((s, i) => {
-            let kind = 'url';
-            if (s.startsWith('base64://')) kind = 'base64';
-            else if (s.startsWith('file://')) kind = 'file';
-            else if (s.startsWith('data:')) kind = 'data';
+            const kind = classifyImageSource(s);
             return `  [${i}] ${kind}: ${s.slice(0, 80)}${s.length > 80 ? '...' : ''}`;
           });
           attachedInfo = '\n附带图片源:\n' + lines.join('\n');
@@ -2547,7 +2570,7 @@ export const aiChatPlugin: Plugin = {
           '识图状态',
           `开关: ${config.enable_vision ? 'on' : 'off'}`,
           `模型: ${config.vision_model || config.model || '未配置'}`,
-          `格式: ${config.vision_payload_mode || 'auto'}`,
+          `payload: ${config.vision_payload_mode || 'auto'} (会按模型兼容格式发送image_url/input_image/base64)`,
           `单次图片: ${config.vision_max_images || 2}`,
           `缓存: ${stats.count}/${stats.maxFiles}张 ${stats.sizeMB}/${stats.maxSizeMB}MB 命中${stats.hits}/${stats.misses} 失败${stats.downloadFailures} 飞行${stats.inFlight}`,
           `单图上限: ${stats.maxFileMB}MB 跳转${stats.maxRedirects} 清理${stats.cleanupIntervalMinutes}m`,
@@ -2573,27 +2596,50 @@ export const aiChatPlugin: Plugin = {
           ctx.reply('AI接口没配，识图模型现在打不出去。');
           return true;
         }
+        const sourceKind = classifyImageSource(url);
         const dataUrl = await withGate('vision', () => getImageDataUrl(url));
         const nextStats = getImageCacheStats();
         if (!dataUrl) {
-          ctx.reply(`图片下载失败。最近错误: ${nextStats.lastError || 'unknown'}`);
+          ctx.reply([
+            '识图链路测试失败',
+            `图片源: ${sourceKind}`,
+            `下载: FAIL ${nextStats.lastError || 'unknown'}`,
+          ].join('\n'));
           return true;
         }
+        const dataInfo = describeDataUrl(dataUrl);
         try {
           const result = await withGate('vision', () => callLLMWithRetry(config, [
-            { role: 'system', content: '你是识图链路测试器。只用一句中文描述图片里最明显的可见内容；看不清就说看不清，不要编造。' },
+            { role: 'system', content: '你是识图链路测试器。只用一句中文描述图片里最明显的可见内容，句末加句号；看不清就明确说看不清，不要编造。' },
             {
               role: 'user',
               content: [
-                { type: 'text', text: '请测试识图链路，描述这张图。' },
+                { type: 'text', text: '请确认你能看到这张图，并描述最明显的可见内容。' },
                 { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } },
               ],
             },
           ], true, 1));
-          ctx.reply(`识图OK\n${postProcessReply(result).slice(0, 180)}`);
+          const cleaned = postProcessReply(result).slice(0, 220);
+          ctx.reply([
+            '识图链路测试',
+            `图片源: ${sourceKind}`,
+            `下载: OK ${dataInfo}`,
+            `模型: ${config.vision_model || config.model || '未配置'}`,
+            `payload: ${config.vision_payload_mode || 'auto'}`,
+            '调用: OK',
+            `判定: ${looksLikeVisibleVisionDescription(cleaned) ? '模型返回了可见描述' : '模型返回偏空/像没看图，需要检查模型是否支持视觉'}`,
+            `描述: ${cleaned || '空'}`,
+          ].join('\n'));
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          ctx.reply(`图片下载OK，但视觉模型调用失败: ${message.slice(0, 160)}`);
+          ctx.reply([
+            '识图链路测试失败',
+            `图片源: ${sourceKind}`,
+            `下载: OK ${dataInfo}`,
+            `模型: ${config.vision_model || config.model || '未配置'}`,
+            `payload: ${config.vision_payload_mode || 'auto'}`,
+            `调用: FAIL ${message.slice(0, 160)}`,
+          ].join('\n'));
         }
         return true;
       }

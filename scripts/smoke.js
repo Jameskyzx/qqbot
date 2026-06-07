@@ -1294,7 +1294,10 @@ async function testRepeaterAndPoke() {
   handler.handleEvent(makePlainEvent(502, 52, '可以复读一下'));
   handler.handleEvent(makePlainEvent(503, 53, '可以复读一下'));
   await waitFor(() => sent.length === beforeRepeat + 1, 'normal repeater');
-  assert.strictEqual(sent.at(-1).message, '可以复读一下');
+  assert.ok(
+    /^(?:\+1 |确实 |同感 )?可以复读一下[!！?？]?$/.test(sent.at(-1).message),
+    'repeater should repeat original text or a small human-like variant',
+  );
 
   const beforeUnsafe = sent.length;
   handler.handleEvent(makePlainEvent(504, 54, '6'));

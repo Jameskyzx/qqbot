@@ -13,7 +13,7 @@
 - 队列积压时自动降级：强触发超过 60 秒跳过 TTS，超过 120 秒跳过搜索/识图/听写，只保底文本回复。
 - 普通消息分层触发：关键词/知识话题直接接话；CS 软讨论更高概率接话；其他消息按概率接话，纯数字、单个“6”、纯表情和低信息短句不会主动刷屏。
 - 戳一戳会按配置概率回应，使用本地直播短句池并少量融合知识库口癖；复读机保留群聊感，但不会抢 @/回复/关键词 AI 触发。
-- 趣味命令已玩机器化，新增每日 CS 系列：选手、队伍、地图、武器、定位、道具、战术、残局、套餐，输出本地完成，带公开图片链接和直播味短评。
+- 趣味命令已玩机器化，每日 CS 系列：选手、队伍、地图、武器、定位、道具、战术、残局、套餐都会优先解析 Liquipedia / Counter-Strike Wiki / Wikimedia 真实图源，外链全失败才发本地签位卡兜底。
 - Markdown 知识库：`knowledge/wanjier.md` 提供直播语态、口癖、CS2 解说、选手/队伍倾向、礼物拟态、拒绝边界。
 - 知识库自动刷新：`/kb refresh`、`/kb refresh --aggressive`、`/kb batches`、`/kb rollback`。
 - 联网搜索：DuckDuckGo Instant、DuckDuckGo HTML、Bing RSS 兜底，带 single-flight、正/负缓存和磁盘缓存。
@@ -25,7 +25,7 @@
 - NapCat 只给语音 `file` 不给 `url` 时，会自动调用 OneBot `get_record`，按 `stt_record_format` 转成 mp3/wav/amr/m4a 后再听写。
 - TTS 语音缓存：语音输出缓存到 `voice_cache/`，支持 API、本地授权语音引擎、自动兜底三种模式；有授权样本时可尝试供应商 voiceclone。
 - Docker NapCat 默认用 `base64://` 发送 TTS 语音，避免容器读不到宿主机 `voice_cache/` 文件。
-- 统一发送出口完全允许 emoji，包括 😂🤣，无过滤限制。
+- 表情会走 QQ face/本地贴纸链路：AI 的常见 emoji 会转成 QQ 经典表情并限制数量，避免一眼 AI 味刷屏。
 - `/status`、`/diag` 和 `/maint` 提供队列、缓存、知识库、并发、内存、配置漂移和清理维护能力。
 
 ## 项目结构
@@ -35,7 +35,7 @@ src/
   index.ts                 启动入口，注册插件和事件监听 + 内存监控
   bot.ts                   WebSocket 连接、API 调用、心跳和重连
   handler.ts               群聊/私聊消息路由、命令解析、引用回复、@检测
-  message-sanitize.ts      统一发送出口过滤规则（emoji全放行）
+  message-sanitize.ts      统一发送出口基础清理
   config.ts                config.json 解析、默认值、字段归一化、自动迁移
   logger.ts                统一日志（带时间戳/分级/彩色）
   types.ts                 OneBot 和配置类型
@@ -216,7 +216,7 @@ pm2 restart wanjier --update-env
     "knowledge_max_chars": 2600,
     "knowledge_force_style": true,
     "persona_mode": "first_person_bot",
-    "aggression_level": "low",
+    "aggression_level": "medium",
     "max_group_queue": 5,
     "ai_global_concurrency": 3,
     "search_global_concurrency": 3,
@@ -1216,7 +1216,7 @@ npm run smoke
 - `/ping`、`/whoami`、`/status`、`/diag`、`/quote`、`/player`、`/team`、`/gift`、`/csplayer`、`/voice`、`/search` 在私聊可用。
 - `/stats`、复读机、群禁言、踢人、群头衔等群专属能力只在群聊里执行。
 - 私聊消息会记录日志并转发给管理员，真正回复由主插件链生成，避免一条私聊被回两次。
-- 所有发送出口都会过滤 `😂`、`🤣` 和“笑哭”；其他 emoji 不禁止。
+- emoji 不按内容硬过滤；AI 回复里的常见 emoji 会转成 QQ face 段，并限制一条消息里的表情数量。
 
 趣味：
 
@@ -1226,7 +1226,8 @@ npm run smoke
 | `/luck` | 今日运势 |
 | `/jrrp` | 今日人品 |
 | `/csplayer` | 每日 CS 选手，按 QQ、群、日期固定抽取，带选手图和短评 |
-| `/csplayer status` | 查看每日 CS 卡池、图片缓存、最近图片错误 |
+| `/csplayer status` | 查看每日 CS 卡池、真实图策略、图片缓存、限流和最近图片错误 |
+| `/csimage test all` | 实测每日 CS 全分支真实图源，能区分外部真实图和本地签位卡兜底 |
 | `/今日选手` | `/csplayer` 中文别名 |
 | `/csteam` | 每日 CS 队伍，带队伍图和打法短评 |
 | `/csmap` | 每日 CS 地图 |
@@ -1242,13 +1243,13 @@ npm run smoke
 每日 CS 系列说明：
 
 - 同一个群友在同一个群同一天抽到同一结果，不同群独立，第二天刷新。
-- 选手池包含现役与传奇选手，图片 URL 已提前写入资料池，来源是公开 Liquipedia Commons / Wikimedia Commons。
-- 选手和队伍类会先把公开图片下载进本地图片缓存，再以 `base64://` 发给 QQ；图片失败时仍返回文字和错误提示，不会让命令像“没反应”。
-- 地图、武器、定位、道具、战术、残局类只发文字，避免外链不稳定。
-- 输出包含 @、标题、语境、指数、今天打法、别急点、机器短评和图源，排版尽量短而清楚。
+- 选手池包含现役与传奇选手，优先动态解析公开 Liquipedia 图片，再回退到静态 Liquipedia/Wikimedia URL。
+- 队伍、地图、武器、定位、道具、战术、残局会优先解析 Liquipedia / Counter-Strike Wiki / Wikimedia 真实图源；全部失败才发本地签位卡，并在 `/csimage test ...` 里明确标出。
+- 图片发送前会先下载进本地图片缓存，再以 `base64://` 发给 QQ；图片失败时仍返回文字和错误提示，不会让命令像“没反应”。
+- 输出包含 @、标题、语境、指数、今天打法、别急点、机器短评，排版尽量短而清楚。
 - 队伍字段写的是“队伍语境”，不是永久阵容。用户问“最新在哪队/最近状态”时应走 `/player 最新 <名字>` 或直接 @ 提问触发联网。
-- 输出走本地逻辑，不调用 AI，不临时联网搜图，不影响 @ 必回队列。
-- 图片状态用 `/csplayer status` 看：卡池数量、缓存容量、命中/失败次数、in-flight 下载数和最近错误都会显示。
+- 输出走本地逻辑，不调用 AI；真实图解析有短超时和缓存，不影响 @ 必回队列。
+- 图片状态用 `/csplayer status` 看：卡池数量、真实图策略、缓存容量、命中/失败次数、in-flight 下载数、Liquipedia 限流和最近错误都会显示。
 - 设计参考了常见“每日老婆/每日抽取”类 bot：当天固定、返回头像和昵称；本项目改成 CS 主题卡池，适配群聊和玩机器语态。
 
 每日 CS 模糊触发词：
@@ -1396,7 +1397,7 @@ knowledge/inbox/
 - 普通问“你是不是 bot/机器人/AI”时嘴硬带过去；只有被明确问授权、本人关系、现实代表性时，才说明这是群里的风格 bot，不是现实主播本人。
 - 口癖不是固定模板。`可以的`、`先别急`、`这波有说法` 可以用，但不能连续机械复读；更多时候直接给判断更像真人。
 - 每次回复都会优先检索知识库里的“低攻击活人感、语录纠错、直播语态、选手/队伍倾向、场景模板”，再把当前消息发给模型。
-- 普通闲聊短，CS2/赛事/选手话题才展开；攻击性默认 `low`，嘴硬但不追着人咬。
+- 普通闲聊短，CS2/赛事/选手话题才展开；攻击性默认 `medium`，会更敢抓离谱操作和理解，想更凶可设 `WANJIER_AGGRESSION=high`，但仍只喷操作/逻辑/理解。
 - 括号舞台说明会被后处理清掉，例如“（直播口吻）”“【玩机器风格】”这类不会发到群里。
 
 ## 运行机制
@@ -1483,7 +1484,7 @@ knowledge/inbox/
     "tts_cache_hours": 24,
     "trigger_probability": 0.08,
     "related_reply_probability": 0.65,
-    "aggression_level": "low",
+    "aggression_level": "medium",
     "passive_random_min_chars": 4,
     "passive_random_allow_numeric": false,
     "poke_reply_probability": 1,
@@ -1549,6 +1550,7 @@ knowledge/inbox/
 ```bash
 npm run doctor
 npm run build
+npm run data:test
 npm run smoke
 ```
 
@@ -1565,7 +1567,7 @@ npm run smoke
 - 消息级回复定位：连续三条不同用户 @ 必须分别引用对应 `message_id`。
 - 回复 bot 旧消息：通过 OneBot `get_msg` 兜底识别，并引用当前触发消息回复。
 - 私聊消息链路：私聊 `/ping`、私聊 AI 强制回复、私聊每日 CS 选手出图。
-- 统一发送过滤：`😂`、`🤣` 和“笑哭”不会被发出。
+- 表情后处理：AI 的常见 emoji 会转 QQ face，整条消息会限制表情数量。
 - 示例配置的占位 API Key 不会被误判为可用。
 
 当前仍需要人工或线上压测覆盖的点：

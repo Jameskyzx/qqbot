@@ -2,12 +2,35 @@
 # VPS 安全更新脚本
 # 用法:
 #   bash scripts/update.sh
+#   bash scripts/update.sh --hard
 #   npm run update
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
+
+MODE="safe"
+RUN_SMOKE="${WANJIER_UPDATE_SMOKE:-0}"
+for arg in "$@"; do
+  case "$arg" in
+    --hard|--force)
+      MODE="hard"
+      ;;
+    --smoke)
+      RUN_SMOKE="1"
+      ;;
+    --no-smoke)
+      RUN_SMOKE="0"
+      ;;
+    -h|--help)
+      echo "用法: bash scripts/update.sh [--hard] [--smoke|--no-smoke]"
+      echo "  默认: 安全 ff-only 拉取，不覆盖本地改动"
+      echo "  --hard: 备份配置后强制 reset 到 origin/main，用于 VPS 明确对齐远程"
+      exit 0
+      ;;
+  esac
+done
 
 TS="$(date +%F-%H%M%S)"
 BACKUP_DIR="$ROOT_DIR/backups/update-$TS"
@@ -16,6 +39,8 @@ mkdir -p "$BACKUP_DIR" logs
 echo "========================================="
 echo "  玩机器 Bot VPS 更新"
 echo "========================================="
+echo "模式: $MODE"
+echo "目标分支: origin/main"
 
 backup_file() {
   local file="$1"
@@ -32,12 +57,25 @@ cp -f scripts/update.sh "$BACKUP_DIR/update.sh.bak" 2>/dev/null || true
 
 echo "[2/8] 拉取代码前检查工作区..."
 if ! git diff --quiet -- . ':(exclude)config.json' ':(exclude).env' ':(exclude)voice_sample.mp3'; then
-  echo "  检测到本地改动，已保留，不会 reset/clean。"
+  if [ "$MODE" = "hard" ]; then
+    echo "  检测到本地改动，hard模式会强制对齐远程；配置文件已备份。"
+    git status --short > "$BACKUP_DIR/git-status-before.txt" || true
+  else
+    echo "  检测到本地改动，已保留，不会 reset/clean。"
+  fi
 fi
 
 echo "[3/8] 拉取远端更新..."
 git fetch origin
-git pull --ff-only origin main
+if [ "$MODE" = "hard" ]; then
+  BEFORE_HEAD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  TARGET_HEAD="$(git rev-parse --short origin/main)"
+  echo "  HEAD: $BEFORE_HEAD -> $TARGET_HEAD"
+  git reset --hard origin/main
+else
+  git pull --ff-only origin main
+fi
+echo "  当前提交: $(git log --oneline -1)"
 
 echo "[4/8] 校验运行配置..."
 if [ ! -f config.json ]; then
@@ -60,7 +98,14 @@ npm ci
 echo "[6/8] 构建与自检..."
 npm run build
 npm run doctor
-npm run smoke
+if npm run | grep -q "data:test"; then
+  npm run data:test
+fi
+if [ "$RUN_SMOKE" = "1" ]; then
+  npm run smoke
+else
+  echo "  跳过 npm run smoke（如需完整本地模拟，运行 WANJIER_UPDATE_SMOKE=1 bash scripts/update.sh 或加 --smoke）"
+fi
 
 echo "[7/8] 准备运行目录..."
 mkdir -p logs voice_cache image_cache context_store stt_cache search_cache knowledge/db

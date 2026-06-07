@@ -6,36 +6,33 @@ import { auditKnowledge, getKnowledgeRuntimePaths, getKnowledgeStats, loadKnowle
 import { getSearchStats, webSearch } from './web-search';
 import { getSttStats } from './stt';
 import { getVoiceStats } from './tts';
-import { fetchOngoingMatches, fetchTeamRanking, fetchRecentResults, getHltvStats } from './hltv-api';
+import { checkCsDataHealth } from './hltv-api';
 import * as fs from 'fs';
 
 export const diagPlugin: Plugin = {
   name: 'diag',
   description: '严格自检诊断',
   handler: async (ctx) => {
-    // ===== /data 实时数据健康度（含 HLTV/搜索测试） =====
+    // ===== /data 实时数据健康度（含 CS API/Liquipedia/搜索测试） =====
     if (ctx.command === 'data' || ctx.command === 'realtime') {
       const ai = ctx.bot.getConfig().ai;
       const lines: string[] = ['📡 实时数据状态'];
       const start = Date.now();
 
-      // 1. HLTV 缓存
-      const hltvStats = getHltvStats();
-      lines.push(`HLTV 缓存: ${hltvStats.entries} 条 [${hltvStats.keys.join(', ') || '无'}]`);
-
-      // 2. 实测 HLTV (限流冷却中会很快返回)
+      // 1. 实测 CS 结构化数据链路
+      const csHealth = await checkCsDataHealth();
+      lines.push(`主源: ${csHealth.source.primaryBaseUrl}`);
+      lines.push(`说明: ${csHealth.source.note}`);
+      lines.push(`缓存: ${csHealth.cache.entries} 条 [${csHealth.cache.keys.join(', ') || '无'}]`);
       lines.push('');
-      lines.push('--- 实测 HLTV/Liquipedia ---');
-      const m = await fetchOngoingMatches();
-      lines.push(`比赛: ${m ? m.split('\n').length + ' 条' : '空（可能限流）'}`);
-      const r = await fetchTeamRanking();
-      lines.push(`排名: ${r ? r.split('\n').length + ' 条' : '空（可能限流）'}`);
-      const res = await fetchRecentResults();
-      lines.push(`战报: ${res ? res.split('\n').length + ' 条' : '空（可能限流）'}`);
+      lines.push('--- 实测 CS API / Liquipedia ---');
+      for (const check of csHealth.checks) {
+        lines.push(`${check.ok ? 'OK' : 'FAIL'} ${check.name}: ${check.lines}行${check.snippet ? ` | ${check.snippet}` : ''}`);
+      }
 
-      // 3. 实测 webSearch (Google News)
+      // 2. 实测 webSearch
       lines.push('');
-      lines.push('--- 实测 webSearch (Google News) ---');
+      lines.push('--- 实测 webSearch ---');
       const wsResult = await webSearch('CS2 最新比赛 2026', 5000, 0, 0);
       lines.push(`webSearch: ${wsResult ? wsResult.length + ' 字符' : '空'}`);
       if (wsResult) {

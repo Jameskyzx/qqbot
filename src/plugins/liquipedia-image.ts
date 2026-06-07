@@ -8,11 +8,11 @@ import * as zlib from 'zlib';
  * 这里通过 MediaWiki API 按页面查询当前实际的图片 URL，并缓存。
  *
  * 实现：
- * 1. action=parse&page=PlayerName&prop=images → 拿到该页面引用的所有图片名
+ * 1. action=query&titles=PlayerName&prop=images → 拿到该页面引用的所有图片名
  * 2. 选第一个匹配 PlayerName 的图片
  * 3. action=query&titles=File:xxx&prop=imageinfo&iiprop=url → 拿到 https URL
  *
- * 注意：所有请求严格遵守 Liquipedia API ToS（≥2.5s 间隔、UA 带项目标识）
+ * 注意：所有请求严格遵守 Liquipedia API ToS（普通 query 请求间隔、UA 带项目标识）
  */
 
 const USER_AGENT = 'wanjier-bot/1.0 (https://github.com/2711944586/qqbot; CS2 group chat bot)';
@@ -93,8 +93,17 @@ function normalizedTokens(input: string): string[] {
 }
 
 async function findImageName(page: string, selector: (images: string[]) => string | null): Promise<string | null> {
-  const j = await fetchJson(`https://liquipedia.net/counterstrike/api.php?action=parse&page=${encodeURIComponent(page)}&prop=images&format=json`);
-  const images: string[] = j?.parse?.images || [];
+  const j = await fetchJson(`https://liquipedia.net/counterstrike/api.php?action=query&titles=${encodeURIComponent(page)}&prop=images&imlimit=max&format=json`);
+  const pages = j?.query?.pages || {};
+  const images: string[] = [];
+  for (const id in pages) {
+    const pageImages = pages[id]?.images;
+    if (!Array.isArray(pageImages)) continue;
+    for (const image of pageImages) {
+      const title = typeof image?.title === 'string' ? image.title.replace(/^File:/i, '') : '';
+      if (title) images.push(title);
+    }
+  }
   if (images.length === 0) return null;
   return selector(images.filter(keepImageFile));
 }
