@@ -225,14 +225,29 @@ function renderStatus(data) {
   const r = data.runtime || {};
   const ai = data.ai || {};
   const memMB = data.process ? (data.process.heapMB + 'MB / RSS ' + data.process.rssMB + 'MB') : '-';
+  const loginCheckedAt = r.lastLoginCheckAt ? new Date(r.lastLoginCheckAt).toLocaleString('zh-CN') : '未检查';
+  const loginOkAt = r.lastLoginOkAt ? new Date(r.lastLoginOkAt).toLocaleString('zh-CN') : '未确认';
+  const loginAgeMs = r.lastLoginCheckAt ? Date.now() - r.lastLoginCheckAt : 0;
+  const loginStale = !!(r.lastLoginCheckAt && r.loginCheckIntervalSeconds > 0 && loginAgeMs > (r.loginCheckIntervalSeconds * 2000));
+  const loginFreshness = !r.lastLoginCheckAt
+    ? '未检查'
+    : (r.loginCheckIntervalSeconds <= 0 ? '检查关闭' : (loginStale ? '过期' : '正常'));
+  const loginFreshnessClass = !r.lastLoginCheckAt || loginStale ? 'warn' : (r.loginCheckIntervalSeconds <= 0 ? 'warn' : 'ok');
+  const loginState = r.lastLoginOk
+    ? '✓ ' + (r.lastLoginNickname || r.lastLoginUserId || '')
+    : (r.lastLoginCheckAt ? '✗ ' + (r.lastLoginError || '未知') : '未确认 ' + (r.lastLoginError || '等待检查'));
   const html = [
     '<div class="card">' +
       '<h2>🤖 Bot 连接</h2>' +
       row('状态', '<span class="status-dot ' + (r.connected ? 'ok' : 'err') + '"></span>' + (r.connected ? '已连接' : '未连接'), r.connected ? 'ok' : 'err') +
       row('WebSocket', r.wsUrl || '-') +
-      row('登录', r.lastLoginOk ? '✓ ' + (r.lastLoginNickname || r.lastLoginUserId || '') : '✗ ' + (r.lastLoginError || '未知'), r.lastLoginOk ? 'ok' : 'err') +
+      row('登录', loginState, r.lastLoginOk ? 'ok' : 'err') +
+      row('检查时间', loginCheckedAt + (r.loginCheckInFlight ? ' (进行中)' : '')) +
+      row('最近OK', loginOkAt) +
+      row('新鲜度', loginFreshness, loginFreshnessClass) +
       row('断开次数', r.totalDisconnects || 0) +
       row('Pool', (r.poolUrls || []).length > 1 ? (r.poolActiveIdx + 1) + '/' + r.poolUrls.length : '单连接') +
+      '<div style="margin-top: 10px;"><button onclick="loginCheck()">检查登录</button></div>' +
     '</div>',
     '<div class="card">' +
       '<h2>💾 资源</h2>' +
@@ -307,6 +322,16 @@ async function restart() {
   }
 }
 
+async function loginCheck() {
+  if (!token) { alert('需要 token'); return; }
+  try {
+    const data = await api('/api/login-check', { method: 'POST' });
+    renderStatus(data);
+  } catch (err) {
+    alert('检查失败: ' + err.message);
+  }
+}
+
 if (token) saveToken();
 refresh();
 setInterval(refresh, 15000);
@@ -354,7 +379,7 @@ export function startWebServer(bot: Bot, port: number): void {
       const pathname = url.pathname;
 
       if (req.method === 'GET' && pathname === '/') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(buildDashboardHtml());
         return;
       }
@@ -365,6 +390,16 @@ export function startWebServer(bot: Bot, port: number): void {
       }
 
       if (req.method === 'GET' && pathname === '/api/status') {
+        sendJson(res, 200, gatherStatus(bot));
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/login-check') {
+        if (!checkAuth(req)) {
+          sendJson(res, 401, { error: 'Unauthorized' });
+          return;
+        }
+        await bot.checkLoginNow();
         sendJson(res, 200, gatherStatus(bot));
         return;
       }

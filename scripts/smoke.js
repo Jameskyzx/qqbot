@@ -17,6 +17,7 @@ const { repeaterPlugin } = require('../dist/plugins/repeater');
 const { funPlugin, __test: funTest } = require('../dist/plugins/fun');
 const { adminPlugin } = require('../dist/plugins/admin');
 const { pingPlugin } = require('../dist/plugins/ping');
+const { Bot } = require('../dist/bot');
 const { MessageHandler } = require('../dist/handler');
 const sanitize = require('../dist/message-sanitize');
 
@@ -28,22 +29,82 @@ function firstText(message) {
 }
 
 async function testOutgoingSanitize() {
-  assert.strictEqual(sanitize.sanitizeOutgoingText('可以 😂 笑哭 🤣'), '可以');
-  const softened = sanitize.sanitizeOutgoingText('不是哥们 这个开头太公式了');
+  assert.strictEqual(sanitize.sanitizeOutgoingText('普通 😂 笑哭 🤣'), '普通 😂 笑哭 🤣');
+  const softened = sanitize.sanitizeOutgoingText('不是哥们 这句需要去开头');
   assert.ok(!softened.startsWith('不是哥们'), 'formulaic opener should be softened at send boundary');
-  assert.ok(softened.includes('这个开头太公式了'), 'send-boundary softening should keep useful content');
-  const softenedGeneric = sanitize.sanitizeOutgoingText('讲道理 这个开头也太像模板了');
+  assert.ok(softened.includes('这句需要去开头'), 'send-boundary softening should keep useful content');
+  const softenedGeneric = sanitize.sanitizeOutgoingText('讲道理 换个说法看看');
   assert.ok(!softenedGeneric.startsWith('讲道理'), 'generic formulaic opener should be softened at send boundary');
-  assert.ok(softenedGeneric.includes('这个开头也太像模板了'), 'generic opener softening should keep useful content');
-  const softenedCatchphrase = sanitize.sanitizeOutgoingText('有点东西 这句又像模板了');
+  assert.ok(softenedGeneric.includes('换个说法看看'), 'generic opener softening should keep useful content');
+  const softenedCatchphrase = sanitize.sanitizeOutgoingText('有点东西 这句需要去开头');
   assert.ok(!softenedCatchphrase.startsWith('有点东西'), 'catchphrase opener should be softened at send boundary');
-  assert.ok(softenedCatchphrase.includes('这句又像模板了'), 'catchphrase opener softening should keep useful content');
+  assert.ok(softenedCatchphrase.includes('这句需要去开头'), 'catchphrase opener softening should keep useful content');
   const message = sanitize.sanitizeOutgoingMessage([
     { type: 'text', data: { text: '别发😂笑哭' } },
     { type: 'image', data: { file: 'https://example.com/a.jpg' } },
   ]);
-  assert.strictEqual(message[0].data.text, '别发');
+  assert.strictEqual(message[0].data.text, '别发😂笑哭');
   assert.strictEqual(message[1].type, 'image');
+}
+
+async function testBotMediaBatching() {
+  const config = readConfig();
+  const bot = new Bot(config);
+  const calls = [];
+  bot.callApiAsync = async (action, params) => {
+    calls.push({ action, params });
+    return { retcode: 0, data: { message_id: 100_000 + calls.length } };
+  };
+
+  const tracked = [];
+  const ok = await bot.sendGroupMessage(6657, [
+    { type: 'at', data: { qq: '42' } },
+    { type: 'text', data: { text: ' 今日CS套餐' } },
+    { type: 'image', data: { file: 'base64://abc' } },
+    { type: 'text', data: { text: ' 图发完了' } },
+    { type: 'record', data: { file: 'base64://def' } },
+  ], (id) => tracked.push(id));
+
+  assert.strictEqual(ok, true, 'mixed media send should succeed when every batch succeeds');
+  assert.strictEqual(calls.length, 4, 'mixed text/image/record message should be split into stable media batches');
+  assert.deepStrictEqual(calls.map((call) => call.action), ['send_group_msg', 'send_group_msg', 'send_group_msg', 'send_group_msg']);
+  assert.deepStrictEqual(calls.map((call) => call.params.message.map((seg) => seg.type)), [
+    ['at', 'text'],
+    ['image'],
+    ['text'],
+    ['record'],
+  ]);
+  assert.deepStrictEqual(tracked, [100_001, 100_002, 100_003, 100_004], 'all sent batch message ids should be trackable');
+}
+
+async function testBotLoginStatusStrictness() {
+  const config = readConfig();
+  config.login_check_interval_seconds = 0;
+
+  const bot = new Bot(config);
+  bot.ws = { readyState: 1 };
+  bot.callApiAsync = async (action) => {
+    assert.strictEqual(action, 'get_login_info');
+    return { retcode: 0, data: {} };
+  };
+
+  let runtime = await bot.checkLoginNow();
+  assert.strictEqual(runtime.lastLoginOk, false, 'empty get_login_info success must not be treated as logged in');
+  assert.ok(runtime.lastLoginError.includes('user_id'), 'empty login response should explain missing user_id');
+
+  bot.callApiAsync = async () => ({ retcode: 0, data: { user_id: config.bot_qq, nickname: 'smoke-bot' } });
+  runtime = await bot.checkLoginNow();
+  assert.strictEqual(runtime.lastLoginOk, true, 'valid user_id should mark login ok');
+  assert.strictEqual(runtime.lastLoginUserId, config.bot_qq);
+  assert.strictEqual(runtime.lastLoginNickname, 'smoke-bot');
+
+  const mismatchBot = new Bot(config);
+  mismatchBot.ws = { readyState: 1 };
+  mismatchBot.callApiAsync = async () => ({ retcode: 0, data: { user_id: config.bot_qq + 1, nickname: 'wrong-bot' } });
+  runtime = await mismatchBot.checkLoginNow();
+  assert.strictEqual(runtime.lastLoginOk, false, 'bot_qq mismatch must not be treated as logged in');
+  assert.ok(runtime.lastLoginError.includes('不匹配'), 'mismatch should be visible in runtime error');
+  assert.strictEqual(runtime.lastLoginUserId, config.bot_qq + 1);
 }
 
 function readConfig() {
@@ -67,28 +128,28 @@ async function withPreservedFile(filepath, fn) {
 async function testConfig() {
   const config = readConfig();
   assert.strictEqual(config.config_version, 20260524);
-  assert.strictEqual(config.login_check_interval_seconds, 60);
-  assert.strictEqual(config.login_check_api_timeout_ms, 5000);
-  assert.strictEqual(config.ai.trigger_probability, 0.08);
-  assert.strictEqual(config.ai.passive_random_min_chars, 4);
+  assert.strictEqual(config.login_check_interval_seconds, 30);
+  assert.strictEqual(config.login_check_api_timeout_ms, 8000);
+  assert.strictEqual(config.ai.trigger_probability, 0.005);
+  assert.strictEqual(config.ai.passive_random_min_chars, 12);
   assert.strictEqual(config.ai.passive_random_allow_numeric, false);
   assert.strictEqual(config.ai.knowledge_max_chars, 2600);
   assert.strictEqual(config.ai.knowledge_force_style, true);
-  assert.strictEqual(config.ai.related_reply_probability, 0.65);
-  assert.strictEqual(config.ai.aggression_level, 'low');
+  assert.strictEqual(config.ai.related_reply_probability, 0.15);
+  assert.strictEqual(config.ai.aggression_level, 'medium');
   assert.strictEqual(config.ai.poke_reply_probability, 1);
-  assert.strictEqual(config.ai.ai_global_concurrency, 3);
-  assert.strictEqual(config.ai.search_global_concurrency, 3);
+  assert.strictEqual(config.ai.ai_global_concurrency, 2);
+  assert.strictEqual(config.ai.search_global_concurrency, 2);
   assert.strictEqual(config.ai.vision_global_concurrency, 1);
   assert.strictEqual(config.ai.tts_global_concurrency, 1);
   assert.strictEqual(config.ai.stt_global_concurrency, 1);
   assert.strictEqual(config.ai.search_cache_max_entries, 1000);
-  assert.strictEqual(config.ai.image_cache_max_mb, 512);
-  assert.strictEqual(config.ai.image_cache_max_file_mb, 2);
-  assert.strictEqual(config.ai.image_cache_max_age_hours, 72);
+  assert.strictEqual(config.ai.image_cache_max_mb, 384);
+  assert.strictEqual(config.ai.image_cache_max_file_mb, 6);
+  assert.strictEqual(config.ai.image_cache_max_age_hours, 168);
   assert.strictEqual(config.ai.image_download_max_redirects, 3);
   assert.strictEqual(config.ai.image_cache_cleanup_interval_minutes, 30);
-  assert.strictEqual(config.ai.image_cache_max_files, 5000);
+  assert.strictEqual(config.ai.image_cache_max_files, 3000);
   assert.strictEqual(config.ai.vision_payload_mode, 'auto');
   assert.strictEqual(config.ai.tts_model, 'mimo-v2.5-tts');
   assert.strictEqual(config.ai.tts_provider, 'auto');
@@ -98,12 +159,12 @@ async function testConfig() {
   assert.strictEqual(config.ai.tts_clone_model, 'mimo-v2.5-tts-voiceclone');
   assert.strictEqual(config.ai.tts_clone_enabled, true);
   assert.strictEqual(config.ai.tts_sample_path, 'voice_sample.mp3');
-  assert.strictEqual(config.ai.tts_max_chars, 120);
+  assert.strictEqual(config.ai.tts_max_chars, 180);
   assert.strictEqual(config.ai.tts_send_mode, 'base64');
-  assert.strictEqual(config.ai.tts_timeout_ms, 20000);
+  assert.strictEqual(config.ai.tts_timeout_ms, 30000);
   assert.strictEqual(config.ai.tts_cache_hours, 24);
-  assert.strictEqual(config.ai.tts_cache_max_mb, 512);
-  assert.strictEqual(config.ai.tts_cache_max_files, 3000);
+  assert.strictEqual(config.ai.tts_cache_max_mb, 256);
+  assert.strictEqual(config.ai.tts_cache_max_files, 1500);
   assert.strictEqual(config.ai.tts_sample_max_mb, 8);
   assert.strictEqual(config.ai.enable_stt, true);
   assert.strictEqual(config.ai.stt_model, 'mimo-v2.5-pro');
@@ -116,8 +177,8 @@ async function testConfig() {
   assert.strictEqual(config.ai.stt_max_file_mb, 4);
   assert.strictEqual(config.ai.stt_timeout_ms, 20000);
   assert.strictEqual(config.ai.stt_cache_hours, 24);
-  assert.strictEqual(config.ai.stt_cache_max_mb, 128);
-  assert.strictEqual(config.ai.stt_cache_max_files, 3000);
+  assert.strictEqual(config.ai.stt_cache_max_mb, 96);
+  assert.strictEqual(config.ai.stt_cache_max_files, 1500);
   assert.strictEqual(config.ai.search_negative_cache_seconds, 60);
   assert.strictEqual(config.ai.knowledge_aggressive_auto_commit, true);
   assert.strictEqual(config.ai.knowledge_quarantine_long_quotes, false);
@@ -231,12 +292,12 @@ async function testVoiceStats() {
   assert.strictEqual(stats.localReady, false);
   assert.strictEqual(stats.cloneModel, 'mimo-v2.5-tts-voiceclone');
   assert.strictEqual(stats.cloneEnabled, true);
-  assert.strictEqual(stats.maxChars, 120);
-  assert.strictEqual(stats.maxCacheMB, 512);
-  assert.strictEqual(stats.maxCacheFiles, 3000);
+  assert.strictEqual(stats.maxChars, 180);
+  assert.strictEqual(stats.maxCacheMB, 256);
+  assert.strictEqual(stats.maxCacheFiles, 1500);
   const sttStats = stt.getSttStats(config.ai);
-  assert.strictEqual(sttStats.maxCacheMB, 128);
-  assert.strictEqual(sttStats.maxCacheFiles, 3000);
+  assert.strictEqual(sttStats.maxCacheMB, 96);
+  assert.strictEqual(sttStats.maxCacheFiles, 1500);
   assert.ok(stats.samplePath.endsWith('voice_sample.mp3'), 'sample path should default to voice_sample.mp3');
 }
 
@@ -823,7 +884,7 @@ async function testMessageReplyTargeting() {
     handler.handleEvent(makeEvent(107, 17, '', [{ type: 'record', data: { file: 'voice.amr', url: 'http://example.com/voice.amr' } }]));
     await waitFor(() => sent.length === beforeRecord + 1, 'record forced reply');
     assert.strictEqual(sent.at(-1).message.find((seg) => seg.type === 'reply')?.data.id, '107');
-    assert.ok(prompts.some((prompt) => prompt.includes('语音数量: 1')), 'record count should be included in the job snapshot');
+    assert.ok(prompts.some((prompt) => prompt.includes('消息含1条语音')), 'record count should be included in the job snapshot');
 
     const beforeNumeric = sent.length;
     handler.handleEvent(makeEvent(108, 18, ' 模型别只回数字'));
@@ -945,7 +1006,7 @@ async function testOpaqueOneBotRecordResolution() {
     const content = typeof current.content === 'string'
       ? current.content
       : current.content.map((item) => item.text || '').join('\n');
-    assert.ok(content.includes('语音数量: 1'), 'opaque record should be counted');
+    assert.ok(content.includes('消息含1条语音'), 'opaque record should be counted');
     assert.ok(content.includes('语音听写: 听写到了这段语音'), 'opaque record should be resolved and transcribed');
     return '听到了 这段语音链路是通的';
   });
@@ -1070,7 +1131,9 @@ async function testPassiveTriggerFiltering() {
   config.ai.related_reply_probability = 1;
   config.ai.passive_random_min_chars = 4;
   config.ai.passive_random_allow_numeric = false;
+  config.ai.enable_search = false;
   config.ai.enable_knowledge = false;
+  config.ai.trigger_mode = 'smart';
   const sent = [];
   const bot = {
     getConfig: () => config,
@@ -1106,7 +1169,7 @@ async function testPassiveTriggerFiltering() {
       'keyword ordinary messages should trigger AI without @',
     );
 
-    handler.handleEvent(makePlainEvent(403, 43, '这把经济怎么又崩了，回防一点道具没有'));
+    handler.handleEvent(makePlainEvent(403, 43, '这把经济怎么又崩了，回防一点道具没有', [], 6658));
     await waitFor(() => sent.length === 2, 'soft CS discussion passive reply');
     assert.strictEqual(
       firstText(sent[1].message),
@@ -1151,7 +1214,7 @@ async function testPrivateMessages() {
       : current.content.map((item) => item.text || '').join('\n');
     prompts.push(content);
     const id = (content.match(/message_id: (\d+)/) || [])[1] || 'unknown';
-    return `私聊收到-${id} 😂 笑哭`;
+    return `私聊收到-${id} 😂`;
   });
 
   try {
@@ -1164,7 +1227,8 @@ async function testPrivateMessages() {
     await waitFor(() => sentPrivate.length === 2, 'private ai forced reply');
     assert.strictEqual(sentPrivate[1].userId, 72);
     assert.ok(firstText(sentPrivate[1].message).includes('私聊收到-702'), 'private AI should reply to the sender');
-    assert.ok(!/[😂🤣]|笑哭/.test(firstText(sentPrivate[1].message)), 'private AI replies should strip forbidden smile-cry output');
+    assert.ok(!/[😂🤣]/.test(firstText(sentPrivate[1].message)), 'private AI unicode emoji should be converted to QQ face segments');
+    assert.ok(sentPrivate[1].message.some((seg) => seg.type === 'face'), 'private AI emoji should become QQ face segment');
     assert.ok(prompts.at(-1).includes('chat_type: private'), 'private prompt should mark chat_type');
     assert.ok(prompts.at(-1).includes('chat_id: 72'), 'private prompt should include private chat id');
 
@@ -1219,8 +1283,8 @@ async function testRepeaterAndPoke() {
     'fallback poke lines should be short and metadata-free',
   );
   assert.ok(
-    /戳|弹幕|战术|默认|信息|道具|急|问题|看|问|打断|干嘛|催/.test(pokeTest.fallbackPokeReply()),
-    'fallback poke reply should sound like a live interaction',
+    pokeTest.pokeReplyGroups.flat().some((line) => /戳|弹幕|战术|默认|信息|道具|急|问题|看|问|打断|干嘛|催/.test(line)),
+    'fallback poke replies should include live-interaction language',
   );
 
   const handler = new MessageHandler(bot);
@@ -1309,34 +1373,42 @@ async function testFunCsPlayer() {
   handler.handleEvent(makePlainEvent(605, 65, '今天抽个CS地图'));
   await waitFor(() => sent.length === 6, 'daily map fuzzy');
   assert.ok(firstText(sent[5].message).includes('今日CS地图'), 'daily map should include title');
+  assert.ok(sent[5].message.some((seg) => seg.type === 'image'), 'daily map should include image');
 
   handler.handleEvent(makePlainEvent(606, 66, '/csweapon'));
   await waitFor(() => sent.length === 7, 'daily weapon command');
   assert.ok(firstText(sent[6].message).includes('今日CS武器'), 'daily weapon should include title');
+  assert.ok(sent[6].message.some((seg) => seg.type === 'image'), 'daily weapon should include image');
 
   handler.handleEvent(makePlainEvent(607, 67, '今日定位'));
   await waitFor(() => sent.length === 8, 'daily role fuzzy');
   assert.ok(firstText(sent[7].message).includes('今日CS定位'), 'daily role should include title');
+  assert.ok(sent[7].message.some((seg) => seg.type === 'image'), 'daily role should include image');
 
   handler.handleEvent(makePlainEvent(608, 68, '/csutility'));
   await waitFor(() => sent.length === 9, 'daily utility command');
   assert.ok(firstText(sent[8].message).includes('今日CS道具'), 'daily utility should include title');
+  assert.ok(sent[8].message.some((seg) => seg.type === 'image'), 'daily utility should include image');
 
   handler.handleEvent(makePlainEvent(609, 69, '今天打什么战术'));
   await waitFor(() => sent.length === 10, 'daily tactic fuzzy');
   assert.ok(firstText(sent[9].message).includes('今日CS战术'), 'daily tactic should include title');
+  assert.ok(sent[9].message.some((seg) => seg.type === 'image'), 'daily tactic should include image');
 
   handler.handleEvent(makePlainEvent(610, 70, '今天残局怎么打'));
   await waitFor(() => sent.length === 11, 'daily clutch fuzzy');
   assert.ok(firstText(sent[10].message).includes('今日CS残局'), 'daily clutch should include title');
+  assert.ok(sent[10].message.some((seg) => seg.type === 'image'), 'daily clutch should include image');
 
   handler.handleEvent(makePlainEvent(611, 71, '/csloadout'));
   await waitFor(() => sent.length === 12, 'daily loadout command');
   assert.ok(firstText(sent[11].message).includes('今日CS套餐'), 'daily loadout should include title');
+  assert.ok(sent[11].message.some((seg) => seg.type === 'image'), 'daily loadout should include image');
 
   handler.handleEvent(makePlainEvent(612, 72, '今日cs'));
   await waitFor(() => sent.length === 13, 'short daily cs fuzzy');
   assert.ok(firstText(sent[12].message).includes('今日CS套餐'), 'short daily CS should trigger loadout');
+  assert.ok(sent[12].message.some((seg) => seg.type === 'image'), 'short daily CS should include image');
   } finally {
     funTest.__setImageResolverForTests();
   }
@@ -1392,6 +1464,8 @@ async function testCrossGroupAiConcurrency() {
 
 async function main() {
   await testOutgoingSanitize();
+  await testBotMediaBatching();
+  await testBotLoginStatusStrictness();
   await testConfig();
   await testDoctorScript();
   await testConfigEnvApiKeyOverride();

@@ -25,6 +25,7 @@ knowledge/audit.json
 knowledge/quarantine/
 knowledge/auto-log.jsonl
 knowledge/source-state.json
+knowledge/db/
 
 # 日志
 logs/

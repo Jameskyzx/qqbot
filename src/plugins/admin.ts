@@ -7,6 +7,8 @@ import { cleanSttCache, getSttStats } from './stt';
 import { cleanVoiceCache, getVoiceStats } from './tts';
 import { cleanSearchCache, getSearchStats } from './web-search';
 import { detectFuzzyCommand } from './fuzzy-command';
+import * as path from 'path';
+import { exec } from 'child_process';
 
 function formatDate(timestamp: number): string {
   if (!timestamp) return '无';
@@ -102,20 +104,14 @@ export const adminPlugin: Plugin = {
         ctx.replyAt('⛔ 权限不足，仅管理员可用');
         return true;
       }
-      ctx.reply('开始 git pull + 编译，完成后会触发 PM2 自动重启...');
-      const { exec } = require('child_process') as typeof import('child_process');
-      const projectRoot = require('path').resolve(__dirname, '..', '..');
-      // 串行: git fetch + git reset --hard + npm install + npm run build
-      const cmd = 'git fetch --all && git reset --hard origin/main && git clean -fd && npm install && npm run build';
-      const child = exec(cmd, { cwd: projectRoot, timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 }, (err: Error | null, stdout: string, stderr: string) => {
+      ctx.reply('开始安全更新：备份配置、拉代码、npm ci、build、doctor、smoke、重启 PM2。');
+      const projectRoot = path.resolve(__dirname, '..', '..');
+      const child = exec('bash scripts/update.sh', { cwd: projectRoot, timeout: 15 * 60 * 1000, maxBuffer: 8 * 1024 * 1024 }, (err: Error | null, stdout: string, stderr: string) => {
         if (err) {
-          ctx.reply(`❌ 更新失败: ${err.message}\n\n最后输出:\n${(stderr || stdout).slice(-300)}`);
+          ctx.reply(`❌ 更新失败: ${err.message}\n\n最后输出:\n${(stderr || stdout).slice(-400)}`);
           return;
         }
-        const tail = stdout.slice(-200);
-        ctx.reply(`✅ 更新完成 即将重启\n\n${tail}`);
-        // 延迟 2 秒退出，让消息先发出去
-        setTimeout(() => process.exit(0), 2000);
+        ctx.reply(`✅ 更新完成\n\n${stdout.slice(-250)}`);
       });
       // 防止 promise unhandled
       void child;

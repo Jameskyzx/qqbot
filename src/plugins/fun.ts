@@ -5,6 +5,7 @@ import { webSearch } from './web-search';
 import { fetchOngoingMatches, fetchTeamRanking, fetchRecentResults } from './hltv-api';
 import { detectFuzzyCommand } from './fuzzy-command';
 import { resolvePlayerImage } from './liquipedia-image';
+import { buildDailyCardImageDataUrl } from './daily-card-image';
 
 /** 随机选择 */
 function randomPick(items: string[]): string {
@@ -44,6 +45,7 @@ interface DailyCard {
   avoid: string;
   line: string;
   image?: string;
+  imageLabel?: string;
 }
 
 type DailyCardKind = 'team' | 'map' | 'weapon' | 'role' | 'loadout' | 'utility' | 'tactic' | 'clutch';
@@ -384,13 +386,39 @@ function buildImageFailureLine(): string {
   return stats.lastError ? `\n图片没发出来：${stats.lastError}` : '\n图片没发出来，先看文字签。';
 }
 
-async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string): Promise<MessageSegment[]> {
-  if (!url && !fallbackPlayerNick) return [];
+function imageDataUrlToSegment(dataUrl: string): MessageSegment {
+  return { type: 'image', data: { file: dataUrl.replace(/^data:image\/[^;]+;base64,/, 'base64://') } };
+}
+
+async function tryImageDataUrl(url: string, label: string): Promise<string | null> {
+  try {
+    return await imageDataUrlResolver(url);
+  } catch (err) {
+    console.warn(`[fun] 图片解析失败 ${label}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+function localDailyCardImage(card: DailyCard, score?: number): MessageSegment {
+  const label = card.imageLabel || `${card.name} ${card.key}`;
+  const dataUrl = buildDailyCardImageDataUrl({
+    title: card.title,
+    label,
+    subtitle: card.subtitle,
+    score: typeof score === 'number' ? `${card.scoreLabel} ${score}/100` : card.scoreLabel,
+    seed: `${todayKey()}_${card.key}_${card.title}`,
+    footer: 'WANJIER DAILY CS',
+  });
+  return imageDataUrlToSegment(dataUrl);
+}
+
+async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fallbackCard?: DailyCard, score?: number): Promise<MessageSegment[]> {
+  if (!url && !fallbackPlayerNick && !fallbackCard) return [];
 
   // 1. 先试硬编码的 URL（通常是 Liquipedia 或 Wikimedia）
   if (url) {
-    const dataUrl = await imageDataUrlResolver(url);
-    if (dataUrl) return [{ type: 'image', data: { file: dataUrl.replace(/^data:image\/[^;]+;base64,/, 'base64://') } }];
+    const dataUrl = await tryImageDataUrl(url, fallbackPlayerNick || url);
+    if (dataUrl) return [imageDataUrlToSegment(dataUrl)];
   }
 
   // 2. 硬编码失败 + 有选手名 → 用 Liquipedia API 动态查（可能被同一限流影响，所以快速失败）
@@ -401,10 +429,10 @@ async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string): Pr
         new Promise<null>((r) => setTimeout(() => r(null), 5000)), // 5秒不出结果就放弃
       ]);
       if (dynamicUrl) {
-        const dataUrl = await imageDataUrlResolver(dynamicUrl);
+        const dataUrl = await tryImageDataUrl(dynamicUrl, `${fallbackPlayerNick}/dynamic`);
         if (dataUrl) {
           console.log(`[fun] ${fallbackPlayerNick} 用Liquipedia动态查图成功`);
-          return [{ type: 'image', data: { file: dataUrl.replace(/^data:image\/[^;]+;base64,/, 'base64://') } }];
+          return [imageDataUrlToSegment(dataUrl)];
         }
       }
     } catch (err) {
@@ -420,14 +448,20 @@ async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string): Pr
       if (result) {
         const imgMatch = result.match(/https?:\/\/upload\.wikimedia\.org\/[^\s)"<>]+\.(?:jpg|jpeg|png|webp)/i);
         if (imgMatch) {
-          const dataUrl = await imageDataUrlResolver(imgMatch[0]);
+          const dataUrl = await tryImageDataUrl(imgMatch[0], `${fallbackPlayerNick}/search`);
           if (dataUrl) {
             console.log(`[fun] ${fallbackPlayerNick} 用webSearch找图成功`);
-            return [{ type: 'image', data: { file: dataUrl.replace(/^data:image\/[^;]+;base64,/, 'base64://') } }];
+            return [imageDataUrlToSegment(dataUrl)];
           }
         }
       }
     } catch (err) { /* */ }
+  }
+
+  // 4. 每日卡片兜底：本地生成 PNG，不依赖外网，确保每个今日CS分支都有图
+  if (fallbackCard) {
+    console.log(`[fun] ${fallbackCard.title}/${fallbackCard.name} 使用本地签位卡兜底`);
+    return [localDailyCardImage(fallbackCard, score)];
   }
 
   return [{ type: 'text', data: { text: buildImageFailureLine() } }];
@@ -471,7 +505,7 @@ async function buildDailyCardMessage(userId: number, card: DailyCard, score: num
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(...await imageSegmentOrNote(card.image));
+  message.push(...await imageSegmentOrNote(card.image, undefined, card, score));
   return message;
 }
 
@@ -495,7 +529,7 @@ async function buildLoadoutMessage(userId: number, scopeId: number, isPrivate: b
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(...await imageSegmentOrNote(team.image));
+  message.push(...await imageSegmentOrNote(team.image, undefined, team, score));
   return message;
 }
 
@@ -771,10 +805,9 @@ export const funPlugin: Plugin = {
         let failed = 0;
         for (let i = 0; i < csPlayers.length; i++) {
           const player = csPlayers[i];
-          try {
-            const dataUrl = await imageDataUrlResolver(player.image);
-            if (dataUrl) success++; else failed++;
-          } catch { failed++; }
+          const segments = await imageSegmentOrNote(player.image, player.nick);
+          if (segments.some((seg) => seg.type === 'image')) success++;
+          else failed++;
           // 5 秒间隔，避免被限流
           await new Promise((r) => setTimeout(r, 5000));
         }
@@ -785,7 +818,7 @@ export const funPlugin: Plugin = {
       })();
       return true;
     }
-    if (isCsPlayerDrawRequest(ctx.command, raw)) {
+    if (isCsPlayerDrawRequest(ctx.command, raw) || fuzzy === 'csplayer') {
       const scopeId = ctx.groupId || 0;
       const player = dailyPlayerFor(ctx.event.user_id, scopeId);
       const score = dailyPlayerScore(ctx.event.user_id, scopeId);
@@ -797,47 +830,47 @@ export const funPlugin: Plugin = {
 
     // ===== 每日CS队伍/地图/武器/定位/套餐 =====
     const scopeId = ctx.groupId || 0;
-    if (isDailyCardRequest(ctx.command, raw, 'loadout')) {
+    if (isDailyCardRequest(ctx.command, raw, 'loadout') || fuzzy === 'csloadout') {
       ctx.reply(await buildLoadoutMessage(ctx.event.user_id, scopeId, ctx.isPrivate));
       return true;
     }
-    if (isDailyCardRequest(ctx.command, raw, 'team')) {
+    if (isDailyCardRequest(ctx.command, raw, 'team') || fuzzy === 'csteam') {
       const card = dailyCardFor('csteam', ctx.event.user_id, scopeId, csTeams);
       const score = dailyScoreForKind('csteam', ctx.event.user_id, scopeId);
       ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
       return true;
     }
-    if (isDailyCardRequest(ctx.command, raw, 'map')) {
+    if (isDailyCardRequest(ctx.command, raw, 'map') || fuzzy === 'csmap') {
       const card = dailyCardFor('csmap', ctx.event.user_id, scopeId, csMaps);
       const score = dailyScoreForKind('csmap', ctx.event.user_id, scopeId);
       ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
       return true;
     }
-    if (isDailyCardRequest(ctx.command, raw, 'weapon')) {
+    if (isDailyCardRequest(ctx.command, raw, 'weapon') || fuzzy === 'csweapon') {
       const card = dailyCardFor('csweapon', ctx.event.user_id, scopeId, csWeapons);
       const score = dailyScoreForKind('csweapon', ctx.event.user_id, scopeId);
       ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
       return true;
     }
-    if (isDailyCardRequest(ctx.command, raw, 'role')) {
+    if (isDailyCardRequest(ctx.command, raw, 'role') || fuzzy === 'csrole') {
       const card = dailyCardFor('csrole', ctx.event.user_id, scopeId, csRoles);
       const score = dailyScoreForKind('csrole', ctx.event.user_id, scopeId);
       ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
       return true;
     }
-    if (isDailyCardRequest(ctx.command, raw, 'utility')) {
+    if (isDailyCardRequest(ctx.command, raw, 'utility') || fuzzy === 'csutility') {
       const card = dailyCardFor('csutility', ctx.event.user_id, scopeId, csUtilities);
       const score = dailyScoreForKind('csutility', ctx.event.user_id, scopeId);
       ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
       return true;
     }
-    if (isDailyCardRequest(ctx.command, raw, 'tactic')) {
+    if (isDailyCardRequest(ctx.command, raw, 'tactic') || fuzzy === 'cstactic') {
       const card = dailyCardFor('cstactic', ctx.event.user_id, scopeId, csTactics);
       const score = dailyScoreForKind('cstactic', ctx.event.user_id, scopeId);
       ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
       return true;
     }
-    if (isDailyCardRequest(ctx.command, raw, 'clutch')) {
+    if (isDailyCardRequest(ctx.command, raw, 'clutch') || fuzzy === 'csclutch') {
       const card = dailyCardFor('csclutch', ctx.event.user_id, scopeId, csClutches);
       const score = dailyScoreForKind('csclutch', ctx.event.user_id, scopeId);
       ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
@@ -881,8 +914,8 @@ export async function prewarmPlayerImages(): Promise<{ success: number; failed: 
   let failed = 0;
   for (const player of csPlayers) {
     try {
-      const dataUrl = await imageDataUrlResolver(player.image);
-      if (dataUrl) success++;
+      const segments = await imageSegmentOrNote(player.image, player.nick);
+      if (segments.some((seg) => seg.type === 'image')) success++;
       else failed++;
     } catch { failed++; }
     // 8 秒间隔严格避免限流

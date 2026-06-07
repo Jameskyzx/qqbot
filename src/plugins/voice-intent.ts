@@ -1,6 +1,6 @@
 import { sanitizeOutgoingText } from '../message-sanitize';
 
-export const directTtsCommands = new Set(['voice', 'tts', 'say']);
+export const directTtsCommands = new Set(['voice', 'tts', 'say', '语音', '说', '念', '读', '朗读', '播报']);
 
 export function normalizePassiveText(text: string): string {
   return text.replace(/\s+/g, '').trim();
@@ -10,7 +10,7 @@ export function isExplicitVoiceReplyRequest(text: string, command: string | null
   if (command && directTtsCommands.has(command)) return true;
   const normalized = normalizePassiveText(text).toLowerCase();
   if (!normalized) return false;
-  return /(?:用|发|来|整|给|回|回复|说|念|读|语音|voice|tts|say).{0,8}(?:语音|voice|tts|say|音频|声音|念出来|读出来)|(?:语音|voice|tts|say).{0,8}(?:回|回复|说|念|读|来|发|整|一下)/i.test(normalized);
+  return /(?:用|发|来|整|给|回|回复|说|念|读|朗读|播报|语音|voice|tts|say).{0,8}(?:语音|voice|tts|say|音频|声音|念出来|读出来|朗读出来)|(?:语音|voice|tts|say).{0,10}(?:回|回复|说|念|读|朗读|播报|来|发|整|一下)/i.test(normalized);
 }
 
 export function extractVerbatimVoiceText(text: string, command: string | null): string {
@@ -21,14 +21,14 @@ export function extractVerbatimVoiceText(text: string, command: string | null): 
     return '';
   }
 
-  const lead = String.raw`(?:(?:请|麻烦|帮我|给我|你(?:给我)?|可以|能不能|能否|直接|现在|马上|立刻|就|老哥|哥们儿?|哥们)\s*)*`;
+  const lead = String.raw`(?:(?:请|麻烦|帮我|给我|你(?:给我)?|你来|可以|能不能|能否|直接|现在|马上|立刻|就|老哥|哥们儿?|哥们)\s*)*`;
   const patterns = [
-    new RegExp(`^${lead}(?:用|发|来|整|给我)?\\s*(?:语音|voice|tts|say)\\s*(?:回复|回|说|念|读|念出来|读出来)?\\s*(?:一下|下)?[：:,，、\\s]+([\\s\\S]+)$`, 'i'),
-    new RegExp(`^${lead}(?:用|发|来|整|给我)?\\s*(?:语音|voice|tts|say)\\s*(?:回复|回|说|念|读|念出来|读出来)?\\s*(?:一下|下)?([\\s\\S]+)$`, 'i'),
-    new RegExp(`^${lead}(?:回复|回|说|念|读)\\s*(?:语音|voice|tts|say)\\s*(?:一下|下)?[：:,，、\\s]+([\\s\\S]+)$`, 'i'),
-    new RegExp(`^${lead}(?:回复|回|说|念|读)\\s*(?:语音|voice|tts|say)\\s*(?:一下|下)?([\\s\\S]+)$`, 'i'),
-    new RegExp(`^${lead}(?:念出来|读出来|念|读)\\s*(?:一下|下)?[：:,，、\\s]+([\\s\\S]+)$`, 'i'),
-    new RegExp(`^${lead}(?:念出来|读出来)\\s*(?:一下|下)?([\\s\\S]+)$`, 'i'),
+    new RegExp(`^${lead}(?:用|发|来|整|给我|发一段|来一段)?\\s*(?:语音|voice|tts|say)\\s*(?:回复|回|说|念|读|朗读|播报|念出来|读出来|朗读出来)?\\s*(?:一下|下)?[：:,，、\\s]+([\\s\\S]+)$`, 'i'),
+    new RegExp(`^${lead}(?:用|发|来|整|给我|发一段|来一段)?\\s*(?:语音|voice|tts|say)\\s*(?:回复|回|说|念|读|朗读|播报|念出来|读出来|朗读出来)?\\s*(?:一下|下)?([\\s\\S]+)$`, 'i'),
+    new RegExp(`^${lead}(?:回复|回|说|念|读|朗读|播报)\\s*(?:语音|voice|tts|say)\\s*(?:一下|下)?[：:,，、\\s]+([\\s\\S]+)$`, 'i'),
+    new RegExp(`^${lead}(?:回复|回|说|念|读|朗读|播报)\\s*(?:语音|voice|tts|say)\\s*(?:一下|下)?([\\s\\S]+)$`, 'i'),
+    new RegExp(`^${lead}(?:念出来|读出来|朗读出来|念|读|朗读|播报)\\s*(?:一下|下)?[：:,，、\\s]+([\\s\\S]+)$`, 'i'),
+    new RegExp(`^${lead}(?:念出来|读出来|朗读出来)\\s*(?:一下|下)?([\\s\\S]+)$`, 'i'),
   ];
 
   for (const pattern of patterns) {
@@ -77,8 +77,8 @@ export function splitVoiceTextForTts(text: string, maxChars: number, maxParts: n
 
 export function stripVoiceReplyInstruction(text: string): string {
   return text
-    .replace(/请?(?:用|发|来|整|给我)?\s*(?:语音|voice|tts|say)\s*(?:回(?:复)?|说|念|读|回答)?\s*(?:一下|下)?[：:,，、]?\s*/ig, '')
-    .replace(/(?:用|发|来|整|给我)?\s*(?:语音|voice|tts|say)\s*(?:回复|回答|说|念|读|回我)?\s*/ig, '')
-    .replace(/(?:回(?:复)?|回答)\s*(?:用)?\s*(?:语音|voice|tts|say)\s*/ig, '')
+    .replace(/请?(?:用|发|来|整|给我|发一段|来一段)?\s*(?:语音|voice|tts|say)\s*(?:回(?:复)?|说|念|读|朗读|播报|回答)?\s*(?:一下|下)?[：:,，、]?\s*/ig, '')
+    .replace(/(?:用|发|来|整|给我|发一段|来一段)?\s*(?:语音|voice|tts|say)\s*(?:回复|回答|说|念|读|朗读|播报|回我)?\s*/ig, '')
+    .replace(/(?:回(?:复)?|回答|说|念|读|朗读|播报)\s*(?:用)?\s*(?:语音|voice|tts|say)\s*/ig, '')
     .trim();
 }

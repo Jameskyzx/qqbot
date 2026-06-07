@@ -8,7 +8,7 @@ import { cleanupCache as cleanImageCache, configureImageCache, getCacheStats as 
 import { configureGates, getGateStats, withGate } from './concurrency';
 import { sanitizeOutgoingText } from '../message-sanitize';
 import { detectFuzzyCommand, detectCsTopicQuery } from './fuzzy-command';
-import { fetchOngoingMatches, fetchTeamRanking, fetchRecentResults } from './hltv-api';
+import { fetchOngoingMatches, fetchTeamRanking, fetchRecentResults, fetchPlayerProfile, fetchTeamProfile } from './hltv-api';
 import { prewarmPlayerImages } from './fun';
 import {
   directTtsCommands,
@@ -48,6 +48,7 @@ import {
   selectStyleKnowledge,
   setKnowledgeAutoEnabled,
 } from './knowledge-base';
+import { closeKnowledgeDb } from './knowledge-db';
 import { loadContext, writeSession, deleteSession, markDirty, setFlushHandler, getDirtySessions, listAllSessions, clearDirtySession, flushNow } from './context-store';
 import {
   ChatMessage,
@@ -131,6 +132,9 @@ interface ReplyTrace {
   hasRecords: boolean;
   recordTranscripts: number;
   queueAgeMs: number;
+  contextMessagesSent?: number;
+  contextFocused?: boolean;
+  memoryHits?: number;
   searchUsed: boolean;
   searchChars: number;
   knowledgeInjected: boolean;
@@ -497,6 +501,70 @@ function buildApiMessages(
   return result;
 }
 
+function parseStoredMessageMeta(message: ChatMessage): { mid: number; uid: number; name: string; text: string } | null {
+  if (message.role !== 'user' || typeof message.content !== 'string') return null;
+  const match = message.content.match(/^\[mid=(\d+)\s+uid=(\d+)\]\s*([^:：\n]{1,32})[:：]\s*([\s\S]*)$/);
+  if (!match) return null;
+  return {
+    mid: Number(match[1]),
+    uid: Number(match[2]),
+    name: match[3],
+    text: match[4] || '',
+  };
+}
+
+function cleanHistoryMessage(message: ChatMessage): ChatMessage {
+  if (message.role !== 'user' || typeof message.content !== 'string') return message;
+  const meta = parseStoredMessageMeta(message);
+  const cleaned = meta ? `${meta.name}: ${meta.text}` : message.content.replace(/^\[mid=\d+\s+uid=\d+\]\s*/, '');
+  return { role: message.role, content: cleaned };
+}
+
+function buildFocusedHistory(job: ReplyJob, sendLimit: number): { history: ChatMessage[]; focused: boolean } {
+  const messages = job.contextMessages.slice(0, -1);
+  if (messages.length <= sendLimit) {
+    return { history: messages.map(cleanHistoryMessage), focused: false };
+  }
+
+  const scored = messages.map((message, index) => {
+    const meta = parseStoredMessageMeta(message);
+    const content = typeof message.content === 'string' ? message.content : '';
+    let score = index / Math.max(1, messages.length);
+    if (index >= messages.length - Math.ceil(sendLimit * 0.55)) score += 6;
+    if (message.role === 'assistant') score += 2.5;
+    if (meta) {
+      if (meta.uid === job.userId) score += 6;
+      if (job.repliedMessageId && meta.mid === job.repliedMessageId) score += 18;
+      if (job.effectiveText && meta.text && hasTokenOverlap(job.effectiveText, meta.text)) score += 4;
+    }
+    if (job.hasImages && /\[图片\]|含\d+张图/.test(content)) score += 2;
+    if (job.hasRecords && /\[语音\]|含\d+条语音/.test(content)) score += 2;
+    return { message, index, score };
+  });
+
+  const keep = Math.max(4, sendLimit);
+  const selected = scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, keep)
+    .sort((a, b) => a.index - b.index)
+    .map((item) => cleanHistoryMessage(item.message));
+  return { history: selected, focused: true };
+}
+
+function hasTokenOverlap(a: string, b: string): boolean {
+  const tokens = (a.toLowerCase().match(/[\u4e00-\u9fa5]{2,8}|[a-z0-9]{2,16}/g) || [])
+    .filter((token) => token.length >= 2)
+    .slice(0, 20);
+  if (tokens.length === 0) return false;
+  const haystack = b.toLowerCase();
+  let hits = 0;
+  for (const token of tokens) {
+    if (haystack.includes(token)) hits++;
+    if (hits >= 2) return true;
+  }
+  return hits >= 1 && tokens.length <= 3;
+}
+
 function buildRecentSpeakerHints(messages: ChatMessage[], currentUserId: number, limit: number = 6): string {
   const hints: string[] = [];
   const seen = new Set<string>();
@@ -625,13 +693,16 @@ function buildRuntimeKnowledgeInfo(
   const topic = scrubKnowledgeForRuntime(topicKnowledge, keepIdentity);
   const cue = buildLiveStyleCue(job);
   const recentOpeners = buildRecentAssistantOpeningHints(job.contextMessages.slice(0, -1));
+  const speakerHints = buildRecentSpeakerHints(job.contextMessages.slice(0, -1), job.userId);
   return [
     '下面是必须执行的临场笔记，只用来垫语感和事实，不要在回复里说出来。',
     `本条节奏: ${cue}`,
+    `当前定位: chat_type=${job.chatType} chat_id=${job.chatId}${job.groupId ? ` group_id=${job.groupId}` : ''} message_id=${job.messageId} user_id=${job.userId} sender=${job.senderName}`,
     hasKnowledgeTopic ? '当前消息命中话题知识，必须优先用下面的选手/队伍/CS2判断素材。' : '当前消息至少注入直播语态素材，必须吸收语气和节奏，别退回AI助手腔。',
     '核心手感: 像直播间顺手接弹幕，先抓当前这句话，短反应 + 具体判断 + 收住攻击性。',
     '输出时禁止说“根据知识库/根据素材/根据临场笔记/作为AI/作为bot/这是模板”。',
     '不要标题式输出“结论/原因/建议/分析/总结”，像群里正常接一句。',
+    speakerHints ? `${speakerHints}\n只用来定位话题，不要替这些历史发言答题。` : '',
     recentOpeners ? `[最近回复开头，别复读]\n${recentOpeners}` : '',
     style ? `[语态素材]\n${style}` : '',
     topic ? `[话题素材]\n${topic}` : '',
@@ -659,7 +730,7 @@ function buildTargetText(job: ReplyJob, recordTranscripts: string[] = []): strin
   }
   const mediaHints: string[] = [];
   if (job.hasImages) mediaHints.push(`(消息含${job.imageUrls.length}张图片)`);
-  if (job.hasRecords && !transcriptText) mediaHints.push('(消息含语音 但无听写文本)');
+  if (job.hasRecords) mediaHints.push(`(消息含${job.recordUrls.length}条语音${transcriptText ? '' : ' 但无听写文本'})`);
   if (transcriptText) mediaHints.push(`(语音听写: ${transcriptText})`);
   if (job.forceVoice) mediaHints.push('(对方要求语音回复 短一点 适合念)');
   if (job.repliedMessageId) mediaHints.push('(对方在引用之前的消息追问)');
@@ -669,7 +740,122 @@ function buildTargetText(job: ReplyJob, recordTranscripts: string[] = []): strin
 
   // 用清晰的标记包裹当前消息让模型不混淆
   const mediaText = mediaHints.length > 0 ? ' ' + mediaHints.join(' ') : '';
-  return `===现在你要回复这一条===\n${job.senderName}: ${body}${mediaText}\n===\n只回应这个人这句话 不要替历史里其他人补答${openerHint}`;
+  return [
+    '===当前消息定位===',
+    `chat_type: ${job.chatType}`,
+    `chat_id: ${job.chatId}`,
+    job.groupId ? `group_id: ${job.groupId}` : '',
+    `message_id: ${job.messageId}`,
+    `user_id: ${job.userId}`,
+    `sender: ${job.senderName}`,
+    `trigger: ${job.triggerReason}`,
+    `用户明确要求语音回复: ${job.forceVoice ? '是' : '否'}`,
+    '===现在你要回复这一条===',
+    `${job.senderName}: ${body}${mediaText}`,
+    '===',
+    `只回应这个人这句话 不要替历史里其他人补答${openerHint}`,
+  ].filter(Boolean).join('\n');
+}
+
+async function resolveVisionDataUrls(
+  ctx: PluginContext,
+  job: ReplyJob,
+  limit: number,
+): Promise<{ dataUrls: string[]; error: string }> {
+  const dataUrls: string[] = [];
+  const seen = new Set<string>();
+  let lastError = '';
+
+  const pushIfDataUrl = (value: string): boolean => {
+    if (dataUrls.length >= limit) return true;
+    const cleaned = value.trim();
+    if (!cleaned) return false;
+    if (cleaned.startsWith('data:image/')) {
+      if (!seen.has(cleaned)) {
+        seen.add(cleaned);
+        dataUrls.push(cleaned);
+      }
+      return true;
+    }
+    if (cleaned.startsWith('base64://')) {
+      const dataUrl = `data:image/jpeg;base64,${cleaned.slice('base64://'.length).replace(/\s+/g, '')}`;
+      if (!seen.has(dataUrl)) {
+        seen.add(dataUrl);
+        dataUrls.push(dataUrl);
+      }
+      return true;
+    }
+    const compact = cleaned.replace(/\s+/g, '');
+    if (compact.length > 100 && /^[A-Za-z0-9+/_=-]+$/.test(compact)) {
+      const dataUrl = `data:image/jpeg;base64,${compact}`;
+      if (!seen.has(dataUrl)) {
+        seen.add(dataUrl);
+        dataUrls.push(dataUrl);
+      }
+      return true;
+    }
+    return false;
+  };
+
+  const loadSources = async (sources: string[], stage: string): Promise<void> => {
+    for (const url of uniqueNonEmpty(sources)) {
+      if (dataUrls.length >= limit) break;
+      try {
+        const d = await withGate('vision', () => getImageDataUrl(url), job.forced);
+        if (d) pushIfDataUrl(d);
+      } catch (err) {
+        lastError = `${stage}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 140);
+      }
+    }
+  };
+
+  await loadSources(job.imageUrls, 'message');
+  if (dataUrls.length >= limit) return { dataUrls: dataUrls.slice(0, limit), error: '' };
+
+  try {
+    const msgRes = await ctx.bot.callApiAsync('get_msg', { message_id: job.messageId }, 6000);
+    const msgData = (msgRes as any)?.data || msgRes;
+    const msgSegs = Array.isArray(msgData?.message) ? msgData.message : [];
+    if (msgSegs.length > 0) {
+      const reresolved = await resolveOneBotImageSources(ctx, msgSegs);
+      await loadSources(reresolved, 'get_msg');
+    }
+  } catch (err) {
+    lastError = `get_msg: ${err instanceof Error ? err.message : String(err)}`.slice(0, 140);
+  }
+  if (dataUrls.length >= limit) return { dataUrls: dataUrls.slice(0, limit), error: '' };
+
+  const rawFiles = uniqueNonEmpty(ctx.event.message
+    .filter((seg) => seg.type === 'image')
+    .map((seg) => seg.type === 'image' ? (seg.data.file || seg.data.url || '') : ''));
+  for (const rawFile of rawFiles.slice(0, limit)) {
+    if (dataUrls.length >= limit) break;
+    try {
+      const r = await ctx.bot.callApiAsync('get_image', { file: rawFile }, 8000);
+      const d = (r as any)?.data || r;
+      if (pushIfDataUrl(String(d?.base64 || d?.b64 || d?.base64_file || d?.file_base64 || ''))) continue;
+      const best = firstMediaString(d, 'image/jpeg');
+      if (best) await loadSources([best], 'get_image');
+    } catch (err) {
+      lastError = `get_image: ${err instanceof Error ? err.message : String(err)}`.slice(0, 140);
+    }
+
+    try {
+      const r = await ctx.bot.callApiAsync('get_file', { file_id: rawFile, file: rawFile }, 8000);
+      const d = (r as any)?.data || r;
+      if (pushIfDataUrl(String(d?.base64 || d?.b64 || d?.file_base64 || ''))) continue;
+      const best = firstMediaString(d, 'image/jpeg');
+      if (best) await loadSources([best], 'get_file');
+    } catch (err) {
+      lastError = lastError || `get_file: ${err instanceof Error ? err.message : String(err)}`.slice(0, 140);
+    }
+  }
+
+  const imageStats = getImageCacheStats();
+  return {
+    dataUrls: dataUrls.slice(0, limit),
+    error: lastError || imageStats.lastError || '',
+  };
 }
 
 // ============ 玩机器真实语态 few-shot 示例池（每次随机选 4 个） ============
@@ -830,9 +1016,9 @@ function buildSystemPrompt(config: AIConfig): string {
   const aggressionRule = config.aggression_level === 'analysis'
     ? '以分析为主，少玩梗；先给判断，再讲依据。'
     : config.aggression_level === 'medium'
-      ? '可以嘴硬吐槽，敢怼敢损，像直播时吐槽菜鸡操作那种程度；但不追着人骂，不人身攻击，点到为止。'
+      ? '攻击性比普通群友高一点，敢嘴硬、敢反问、敢损离谱操作；先喷决策和理解，再补一句具体判断。别追着人身攻击。'
       : config.aggression_level === 'high'
-        ? '可以重嘴硬，毒舌上限高，像直播间跟弹幕对喷的程度。但底线是不搞真人身攻击和歧视。'
+        ? '攻击性拉高，允许短促毒舌、反问、阴阳怪气和直播间式对线；喷操作、喷逻辑、喷理解，别搞歧视和现实人身攻击。'
         : '轻嘴硬但不咬人，调侃点到为止，优先把话说准；不要动不动喷人。';
 
   // ===== 当前时间锚点（每条消息都注入） =====
@@ -929,14 +1115,13 @@ function buildSystemPrompt(config: AIConfig): string {
     '- 时效性强 → "这种最近的事 你直接查官方/HLTV"',
     '- 千万不要凭借模糊记忆给出具体的人/数字/日期',
     '',
-    '[表情和QQ表情包 - 克制 + 用名字]',
-    '- 玩机器在直播里很少用 emoji，主要靠语气和判断说话，不堆表情包',
-    '- 默认不加 emoji 也不加 [face:N]，只在情绪强烈/语境契合时加 1 个',
-    '- 用中文/英文名字直接写：[呲牙] [笑哭] [喷血] [思考] [鄙视] [吃瓜] [666] [打脸]',
-    '  也可用经典数字：[face:178] [face:101] [face:32]',
-    '- 真的好笑/惊讶/离谱才用，每条最多 1-2 个',
-    '- 不要每条都加表情，别在跟主题无关的位置甩一个',
-    '- 如果加表情，写在合适的位置（一般在句尾或情绪转折处），不是机械塞',
+    '[表情和QQ表情包 - 少但要准]',
+    '- 少用 Unicode emoji，优先用 QQ 命名表情标签；没必要就别加表情',
+    '- 只有情绪很明确才加 1 个，最多 2 个：离谱用[辣眼睛]/[疑问]，好笑用[笑哭]/[打脸]，看戏用[吃瓜]/[让我看看]，认可用[强]/[666]',
+    '- 不要用很幼稚的连续 emoji，不要每句结尾都塞一个，别把语气削弱',
+    '- 用中文/英文名字直接写：[呲牙] [笑哭] [喷血] [思考] [鄙视] [吃瓜] [666] [打脸] [辣眼睛] [让我看看]',
+    '  也可用经典数字：[face:178] [face:101] [face:32]，但名字更自然',
+    '- 表情必须贴语境，像弹幕顺手甩出来，不是装饰品',
     '',
     '- 例子（恰当）：',
     '    "这操作太脏了 [呲牙]"',
@@ -944,7 +1129,7 @@ function buildSystemPrompt(config: AIConfig): string {
     '    "这都能赢? [思考]"',
     '    "别开香槟 [让我看看]"',
     '- 例子（错误）：',
-    '    "[呲牙] 我觉得这队还行 [笑哭] [666]"  ← 塞太多',
+    '    "[呲牙] 我觉得这队还行 [笑哭] [666]"  ← 塞太多还很弱智',
     '    "[摸鱼] 你说得对"  ← 跟主题不合',
     '    每句结尾都自动塞一个 emoji ← 公式化',
     '',
@@ -961,7 +1146,8 @@ function buildSystemPrompt(config: AIConfig): string {
     '风格特点：',
     '- 第一句直接接情绪/判断 不铺垫不解释',
     '- 句子短 多用并列 少用从句',
-    '- 嘴硬带分析 不是纯反驳',
+    '- 嘴硬带分析 不是纯反驳；攻击力来自具体判断，不是脏话堆叠',
+    '- 看到离谱操作可以直接开喷，但喷点要落在回合、道具、补枪、timing、经济、阵容理解上',
     '- 语气词："哦/啊/不是哥们/哥们/兄弟/你这"',
     '- 标点："！"用得不多 多用"。"和断句换行',
     '- 别用书面语"对此/我觉得/总的来说/其实"开场',
@@ -1260,17 +1446,20 @@ async function handleKnowledgeCommand(ctx: PluginContext, config: AIConfig): Pro
 
 async function liveKnowledgeLookup(config: AIConfig, kind: 'player' | 'team', query: string): Promise<string> {
   const local = searchKnowledge(`${query} ${kind === 'player' ? '选手 player' : '队伍 team'}`, 3, 220);
+  const structured = kind === 'player'
+    ? await fetchPlayerProfile(query)
+    : await fetchTeamProfile(query);
   const searchQuery = `${query} HLTV Liquipedia CS2`;
-  const live = await webSearch(
+  const live = structured ? '' : await webSearch(
     searchQuery,
     Math.max(config.search_timeout_ms || 1500, 1200),
     config.search_cache_seconds ?? 300,
     config.search_negative_cache_seconds ?? 60,
   );
   const localText = local.length > 0 ? formatKnowledgeResults(local, 520) : '本地倾向还没写厚。';
-  const liveText = live ? live.slice(0, 520) : '没搜到准信，别硬编。';
+  const liveText = structured || (live ? live.slice(0, 520) : '没搜到准信，别硬编。');
   return [
-    kind === 'player' ? '选手这块我按本地倾向加实时资料说。' : '队伍这块我按本地倾向加实时资料说。',
+    kind === 'player' ? '选手这块我按本地倾向加实时数据说。' : '队伍这块我按本地倾向加实时数据说。',
     localText,
     `实时参考:\n${liveText}`,
   ].join('\n');
@@ -1407,6 +1596,7 @@ function formatReplyTrace(trace: ReplyTrace | null): string {
     trace.effectiveTextPreview && trace.effectiveTextPreview !== trace.rawTextPreview ? `有效文本: ${trace.effectiveTextPreview}` : '',
     `媒体: 图片${trace.hasImages ? '有' : '无'} 语音${trace.hasRecords ? '有' : '无'} 听写${trace.recordTranscripts}`,
     `队列: 等待${Math.round(trace.queueAgeMs / 1000)}s`,
+    trace.contextMessagesSent ? `上下文: ${trace.contextMessagesSent}条${trace.contextFocused ? ' (聚焦)' : ''}${trace.memoryHits ? ` 命中${trace.memoryHits}` : ''}` : '',
     `增强: 知识${trace.knowledgeInjected ? `${trace.knowledgeChars}字` : '未注入'}${trace.knowledgeTopic ? '/话题命中' : ''} 搜索${trace.searchUsed ? `${trace.searchChars}字` : '未用'} 识图${trace.visionPayload ? '已传图' : '未传图'}`,
     trace.hltvUsed ? `HLTV实时: 已注入${trace.hltvChars}字` : '',
     trace.hltvError ? `HLTV错误: ${trace.hltvError}` : '',
@@ -2158,7 +2348,12 @@ export function shutdownAiChat(): void {
   groupQueueStats.clear();
   groupQueueAges.clear();
   lastReplyAt.clear();
+  recentGroupMessages.clear();
+  sessionRecentOpeners.clear();
+  sessionRecentReplies.clear();
+  replyCache.clear();
   compressionInFlight.clear();
+  closeKnowledgeDb();
 }
 
 export function getAiChatStats(): {
@@ -2227,6 +2422,14 @@ export const aiChatPlugin: Plugin = {
 
     // ===== 中文模糊命令分发 - 仅当不是显式 /xxx 命令时 =====
     const fuzzyCmd = ctx.command ? null : detectFuzzyCommand(ctx.rawText.trim());
+    const hasImageAttachment = ctx.event.message.some((seg) => seg.type === 'image');
+
+    if (fuzzyCmd === 'vision') {
+      if (!hasImageAttachment) {
+        ctx.reply('把图发来，我给你看。');
+        return true;
+      }
+    }
 
     // ===== Voice Clone 模糊触发 =====
     if (fuzzyCmd === 'voice_clone' || fuzzyCmd === 'voice_clone_status' || fuzzyCmd === 'voice_clone_reset') {
@@ -2623,6 +2826,8 @@ export const aiChatPlugin: Plugin = {
 
     const trigger = forceVoice
       ? { reply: true, forced: true }
+      : (fuzzyCmd === 'vision' && hasImageAttachment)
+        ? { reply: true, forced: true }
       : shouldReply(config, effectiveText, ctx.command, atBot, ctx.isReplyToBot, ctx.isPrivate, groupChatBusy, selfRecentlyReplied);
 
     const storedBaseText = effectiveText
@@ -2767,95 +2972,8 @@ export const aiChatPlugin: Plugin = {
 
         if (job.hasImages && config.enable_vision && !skipHeavyEnhancements) {
           const limit = Math.max(1, Math.min(config.vision_max_images || 2, 4));
-          const limitedUrls = job.imageUrls.slice(0, limit);
-          const dataUrls: string[] = [];
-          for (const url of limitedUrls) {
-            try {
-              const d = await withGate('vision', () => getImageDataUrl(url), job.forced);
-              if (d) dataUrls.push(d);
-            } catch (err) {
-              patchReplyTrace(job.messageId, {
-                visionError: err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120),
-              });
-            }
-          }
-
-          // 兜底1：若全部 URL 下载失败，尝试通过 get_msg 重新拉消息（NapCat会重新生成下载URL）
-          if (dataUrls.length === 0 && limitedUrls.length > 0 && ctx.event.message_id) {
-            try {
-              console.warn(`[Vision] 群${job.chatId} 一阶段失败，尝试 get_msg 重取`);
-              const msgRes = await ctx.bot.callApiAsync('get_msg', { message_id: ctx.event.message_id }, 6000);
-              const msgData = (msgRes as any)?.data || msgRes;
-              const msgSegs = Array.isArray(msgData?.message) ? msgData.message : [];
-              const reextracted: string[] = [];
-              for (const seg of msgSegs) {
-                if (seg && seg.type === 'image' && seg.data) {
-                  const u = seg.data.url || seg.data.file;
-                  if (typeof u === 'string' && u) reextracted.push(u);
-                }
-              }
-              if (reextracted.length > 0) {
-                const reresolved = await resolveOneBotImageSources(ctx, msgSegs);
-                for (const r of reresolved.slice(0, limit)) {
-                  try {
-                    const d = await withGate('vision', () => getImageDataUrl(r), job.forced);
-                    if (d) dataUrls.push(d);
-                  } catch { /* */ }
-                }
-                if (dataUrls.length > 0) {
-                  console.log(`[Vision] 群${job.chatId} get_msg 兜底成功 拿到${dataUrls.length}张图`);
-                }
-              }
-            } catch (err) {
-              console.warn(`[Vision] get_msg兜底也失败 ${err instanceof Error ? err.message : err}`);
-            }
-          }
-
-          // 兜底2：直接调 NapCat 的 get_image / get_file 拿 base64
-          // 用原始消息段里的 file 字段（image cache key）
-          if (dataUrls.length === 0 && limitedUrls.length > 0) {
-            try {
-              const rawFiles: string[] = [];
-              for (const seg of ctx.event.message) {
-                if (seg.type === 'image' && seg.data) {
-                  const f = seg.data.file || seg.data.url;
-                  if (typeof f === 'string' && f) rawFiles.push(f);
-                }
-              }
-              for (const rawFile of rawFiles.slice(0, limit)) {
-                // 试 get_image 拿 base64
-                try {
-                  const r = await ctx.bot.callApiAsync('get_image', { file: rawFile }, 8000);
-                  const d = (r as any)?.data || r;
-                  const b64 = d?.base64 || d?.b64 || d?.base64_file || d?.file_base64;
-                  if (typeof b64 === 'string' && b64.length > 100) {
-                    const cleaned = b64.replace(/\s+/g, '');
-                    if (/^[A-Za-z0-9+/_=-]+$/.test(cleaned)) {
-                      const fp = `data:image/jpeg;base64,${cleaned}`;
-                      dataUrls.push(fp);
-                      console.log(`[Vision] 群${job.chatId} get_image base64 兜底成功 size=${cleaned.length}`);
-                      continue;
-                    }
-                  }
-                } catch (e) { /* try next */ }
-                // 试 get_file（NapCat 专属）
-                try {
-                  const r = await ctx.bot.callApiAsync('get_file', { file_id: rawFile, file: rawFile }, 8000);
-                  const d = (r as any)?.data || r;
-                  const b64 = d?.base64 || d?.b64;
-                  if (typeof b64 === 'string' && b64.length > 100) {
-                    const cleaned = b64.replace(/\s+/g, '');
-                    if (/^[A-Za-z0-9+/_=-]+$/.test(cleaned)) {
-                      dataUrls.push(`data:image/jpeg;base64,${cleaned}`);
-                      console.log(`[Vision] 群${job.chatId} get_file base64 兜底成功`);
-                    }
-                  }
-                } catch { /* */ }
-              }
-            } catch (err) {
-              console.warn(`[Vision] get_image/get_file 兜底失败 ${err instanceof Error ? err.message : err}`);
-            }
-          }
+          const resolvedVision = await resolveVisionDataUrls(ctx, job, limit);
+          const dataUrls = resolvedVision.dataUrls;
 
           if (dataUrls.length > 0) {
             const parts: MessageContent[] = [{ type: 'text', text: targetText }];
@@ -2868,9 +2986,10 @@ export const aiChatPlugin: Plugin = {
             console.log(`[Vision] 群${job.chatId} 成功加载${dataUrls.length}张图(high detail)`);
           } else {
             const imageStats = getImageCacheStats();
-            if (imageStats.lastError) patchReplyTrace(job.messageId, { visionError: imageStats.lastError });
-            console.error(`[Vision] 群${job.chatId} 图片下载失败 url数=${job.imageUrls.length} 最后错误=${imageStats.lastError}`);
-            targetText += `\n注意：当前消息含${job.imageUrls.length}张图片，但图片下载失败(${(imageStats.lastError || 'unknown').slice(0, 50)})，模型实际上看不到图。不要编造图片细节，可以让对方重发或补充文字。`;
+            const visionError = resolvedVision.error || imageStats.lastError || 'unknown';
+            patchReplyTrace(job.messageId, { visionError });
+            console.error(`[Vision] 群${job.chatId} 图片下载失败 url数=${job.imageUrls.length} 最后错误=${visionError}`);
+            targetText += `\n注意：当前消息含${job.imageUrls.length}张图片，但图片下载失败(${visionError.slice(0, 50)})，模型实际上看不到图。不要编造图片细节，可以让对方重发或补充文字。`;
             apiCurrentMessage = { role: 'user', content: targetText };
           }
         } else {
@@ -2947,14 +3066,21 @@ export const aiChatPlugin: Plugin = {
           if (csTopic.needsRanking) { fetches.push(fetchTeamRanking()); labels.push('HLTV排名'); }
           if (csTopic.needsResults) { fetches.push(fetchRecentResults()); labels.push('最近战报'); }
 
-          // ===== 针对选手/队伍的专项搜索 =====
-          // 当消息中提到具体选手或队伍名 + 实时性词，做一次定向 webSearch
+          // ===== 针对选手/队伍的专项数据 =====
+          // 先读 CS API 结构化字段；没命中再做一次定向 webSearch。
           const playerOrTeamMatch = searchableText.match(/\b(zywoo|donk|niko|m0nesy|s1mple|ropz|sh1ro|magixx|jl|b1t|hunter|aleksib|karrigan|device|broky|frozen|apex|mezii|flamez|jimpphat|siuhy|kscerato|yuurih|cadian|navi|vitality|spirit|faze|mouz|g2|falcons|astralis|liquid|furia|heroic|mongolz|tyloo|lynn|cloud9|玩机器|6657)\b/i);
           const realtimeIntent = /(?:现在|最近|今天|当前|最新|状态|表现|怎么样|怎样|表现如何|战绩|阵容|转会)/.test(searchableText);
           if (playerOrTeamMatch && realtimeIntent) {
             const target = playerOrTeamMatch[1];
+            const teamTargets = /^(navi|vitality|spirit|faze|mouz|g2|falcons|astralis|liquid|furia|heroic|mongolz|tyloo|lynn|cloud9)$/i;
+            const structuredLookup = teamTargets.test(target)
+              ? fetchTeamProfile(target).catch(() => '')
+              : fetchPlayerProfile(target).catch(() => '');
             fetches.push(
-              webSearch(`${target} CS2 latest news 2026 status roster`, 4000, 600, 60).catch(() => '')
+              structuredLookup.then(async (structured) => {
+                if (structured) return structured;
+                return webSearch(`${target} CS2 latest news 2026 status roster`, 4000, 600, 60).catch(() => '');
+              })
             );
             labels.push(`${target}最新`);
           }
@@ -3037,21 +3163,18 @@ export const aiChatPlugin: Plugin = {
 
         // ===== 构建发给API的消息 =====
         // 注意：history是除当前消息外的历史（当前已经append了，需要排除最后一条）
-        const sendLimit = config.context_send_messages || 25;
-        const rawHistory = job.contextMessages.slice(0, -1).slice(-sendLimit);
-        // 清理history里的 [mid=X uid=Y] 元数据前缀，让模型看到干净的对话
-        const history: ChatMessage[] = rawHistory.map((msg) => {
-          if (msg.role !== 'user' || typeof msg.content !== 'string') return msg;
-          const cleaned = msg.content.replace(/^\[mid=\d+\s+uid=\d+\]\s*/, '');
-          return { role: msg.role, content: cleaned };
-        });
+        const sendLimit = Math.max(8, config.context_send_messages || 25);
+        const focusedHistory = buildFocusedHistory(job, sendLimit);
+        const history = focusedHistory.history;
         const systemPrompt = buildSystemPrompt(config);
 
         // 检索相似历史（基于当前消息文本）- 仅当有有意义的查询文本时
         let similarMemories = '';
+        let memoryHits = 0;
         if (job.effectiveText && job.effectiveText.length >= 4) {
           try {
             const recent = cm.retrieveSimilar(job.sessionId, job.effectiveText, 3);
+            memoryHits = recent.length;
             // 过滤掉与最近history已经包含的重复
             const recentTextSet = new Set(history.slice(-10).map((m) => typeof m.content === 'string' ? m.content : '').filter(Boolean));
             const useful = recent.filter((r) => r.similarity >= 0.2 && !recentTextSet.has(r.text)).slice(0, 2);
@@ -3064,6 +3187,11 @@ export const aiChatPlugin: Plugin = {
         }
 
         const apiMessages = buildApiMessages(systemPrompt, job.contextSummary, history, apiCurrentMessage, searchInfo, knowledgeInfo, similarMemories);
+        patchReplyTrace(job.messageId, {
+          contextMessagesSent: history.length,
+          contextFocused: focusedHistory.focused,
+          memoryHits,
+        });
 
         // ===== 调用 AI =====
         // 时间/日期类问题永远不缓存（因为答案随时间变化）

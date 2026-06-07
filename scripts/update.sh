@@ -1,89 +1,86 @@
 #!/bin/bash
-# 玩机器 Bot 一键更新脚本
-# 用法: bash scripts/update.sh
-# 或全自动: cd /opt/wanjier-bot && bash scripts/update.sh
+# VPS 安全更新脚本
+# 用法:
+#   bash scripts/update.sh
+#   npm run update
 
-set -e
-cd "$(dirname "$0")/.."
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT_DIR"
+
+TS="$(date +%F-%H%M%S)"
+BACKUP_DIR="$ROOT_DIR/backups/update-$TS"
+mkdir -p "$BACKUP_DIR" logs
 
 echo "========================================="
-echo "  玩机器 Bot 一键更新"
+echo "  玩机器 Bot VPS 更新"
 echo "========================================="
 
-# 1. 强制重置本地变动 (config.json/.env/voice_sample.mp3 在gitignore里所以保留)
-echo ""
-echo "[1/7] 重置本地修改..."
-git reset --hard HEAD 2>&1 | tail -3 || true
-git clean -fd 2>&1 | tail -3 || true
+backup_file() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    cp "$file" "$BACKUP_DIR/$(basename "$file").bak"
+  fi
+}
 
-# 2. 拉取最新代码
-echo ""
-echo "[2/7] 拉取最新代码..."
+echo "[1/8] 备份配置..."
+backup_file "config.json"
+backup_file ".env"
+backup_file "voice_sample.mp3"
+cp -f scripts/update.sh "$BACKUP_DIR/update.sh.bak" 2>/dev/null || true
+
+echo "[2/8] 拉取代码前检查工作区..."
+if ! git diff --quiet -- . ':(exclude)config.json' ':(exclude).env' ':(exclude)voice_sample.mp3'; then
+  echo "  检测到本地改动，已保留，不会 reset/clean。"
+fi
+
+echo "[3/8] 拉取远端更新..."
 git fetch origin
-git reset --hard origin/main
+git pull --ff-only origin main
 
-# 3. 检查config.json存在
-echo ""
-echo "[3/7] 检查config.json..."
+echo "[4/8] 校验运行配置..."
 if [ ! -f config.json ]; then
-  echo "  ⚠️  config.json不存在，从example复制"
-  cp config.example.json config.json
-  echo ""
-  echo "  ✏️  现在编辑config.json或.env填入api_key和admin_qq:"
-  echo "     nano config.json   # 改api_key/admin_qq"
-  echo "     或者用环境变量更方便:"
-  echo "     cp .env.example .env && nano .env"
-  echo ""
-  exit 1
+  if [ -f config.example.json ]; then
+    cp config.example.json config.json
+    echo "  已从 config.example.json 生成 config.json"
+  else
+    echo "  缺少 config.json 且没有 config.example.json"
+    exit 1
+  fi
 fi
 
-# 4. 检查 .env (推荐用户用)
 if [ ! -f .env ] && [ -f .env.example ]; then
-  echo "  ℹ️  没有.env文件，可以用环境变量管理敏感配置:"
-  echo "     cp .env.example .env && nano .env"
+  echo "  提示: 你可以用 .env 管理敏感配置"
 fi
 
-# 5. 安装依赖（仅在需要时）
-echo ""
-echo "[4/7] 检查依赖..."
-if [ ! -d node_modules ] || [ package.json -nt node_modules ]; then
-  npm install --no-audit --no-fund --silent
-  echo "  依赖已更新"
-else
-  echo "  依赖未变化"
-fi
+echo "[5/8] 安装依赖..."
+npm ci
 
-# 6. 编译
-echo ""
-echo "[5/7] 编译TypeScript..."
+echo "[6/8] 构建与自检..."
 npm run build
+npm run doctor
+npm run smoke
 
-# 7. 创建必要的目录
-echo ""
-echo "[6/7] 准备运行环境..."
-mkdir -p logs voice_cache image_cache context_store stt_cache search_cache
+echo "[7/8] 准备运行目录..."
+mkdir -p logs voice_cache image_cache context_store stt_cache search_cache knowledge/db
 
-# 8. 重启
-echo ""
-echo "[7/7] 重启Bot..."
-if pm2 list 2>/dev/null | grep -q wanjier; then
+echo "[8/8] 重启服务..."
+if pm2 list 2>/dev/null | grep -q "wanjier"; then
   pm2 restart wanjier --update-env
-  echo "  Bot已重启 (--update-env 重新加载.env)"
 else
   if [ -f ecosystem.config.js ]; then
     pm2 start ecosystem.config.js
   else
-    pm2 start dist/index.js --name wanjier --node-args="--max-old-space-size=768 --expose-gc" --max-memory-restart 1100M
+    pm2 start dist/index.js --name wanjier --node-args="--max-old-space-size=900 --expose-gc" --max-memory-restart 1200M
   fi
-  echo "  Bot已启动"
 fi
 pm2 save 2>/dev/null || true
 
-echo ""
 echo "========================================="
 echo "  ✅ 更新完成"
 echo "========================================="
-echo ""
-echo "查看日志:    pm2 logs wanjier --lines 30"
-echo "查看状态:    pm2 status && free -h"
-echo "重新加载env: pm2 restart wanjier --update-env"
+echo "备份目录: $BACKUP_DIR"
+echo "查看日志:  pm2 logs wanjier --lines 80 --nostream"
+echo "看状态:    pm2 status"
+echo "看资源:    free -h && df -h"

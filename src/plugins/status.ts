@@ -56,6 +56,7 @@ export const statusPlugin: Plugin = {
         `🎭 当前预设: ${config.ai?.active_preset || '无'}`,
         `📚 知识库: ${knowledgeStats.sections}块 ${knowledgeStats.chars}字 词${knowledgeStats.keywords} 候选${knowledgeStats.candidates}`,
         `📖 知识命中: 检索${knowledgeStats.searchHits}/${knowledgeStats.searchMisses} 注入${knowledgeStats.selectHits}/${knowledgeStats.selectMisses}`,
+        `📚 知识DB: ${knowledgeStats.dbMode} ${knowledgeStats.dbSections}块 命中${knowledgeStats.dbHits}/${knowledgeStats.dbMisses} 查询${knowledgeStats.dbQueries}${knowledgeStats.dbLastError ? ` 错误=${knowledgeStats.dbLastError}` : ''}`,
         ...(aiStats.lastKnowledgeTitles.length > 0 ? [`📖 最近知识分区: ${aiStats.lastKnowledgeTitles.join(' / ')}`] : []),
         `🔄 知识自动: ${knowledgeStats.autoEnabled && config.ai?.knowledge_auto_update !== false ? 'on' : 'off'} ${aiStats.knowledgeAutoRunning ? '刷新中' : '空闲'} 间隔${aiStats.knowledgeAutoIntervalMinutes || config.ai?.knowledge_auto_interval_minutes || '-'}m 最近${lastRefresh} 写入${knowledgeStats.autoCommitted} 主库分层 审计${knowledgeStats.auditIssues} 源状态${knowledgeStats.sourceStates}`,
         `🧠 上下文: ${aiStats.sessions}会话 队列${aiStats.queuedGroups}群 待处理${aiStats.pendingJobs} 强触发${aiStats.forcedJobs} 最老${Math.round(aiStats.oldestQueueAgeMs / 1000)}s`,

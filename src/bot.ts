@@ -8,6 +8,17 @@ type ApiCallback = {
   timer: NodeJS.Timeout;
 };
 
+type LoginInfoResponse = {
+  retcode?: number;
+  status?: string;
+  message?: string;
+  wording?: string;
+  data?: {
+    user_id?: number | string;
+    nickname?: string;
+  };
+};
+
 function readyStateName(state: number | undefined): string {
   switch (state) {
     case WebSocket.CONNECTING: return 'connecting';
@@ -180,6 +191,7 @@ export class Bot {
       this.lastDisconnectCode = code;
       this.lastDisconnectReason = reason.toString();
       this.totalDisconnects++;
+      this.markLoginDisconnected(`WebSocket 已断开 code=${code}${reason.length > 0 ? ` reason=${reason.toString()}` : ''}`);
       const connectedForMs = this.lastConnectedAt > 0 ? this.lastDisconnectedAt - this.lastConnectedAt : 0;
       const framesDuringConnection = this.framesReceived - this.framesAtConnectionOpen;
       const earlyDisconnect = code === 1006 && connectedForMs < 10000 && framesDuringConnection <= 1;
@@ -270,35 +282,44 @@ export class Bot {
     this.loginCheckInFlight = true;
     try {
       const timeoutMs = Math.max(1000, Math.min(Number(this.config.login_check_api_timeout_ms ?? 5000), 60000));
-      const res = await this.callApiAsync('get_login_info', {}, timeoutMs) as {
-        retcode?: number;
-        status?: string;
-        message?: string;
-        wording?: string;
-        data?: {
-          user_id?: number | string;
-          nickname?: string;
-        };
-      };
+      const res = await this.callApiAsync('get_login_info', {}, timeoutMs) as LoginInfoResponse;
       if (typeof res?.retcode === 'number' && res.retcode !== 0) {
         this.recordLoginCheckFailure(`retcode=${res.retcode} ${res.message || res.wording || res.status || ''}`.trim(), previousOk);
         return;
       }
 
-      const userId = Number(res?.data?.user_id || 0);
-      const nickname = String(res?.data?.nickname || '');
-      this.lastLoginOk = userId > 0 || res?.retcode === 0;
-      this.lastLoginOkAt = this.lastLoginOk ? Date.now() : this.lastLoginOkAt;
-      this.lastLoginUserId = userId || this.lastLoginUserId;
-      this.lastLoginNickname = nickname || this.lastLoginNickname;
-      this.lastLoginError = this.lastLoginOk ? '' : 'get_login_info 返回为空';
-      if (this.lastLoginOk) this.recordLoginCheckSuccess(previousOk);
-      else this.recordLoginCheckFailure(this.lastLoginError, previousOk);
+      const userId = this.parseLoginUserId(res);
+      const nickname = String(res?.data?.nickname || '').trim();
+      if (userId <= 0) {
+        this.recordLoginCheckFailure('get_login_info 返回成功但没有有效 user_id，QQ可能已下线', previousOk);
+        return;
+      }
+
+      if (this.config.bot_qq && this.config.bot_qq !== userId) {
+        this.lastLoginUserId = userId;
+        this.lastLoginNickname = nickname || this.lastLoginNickname;
+        this.recordLoginCheckFailure(`QQ登录号不匹配: config.bot_qq=${this.config.bot_qq}，NapCat实际登录=${userId}`, previousOk);
+        return;
+      }
+
+      this.lastLoginOk = true;
+      this.lastLoginOkAt = Date.now();
+      this.lastLoginUserId = userId;
+      this.lastLoginNickname = nickname;
+      this.lastLoginError = '';
+      this.recordLoginCheckSuccess(previousOk);
     } catch (err) {
       this.recordLoginCheckFailure(err instanceof Error ? err.message : String(err), previousOk);
     } finally {
       this.loginCheckInFlight = false;
     }
+  }
+
+  private parseLoginUserId(res: LoginInfoResponse | undefined): number {
+    const raw = res?.data?.user_id;
+    if (typeof raw === 'number' && Number.isFinite(raw)) return Math.floor(raw);
+    if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) return Number(raw.trim());
+    return 0;
   }
 
   private recordLoginCheckSuccess(previousOk: boolean): void {
@@ -317,6 +338,15 @@ export class Bot {
     this.loginCheckFailures++;
     if (previousOk || this.loginCheckFailures === 1 || this.loginCheckFailures % 5 === 0) {
       console.error(`[Bot] 登录态检查失败(${this.loginCheckFailures}): ${this.lastLoginError}。NapCat可能还在，但QQ可能已下线；优先去WebUI扫码/重新登录。`);
+    }
+  }
+
+  private markLoginDisconnected(message: string): void {
+    const wasOk = this.lastLoginOk;
+    this.lastLoginOk = false;
+    this.lastLoginError = message || 'WebSocket 已断开';
+    if (wasOk) {
+      console.error(`[Bot] 登录态已失效: ${this.lastLoginError}`);
     }
   }
 
@@ -365,13 +395,22 @@ export class Bot {
   }
 
   /** 发送群消息（追踪消息ID用于回复检测） */
-  sendGroupMessage(groupId: number, message: string | MessageSegment[], onMessageId?: (id: number) => void): Promise<boolean> {
+  async sendGroupMessage(groupId: number, message: string | MessageSegment[], onMessageId?: (id: number) => void): Promise<boolean> {
     this.groupSendAttempts++;
-    const sanitized = sanitizeOutgoingMessage(message);
-    const msg = typeof sanitized === 'string'
-      ? [{ type: 'text', data: { text: sanitized } }]
-      : sanitized;
+    const msg = this.normalizeOutgoingMessage(message);
+    const batches = this.splitMediaBatches(msg);
+    let sentAny = false;
+    let failed = false;
 
+    for (const batch of batches) {
+      const ok = await this.sendGroupMessageBatch(groupId, batch, onMessageId);
+      sentAny = sentAny || ok;
+      failed = failed || !ok;
+    }
+    return sentAny || !failed;
+  }
+
+  private sendGroupMessageBatch(groupId: number, msg: MessageSegment[], onMessageId?: (id: number) => void): Promise<boolean> {
     return this.callApiAsync('send_group_msg', {
       group_id: groupId,
       message: msg,
@@ -396,13 +435,22 @@ export class Bot {
   }
 
   /** 发送私聊消息 */
-  sendPrivateMessage(userId: number, message: string | MessageSegment[], onMessageId?: (id: number) => void): Promise<boolean> {
+  async sendPrivateMessage(userId: number, message: string | MessageSegment[], onMessageId?: (id: number) => void): Promise<boolean> {
     this.privateSendAttempts++;
-    const sanitized = sanitizeOutgoingMessage(message);
-    const msg = typeof sanitized === 'string'
-      ? [{ type: 'text', data: { text: sanitized } }]
-      : sanitized;
+    const msg = this.normalizeOutgoingMessage(message);
+    const batches = this.splitMediaBatches(msg);
+    let sentAny = false;
+    let failed = false;
 
+    for (const batch of batches) {
+      const ok = await this.sendPrivateMessageBatch(userId, batch, onMessageId);
+      sentAny = sentAny || ok;
+      failed = failed || !ok;
+    }
+    return sentAny || !failed;
+  }
+
+  private sendPrivateMessageBatch(userId: number, msg: MessageSegment[], onMessageId?: (id: number) => void): Promise<boolean> {
     return this.callApiAsync('send_private_msg', {
       user_id: userId,
       message: msg,
@@ -424,6 +472,45 @@ export class Bot {
       console.error(`[Bot] 发送私聊消息异常: QQ${userId} ${errMsg}`);
       return false;
     });
+  }
+
+  private normalizeOutgoingMessage(message: string | MessageSegment[]): MessageSegment[] {
+    const sanitized = sanitizeOutgoingMessage(message);
+    if (typeof sanitized === 'string') {
+      return [{ type: 'text', data: { text: sanitized } }];
+    }
+    const msg = sanitized.filter((seg) => {
+      if (seg.type !== 'text') return true;
+      return seg.data.text.length > 0;
+    });
+    return msg.length > 0 ? msg : [{ type: 'text', data: { text: '我在' } }];
+  }
+
+  private splitMediaBatches(message: MessageSegment[]): MessageSegment[][] {
+    if (message.length <= 1 || !message.some((seg) => seg.type === 'image' || seg.type === 'record')) {
+      return [message];
+    }
+
+    const batches: MessageSegment[][] = [];
+    let current: MessageSegment[] = [];
+
+    const flush = (): void => {
+      if (current.length > 0) {
+        batches.push(current);
+        current = [];
+      }
+    };
+
+    for (const seg of message) {
+      if (seg.type === 'image' || seg.type === 'record') {
+        flush();
+        batches.push([seg]);
+        continue;
+      }
+      current.push(seg);
+    }
+    flush();
+    return batches.length > 0 ? batches : [message];
   }
 
   /** 调用 OneBot API（带回调） */

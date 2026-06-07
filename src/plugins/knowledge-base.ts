@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { getKnowledgeDbStats, searchKnowledgeDb, syncKnowledgeDb } from './knowledge-db';
 
 interface KnowledgeSection {
   title: string;
@@ -392,6 +393,7 @@ function loadKnowledge(): void {
     cachedFullText = fs.readFileSync(DEFAULT_KNOWLEDGE_FILE, 'utf-8');
     cachedSections = parseMarkdown(cachedFullText);
     cachedMtime = stat.mtimeMs;
+    syncKnowledgeDb(cachedSections, stat.mtimeMs);
     console.log(`[Knowledge] 加载 ${cachedSections.length} 个知识库分块`);
   } catch (err) {
     cachedFullText = '';
@@ -546,10 +548,17 @@ export function getKnowledgeStats(): {
   batches: number;
   rollbackableBatches: number;
   sourceStates: number;
+  dbMode: string;
+  dbSections: number;
+  dbQueries: number;
+  dbHits: number;
+  dbMisses: number;
+  dbLastError: string;
 } {
   loadKnowledge();
   const batches = listKnowledgeBatches(100);
   const sourceStates = Object.keys(readSourceState()).length;
+  const dbStats = getKnowledgeDbStats();
   return {
     sections: cachedSections.length,
     chars: cachedFullText.length,
@@ -568,6 +577,12 @@ export function getKnowledgeStats(): {
     batches: batches.length,
     rollbackableBatches: batches.filter((batch) => batch.committed > batch.rolledBack).length,
     sourceStates,
+    dbMode: dbStats.mode,
+    dbSections: dbStats.sections,
+    dbQueries: dbStats.queries,
+    dbHits: dbStats.hits,
+    dbMisses: dbStats.misses,
+    dbLastError: dbStats.lastError,
   };
 }
 
@@ -588,16 +603,23 @@ export function searchKnowledge(query: string, maxResults: number = 4, maxExcerp
     return [];
   }
 
-  const scored = cachedSections
-    .map((section) => ({ section, score: scoreSection(section, query) }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxResults)
-    .map(({ section, score }) => ({
+  const dbResults = searchKnowledgeDb(query, Math.max(maxResults, 8));
+  const scored = dbResults.length > 0
+    ? dbResults.slice(0, maxResults).map((section) => ({
       title: section.title,
       excerpt: excerpt(section.content, maxExcerptChars),
-      score,
-    }));
+      score: section.dbScore,
+    }))
+    : cachedSections
+      .map((section) => ({ section, score: scoreSection(section, query) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxResults)
+      .map(({ section, score }) => ({
+        title: section.title,
+        excerpt: excerpt(section.content, maxExcerptChars),
+        score,
+      }));
 
   if (scored.length > 0) searchHits++;
   else searchMisses++;
@@ -611,10 +633,22 @@ export function selectKnowledge(text: string, maxChars: number = 1800): string {
     return '';
   }
 
-  const scored = cachedSections
-    .map((section) => ({ section, score: scoreSection(section, text) }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score);
+  const scored = searchKnowledgeDb(text, 8)
+    .map((section) => ({
+      section: {
+        title: section.title,
+        content: section.content,
+        keywords: section.keywords,
+      },
+      score: section.dbScore,
+    }));
+
+  if (scored.length === 0) {
+    scored.push(...cachedSections
+      .map((section) => ({ section, score: scoreSection(section, text) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score));
+  }
 
   if (scored.length === 0 && isKnowledgeTopic(text)) {
     scored.push(...cachedSections.slice(0, 3).map((section) => ({ section, score: 1 })));
