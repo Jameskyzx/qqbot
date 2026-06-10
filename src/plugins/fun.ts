@@ -1659,6 +1659,14 @@ function isCsPlayerStatusRequest(command: string | null, args: string[], rawText
   return /^(?:\/)?(?:csplayer|每日选手|今日选手|抽选手)(?:状态|status)$/.test(normalizeDrawText(rawText));
 }
 
+function isDailyImageAuditRequest(command: string | null, args: string[], rawText: string): boolean {
+  const first = (args[0] || '').toLowerCase();
+  if (['dailyimage', 'dailyimages', 'dailyimg', '每日图片', '图片池'].includes(command || '')) {
+    return !first || ['audit', 'status', 'check', '审计', '状态', '检查'].includes(first);
+  }
+  return /^(?:\/)?(?:dailyimage|dailyimages|dailyimg|每日图片|图片池)(?:audit|status|check|审计|状态|检查)?$/.test(normalizeDrawText(rawText));
+}
+
 function isCsImageCommand(command: string | null, rawText: string): boolean {
   if (['csimage', 'csimg', 'cs图', '图片测试'].includes(command || '')) return true;
   return /^(?:\/)?(?:csimage|csimg|cs图|图片测试)/.test(normalizeDrawText(rawText));
@@ -2291,13 +2299,7 @@ function knifeSkinFileCandidates(knife: KnifeCard, skin: KnifeSkin): string[] {
 }
 
 async function buildKnifeImageCandidates(knife: KnifeCard, skin: KnifeSkin, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
-  const candidateUrls: ImageCandidate[] = dailyBeautyCandidatesFor(
-    'knife',
-    `${knife.name} ${skin.name}`,
-    [knife.key, knife.name, ...knife.aliases, skin.key, skin.name, `${knife.name} ${skin.name}`, `${knife.name} | ${skin.name}`],
-    userId,
-    scopeId,
-  );
+  const candidateUrls: ImageCandidate[] = dailyBeautyKnifeCandidates(knife, skin, userId, scopeId);
   try {
     const skinUrl = await Promise.race([
       csgoSkinImageResolver(knife.name, skin.name),
@@ -2529,8 +2531,26 @@ function dailyBeautyManifestImagesFor(kind: string, values: unknown[]): Bestdori
   return preferBeautyManifestImages(matches);
 }
 
-function dailyBeautyCandidatesFor(kind: string, label: string, values: unknown[], userId: number, scopeId: number, limit = DAILY_IMAGE_CANDIDATE_LIMIT): ImageCandidate[] {
-  return rotateManifestCards(dailyBeautyManifestImagesFor(kind, values), `daily_beauty_${kind}_${compactManifestValue(label)}`, userId, scopeId, limit)
+function manifestValueMatches(cardValues: string[], keys: unknown[]): boolean {
+  const normalizedKeys = keys.map(compactManifestValue).filter(Boolean);
+  if (normalizedKeys.length === 0) return false;
+  return cardValues.some((value) => normalizedKeys.some((key) => value === key || value.includes(key) || key.includes(value)));
+}
+
+function dailyBeautyManifestImagesForPair(kind: string, firstValues: unknown[], secondValues: unknown[]): BestdoriCardImage[] {
+  const firstKeys = firstValues.map(compactManifestValue).filter(Boolean);
+  const secondKeys = secondValues.map(compactManifestValue).filter(Boolean);
+  if (firstKeys.length === 0 || secondKeys.length === 0) return [];
+  const matches = loadDailyBeautyImages().filter((card) => {
+    if (!manifestKindMatches(kind, card)) return false;
+    const cardValues = manifestSearchValues(card);
+    return manifestValueMatches(cardValues, firstKeys) && manifestValueMatches(cardValues, secondKeys);
+  });
+  return preferBeautyManifestImages(matches);
+}
+
+function dailyBeautyCandidatesFromCards(kind: string, label: string, cards: BestdoriCardImage[], userId: number, scopeId: number, limit = DAILY_IMAGE_CANDIDATE_LIMIT): ImageCandidate[] {
+  return rotateManifestCards(cards, `daily_beauty_${kind}_${compactManifestValue(label)}`, userId, scopeId, limit)
     .filter((card) => card.url)
     .map((card, index): ImageCandidate => ({
       url: String(card.url),
@@ -2539,8 +2559,32 @@ function dailyBeautyCandidatesFor(kind: string, label: string, values: unknown[]
     }));
 }
 
+function dailyBeautyCandidatesFor(kind: string, label: string, values: unknown[], userId: number, scopeId: number, limit = DAILY_IMAGE_CANDIDATE_LIMIT): ImageCandidate[] {
+  return dailyBeautyCandidatesFromCards(kind, label, dailyBeautyManifestImagesFor(kind, values), userId, scopeId, limit);
+}
+
 function dailyBeautyImageCountFor(kind: string, values: unknown[]): number {
   return dailyBeautyManifestImagesFor(kind, values).length;
+}
+
+function dailyBeautySkinImagesFor(skin: SkinCard): BestdoriCardImage[] {
+  return dailyBeautyManifestImagesForPair('skin', [skin.weapon], [skin.key, skin.name, `${skin.weapon} ${skin.name}`, `${skin.weapon} | ${skin.name}`]);
+}
+
+function dailyBeautyKnifeImagesFor(knife: KnifeCard, skin: KnifeSkin): BestdoriCardImage[] {
+  return dailyBeautyManifestImagesForPair(
+    'knife',
+    [knife.key, knife.name, ...knife.aliases],
+    [skin.key, skin.name, `${knife.name} ${skin.name}`, `${knife.name} | ${skin.name}`],
+  );
+}
+
+function dailyBeautySkinCandidates(skin: SkinCard, userId: number, scopeId: number): ImageCandidate[] {
+  return dailyBeautyCandidatesFromCards('skin', `${skin.weapon} ${skin.name}`, dailyBeautySkinImagesFor(skin), userId, scopeId);
+}
+
+function dailyBeautyKnifeCandidates(knife: KnifeCard, skin: KnifeSkin, userId: number, scopeId: number): ImageCandidate[] {
+  return dailyBeautyCandidatesFromCards('knife', `${knife.name} ${skin.name}`, dailyBeautyKnifeImagesFor(knife, skin), userId, scopeId);
 }
 
 function formatBeautyCoverage(name: string, count: number): string {
@@ -2571,12 +2615,12 @@ function currentDailyBeautyCoverageLines(userId: number, scopeId: number): strin
     formatBeautyCoverage('战队', dailyBeautyImageCountFor('team', dailyCardManifestSearchValues(team))),
     formatBeautyCoverage('地图', dailyBeautyImageCountFor('map', dailyCardManifestSearchValues(map))),
     formatBeautyCoverage('武器', dailyBeautyImageCountFor('weapon', dailyCardManifestSearchValues(weapon))),
-    formatBeautyCoverage('皮肤', dailyBeautyImageCountFor('skin', dailyCardManifestSearchValues(localSkinCard(skin)))),
+    formatBeautyCoverage('皮肤', dailyBeautySkinImagesFor(skin).length),
     formatBeautyCoverage('定位', dailyBeautyImageCountFor('role', dailyCardManifestSearchValues(role))),
     formatBeautyCoverage('道具', dailyBeautyImageCountFor('utility', dailyCardManifestSearchValues(utility))),
     formatBeautyCoverage('战术', dailyBeautyImageCountFor('tactic', dailyCardManifestSearchValues(tactic))),
     formatBeautyCoverage('残局', dailyBeautyImageCountFor('clutch', dailyCardManifestSearchValues(clutch))),
-    formatBeautyCoverage('刀皮', dailyBeautyImageCountFor('knife', [knife.key, knife.name, ...knife.aliases, knifeSkin.key, knifeSkin.name, `${knife.name} ${knifeSkin.name}`, `${knife.name} | ${knifeSkin.name}`])),
+    formatBeautyCoverage('刀皮', dailyBeautyKnifeImagesFor(knife, knifeSkin).length),
     formatBeautyCoverage('木柜子', dailyBeautyImageCountFor('mokoko', [mokoko.key, mokoko.name, mokoko.band, mokoko.role, mokoko.page])),
     formatBeautyCoverage('原神', dailyBeautyImageCountFor('genshin', [genshin.key, genshin.name, genshin.page, genshin.tag])),
     formatBeautyCoverage('冷知识', dailyBeautyImageCountFor('fact', [fact.key, fact.title, fact.name, fact.subtitle, fact.body, fact.line])),
@@ -2589,6 +2633,62 @@ function currentDailyBeautyCoverageLines(userId: number, scopeId: number): strin
     `当前签位美图覆盖: ${rows.join(' / ')}`,
     '图片隔离: daily-beauty清单必须写kind和对象标识，不能跨功能混用',
   ];
+}
+
+function dailyBeautyAuditRows(): Array<{ kind: string; label: string; count: number; ok: boolean }> {
+  const rows: Array<{ kind: string; label: string; count: number; ok: boolean }> = [];
+  const push = (kind: string, label: string, count: number) => rows.push({
+    kind,
+    label,
+    count,
+    ok: count >= DAILY_BEAUTY_MIN_IMAGES_PER_ITEM,
+  });
+
+  for (const player of csPlayers) push('player', player.nick, dailyBeautyImageCountFor('player', [player.nick, player.name, ...(player.aliases || [])]));
+  for (const team of csTeams) push('team', team.name, dailyBeautyImageCountFor('team', dailyCardManifestSearchValues(team)));
+  for (const map of csMaps) push('map', map.name, dailyBeautyImageCountFor('map', dailyCardManifestSearchValues(map)));
+  for (const weapon of csWeapons) push('weapon', weapon.name, dailyBeautyImageCountFor('weapon', dailyCardManifestSearchValues(weapon)));
+  for (const skin of csSkins) push('skin', `${skin.weapon} | ${skin.name}`, dailyBeautySkinImagesFor(skin).length);
+  for (const role of csRoles) push('role', role.name, dailyBeautyImageCountFor('role', dailyCardManifestSearchValues(role)));
+  for (const utility of csUtilities) push('utility', utility.name, dailyBeautyImageCountFor('utility', dailyCardManifestSearchValues(utility)));
+  for (const tactic of csTactics) push('tactic', tactic.name, dailyBeautyImageCountFor('tactic', dailyCardManifestSearchValues(tactic)));
+  for (const clutch of csClutches) push('clutch', clutch.name, dailyBeautyImageCountFor('clutch', dailyCardManifestSearchValues(clutch)));
+  for (const knife of csKnives) {
+    for (const skin of knifeSkinPoolFor(knife)) {
+      push('knife', `${knife.name} | ${skin.name}`, dailyBeautyKnifeImagesFor(knife, skin).length);
+    }
+  }
+  for (const character of dailyCharacters) push('mokoko', character.name, dailyBeautyImageCountFor('mokoko', [character.key, character.name, character.band, character.role, character.page]));
+  for (const character of dailyGenshinCharacters) push('genshin', character.name, dailyBeautyImageCountFor('genshin', [character.key, character.name, character.page, character.tag]));
+  for (const fact of dailyFacts) push('fact', fact.name, dailyBeautyImageCountFor('fact', [fact.key, fact.title, fact.name, fact.subtitle, fact.body, fact.line]));
+  for (const book of dailyBookExcerpts) push('book', book.name, dailyBeautyImageCountFor('book', [book.key, book.title, book.name, book.subtitle, book.body, book.line]));
+  for (const poem of dailyPoems) push('poem', poem.name, dailyBeautyImageCountFor('poem', [poem.key, poem.title, poem.name, poem.subtitle, poem.body, poem.line]));
+  for (const weapon of duelWeapons) push('duel', weapon.name, dailyBeautyImageCountFor('duel', [weapon.key, weapon.name, weapon.style]));
+  return rows;
+}
+
+function buildDailyImageAuditReport(limit: number = 30): string {
+  const rows = dailyBeautyAuditRows();
+  const missing = rows.filter((row) => !row.ok).sort((a, b) => a.count - b.count || a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label));
+  const okCount = rows.length - missing.length;
+  const shown = missing.slice(0, Math.max(1, Math.min(limit, 80)));
+  const lines = [
+    '每日图片池全量审计',
+    `标准: 每个具体对象${DAILY_BEAUTY_MIN_IMAGES_PER_ITEM}张起，不能混池`,
+    `通用每日美图: ${loadDailyBeautyImages().length}张`,
+    `达标: ${okCount}/${rows.length}`,
+    `未达标: ${missing.length}`,
+    '隔离规则: daily-beauty必须写kind和对象标识；刀皮/枪皮按武器+皮肤成对匹配',
+    '套餐说明: 今日CS套餐使用战队图+枪皮图，分别按team/skin审计',
+  ];
+  if (missing.length > 0) {
+    lines.push(`未达标前${shown.length}项:`);
+    for (const row of shown) lines.push(`${row.kind} ${row.label}: ${row.count}/${DAILY_BEAUTY_MIN_IMAGES_PER_ITEM}`);
+    if (missing.length > shown.length) lines.push(`还有${missing.length - shown.length}项未展示，可补齐清单后再查。`);
+  } else {
+    lines.push('全部对象都达到200张起步。');
+  }
+  return lines.join('\n');
 }
 
 function bestdoriCardsForCharacter(character: DailyCharacter): BestdoriCardImage[] {
@@ -2671,8 +2771,11 @@ function dailyCardManifestSearchValues(card: DailyCard): unknown[] {
 }
 
 async function buildDailyCardImageCandidates(kind: string, card: DailyCard, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
+  const beautyCandidates = kind === 'skin' && isSkinCard(card)
+    ? dailyBeautySkinCandidates(card, userId, scopeId)
+    : dailyBeautyCandidatesFor(kind, card.name, dailyCardManifestSearchValues(card), userId, scopeId);
   return [
-    ...dailyBeautyCandidatesFor(kind, card.name, dailyCardManifestSearchValues(card), userId, scopeId),
+    ...beautyCandidates,
     ...await buildImageCandidates(card.image, undefined, card),
   ];
 }
@@ -3766,6 +3869,12 @@ export const funPlugin: Plugin = {
     }
 
 
+    if (isDailyImageAuditRequest(ctx.command, ctx.args, raw)) {
+      const limit = Math.max(1, Math.min(parseInt(ctx.args.find((arg) => /^\d+$/.test(arg)) || '30', 10) || 30, 80));
+      ctx.reply(buildDailyImageAuditReport(limit));
+      return true;
+    }
+
     if (isCsPlayerStatusRequest(ctx.command, ctx.args, raw)) {
       const stats = getCacheStats();
       ctx.reply([
@@ -4041,6 +4150,7 @@ export const __test = {
   dailyScoreForKind,
   isCsPlayerDrawRequest,
   isCsPlayerStatusRequest,
+  isDailyImageAuditRequest,
   isDailyKnifeRequest,
   isDailyMokokoRequest,
   isDailyGenshinRequest,
@@ -4083,6 +4193,8 @@ export const __test = {
   buildDailyDuelMessage,
   buildLoadoutMessage,
   buildCsTrainingMessage,
+  dailyBeautyAuditRows,
+  buildDailyImageAuditReport,
   dailyCsQuizFor,
   buildCsQuizMessage,
   __setTrainingStorePathForTests: (filepath?: string) => {

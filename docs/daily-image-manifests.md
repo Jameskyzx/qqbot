@@ -75,4 +75,6 @@ If multiple images match the same draw, the bot rotates up to 200 candidates by 
 
 Use `/csplayer status` on the VPS to see the current draw's per-item beauty coverage, including whether each selected item has reached `200/200OK`.
 
+Use `/dailyimage audit` for a full repository-wide audit. It checks every CS player, team, map, weapon, gun skin, role, utility, tactic, clutch, compatible knife+skin pair, Mokoko character, Genshin character, cold fact, book excerpt, poem, and duel weapon against the 200-image minimum.
+
 This repo intentionally does not include a website crawler. Use images and URLs that you are authorized to store in these local manifest files.

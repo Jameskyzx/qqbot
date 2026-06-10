@@ -5224,6 +5224,8 @@ async function testFunCsPlayer() {
     const player = funTest.dailyPlayerFor(61, 6657);
     const genshin = funTest.dailyGenshinFor(61, 6657);
     const team = funTest.dailyCardFor('csteam', 61, 6657, funTest.csTeams);
+    const weapon = funTest.dailyCardFor('csweapon', 61, 6657, funTest.csWeapons);
+    const csSkin = funTest.dailySkinForWeapon(weapon, 61, 6657);
     const knife = funTest.dailyKnifeFor(61, 6657);
     const knifeSkin = funTest.dailyKnifeSkinFor(61, 6657, knife);
     const tomori = funTest.dailyCharacters.find((item) => item.key === 'tomori');
@@ -5248,6 +5250,15 @@ async function testFunCsPlayer() {
         title: `team key visual ${index + 1}`,
         tags: ['keyvisual', 'stage', 'poster'],
         url: `https://example.com/beauty-team-${index + 1}.jpg`,
+      })),
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'skin',
+        weapon: csSkin.weapon,
+        skin: csSkin.name,
+        name: csSkin.name,
+        title: `skin showcase ${index + 1}`,
+        tags: ['showcase', 'inspect', 'skin'],
+        url: `https://example.com/beauty-skin-${index + 1}.jpg`,
       })),
       ...Array.from({ length: 205 }, (_, index) => ({
         kind: 'knife',
@@ -5372,6 +5383,8 @@ async function testFunCsPlayer() {
     assert.ok(!playerManifestCandidates[0].label.toLowerCase().includes('headshot'), 'daily CS player should not put headshot-tagged images first when beauty images exist');
     const teamBeautyCandidates = await funTest.buildDailyCardImageCandidates('team', team, 61, 6657);
     assert.ok(teamBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily team should prefer 200+-image authorized beauty pools');
+    const skinBeautyCandidates = await funTest.buildDailyCardImageCandidates('skin', csSkin, 61, 6657);
+    assert.ok(skinBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily skin should prefer 200+-image authorized weapon+skin pools');
     const knifeBeautyCandidates = await funTest.buildKnifeImageCandidates(knife, knifeSkin, 61, 6657);
     assert.ok(knifeBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily knife should prefer 200+-image authorized inspect/showcase pools');
     const genshinManifestCandidates = await funTest.buildGenshinImageCandidates(genshin, 61, 6657);
@@ -5422,6 +5435,13 @@ async function testFunCsPlayer() {
     assert.strictEqual(funTest.isDailyBookRequest('book', '/book'), true, '/book should trigger daily book');
     assert.strictEqual(funTest.isDailyPoemRequest('poem', '/poem'), true, '/poem should trigger daily poem');
     assert.strictEqual(funTest.isDailyDuelRequest('duel', '/duel'), true, '/duel should trigger daily duel');
+    assert.strictEqual(funTest.isDailyImageAuditRequest('dailyimage', ['audit'], '/dailyimage audit'), true, '/dailyimage audit should trigger image audit');
+    assert.strictEqual(funTest.isDailyImageAuditRequest(null, [], '每日图片审计'), true, 'natural daily image audit should trigger');
+    const imageAuditReport = funTest.buildDailyImageAuditReport(5);
+    assert.ok(imageAuditReport.includes('每日图片池全量审计'), 'daily image audit should render title');
+    assert.ok(imageAuditReport.includes('每个具体对象200张起'), 'daily image audit should expose 200-image rule');
+    assert.ok(imageAuditReport.includes('隔离规则'), 'daily image audit should expose non-mixing rule');
+    assert.ok(imageAuditReport.includes('未达标'), 'daily image audit should expose missing coverage count');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天打什么位', 'role'), true, 'fuzzy daily role should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天丢什么道具', 'utility'), true, 'fuzzy daily utility should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天打什么战术', 'tactic'), true, 'fuzzy daily tactic should trigger');
@@ -5538,6 +5558,7 @@ async function testFunCsPlayer() {
     assert.ok(firstText(sent[1].message).includes('美图最低标准: 每个对象200张起'), 'csplayer status should expose the 200-image per-item minimum');
     assert.ok(firstText(sent[1].message).includes('图片隔离:'), 'csplayer status should explain that generic beauty images are not mixed across objects');
     assert.ok(firstText(sent[1].message).includes('选手205/200OK'), 'csplayer status should show selected player beauty pool coverage');
+    assert.ok(firstText(sent[1].message).includes('皮肤205/200OK'), 'csplayer status should show selected weapon skin beauty pool coverage');
     assert.ok(firstText(sent[1].message).includes('刀皮205/200OK'), 'csplayer status should show selected knife beauty pool coverage');
     assert.ok(firstText(sent[1].message).includes('冷知识/书摘/古诗词:'), 'csplayer status should expose expanded text pools');
 
@@ -5733,6 +5754,12 @@ async function testFunCsPlayer() {
   await waitFor(() => sent.length === 37, 'daily duel slash command');
   assert.ok(firstText(sent[36].message).includes('每日决战紫禁之巅'), '/duel should include title');
   assert.ok(sent[36].message.some((seg) => seg.type === 'image'), '/duel should include image');
+
+  handler.handleEvent(makePlainEvent(637, 93, '/dailyimage audit 5'));
+  await waitFor(() => sent.length === 38, 'daily image audit command');
+  assert.ok(firstText(sent[37].message).includes('每日图片池全量审计'), '/dailyimage audit should render full audit');
+  assert.ok(firstText(sent[37].message).includes('未达标'), '/dailyimage audit should list missing coverage summary');
+  assert.ok(firstText(sent[37].message).includes('武器+皮肤成对匹配'), '/dailyimage audit should explain pair matching for skins');
   } finally {
     funTest.__setImageResolverForTests();
     funTest.__setImageSourceResolversForTests();
