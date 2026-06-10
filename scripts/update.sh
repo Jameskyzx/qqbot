@@ -3,6 +3,7 @@
 # 用法:
 #   bash scripts/update.sh
 #   bash scripts/update.sh --hard
+#   bash scripts/update.sh --strict-images
 #   npm run update
 
 set -euo pipefail
@@ -11,7 +12,9 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 MODE="safe"
-RUN_SMOKE="${WANJIER_UPDATE_SMOKE:-0}"
+RUN_SMOKE="${WANJIER_UPDATE_SMOKE:-1}"
+RUN_DAILY_IMAGE_AUDIT="${WANJIER_UPDATE_DAILY_IMAGE_AUDIT:-1}"
+STRICT_DAILY_IMAGES="${WANJIER_DAILY_IMAGE_AUDIT_STRICT:-0}"
 for arg in "$@"; do
   case "$arg" in
     --hard|--force)
@@ -23,10 +26,21 @@ for arg in "$@"; do
     --no-smoke)
       RUN_SMOKE="0"
       ;;
+    --image-audit)
+      RUN_DAILY_IMAGE_AUDIT="1"
+      ;;
+    --no-image-audit)
+      RUN_DAILY_IMAGE_AUDIT="0"
+      ;;
+    --strict-images)
+      RUN_DAILY_IMAGE_AUDIT="1"
+      STRICT_DAILY_IMAGES="1"
+      ;;
     -h|--help)
-      echo "用法: bash scripts/update.sh [--hard] [--smoke|--no-smoke]"
+      echo "用法: bash scripts/update.sh [--hard] [--smoke|--no-smoke] [--image-audit|--no-image-audit] [--strict-images]"
       echo "  默认: 安全 ff-only 拉取，不覆盖本地改动"
       echo "  --hard: 备份配置后强制 reset 到 origin/main，用于 VPS 明确对齐远程"
+      echo "  --strict-images: 每日图片池未达到每对象200张时终止更新"
       exit 0
       ;;
   esac
@@ -40,6 +54,8 @@ echo "========================================="
 echo "  玩机器 Bot VPS 更新"
 echo "========================================="
 echo "模式: $MODE"
+echo "完整smoke: $RUN_SMOKE"
+echo "每日图片审计: $RUN_DAILY_IMAGE_AUDIT strict=$STRICT_DAILY_IMAGES"
 echo "目标分支: origin/main"
 echo "当前目录: $ROOT_DIR"
 echo "更新前提交: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -96,13 +112,13 @@ backup_file() {
   fi
 }
 
-echo "[1/8] 备份配置..."
+echo "[1/9] 备份配置..."
 backup_file "config.json"
 backup_file ".env"
 backup_file "voice_sample.mp3"
 cp -f scripts/update.sh "$BACKUP_DIR/update.sh.bak" 2>/dev/null || true
 
-echo "[2/8] 拉取代码前检查工作区..."
+echo "[2/9] 拉取代码前检查工作区..."
 if ! git diff --quiet -- . ':(exclude)config.json' ':(exclude).env' ':(exclude)voice_sample.mp3'; then
   if [ "$MODE" = "hard" ]; then
     echo "  检测到本地改动，hard模式会强制对齐远程；配置文件已备份。"
@@ -112,7 +128,7 @@ if ! git diff --quiet -- . ':(exclude)config.json' ':(exclude).env' ':(exclude)v
   fi
 fi
 
-echo "[3/8] 拉取远端更新..."
+echo "[3/9] 拉取远端更新..."
 git fetch origin
 REMOTE_HEAD="$(git rev-parse --short origin/main)"
 LOCAL_HEAD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -129,7 +145,7 @@ fi
 AFTER_HEAD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "  更新后提交: $(git log --oneline -1)"
 
-echo "[4/8] 校验运行配置..."
+echo "[4/9] 校验运行配置..."
 if [ ! -f config.json ]; then
   if [ -f config.example.json ]; then
     cp config.example.json config.json
@@ -148,26 +164,35 @@ if [ -f scripts/sync-config.js ]; then
 fi
 load_env_file
 
-echo "[5/8] 安装依赖..."
+echo "[5/9] 安装依赖..."
 npm ci
 
-echo "[6/8] 构建与自检..."
+echo "[6/9] 构建与自检..."
 npm run build
 assert_chat_api_ready
 npm run doctor
 if npm run | grep -q "data:test"; then
   npm run data:test
 fi
+if [ "$RUN_DAILY_IMAGE_AUDIT" = "1" ]; then
+  if [ "$STRICT_DAILY_IMAGES" = "1" ]; then
+    node scripts/daily-image-audit.js --limit 60 --strict
+  else
+    node scripts/daily-image-audit.js --limit 60 || true
+  fi
+else
+  echo "  跳过每日图片池审计（如需检查，运行 bash scripts/update.sh --image-audit）"
+fi
 if [ "$RUN_SMOKE" = "1" ]; then
   npm run smoke
 else
-  echo "  跳过 npm run smoke（如需完整本地模拟，运行 WANJIER_UPDATE_SMOKE=1 bash scripts/update.sh 或加 --smoke）"
+  echo "  跳过 npm run smoke（如需完整本地模拟，运行 bash scripts/update.sh --smoke）"
 fi
 
-echo "[7/8] 准备运行目录..."
+echo "[7/9] 准备运行目录..."
 mkdir -p logs voice_cache image_cache context_store stt_cache search_cache knowledge/db
 
-echo "[8/8] 重启服务..."
+echo "[8/9] 重启服务..."
 if pm2 list 2>/dev/null | grep -q "wanjier"; then
   pm2 restart wanjier --update-env
 else
@@ -178,6 +203,12 @@ else
   fi
 fi
 pm2 save 2>/dev/null || true
+
+echo "[9/9] 更新后提示..."
+echo "  每日功能验收: /help daily"
+echo "  当前签位图片池: /csplayer status"
+echo "  全量图片池审计: /dailyimage audit"
+echo "  VPS命令行审计: npm run daily:image:audit"
 
 echo "========================================="
 echo "  ✅ 更新完成"

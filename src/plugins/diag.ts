@@ -129,7 +129,7 @@ export const diagPlugin: Plugin = {
       lines.push('');
       lines.push('--- 每日CS / 多模态 ---');
       lines.push(`每日CS池: 选手${funTest.csPlayers.length} 队伍${funTest.csTeams.length} 地图${funTest.csMaps.length} 武器${funTest.csWeapons.length} 定位${funTest.csRoles.length} 道具${funTest.csUtilities.length} 战术${funTest.csTactics.length} 残局${funTest.csClutches.length}`);
-      lines.push(`真实图策略: Liquipedia/Fandom/Wikimedia优先，本地签位卡兜底；完整实测用 /csimage test all`);
+      lines.push(`每日图片: 专属图片池优先，其次公开图片接口，最后给当天签位图；完整实测用 /csimage test all`);
       lines.push(`Liquipedia图解析: 缓存${liqStats.entries} 限流${liqStats.rateLimited ? 'yes' : 'no'}`);
       lines.push(`图片缓存: ${imageStats.count}/${imageStats.maxFiles}张 ${imageStats.sizeMB}/${imageStats.maxSizeMB}MB 命中${imageStats.hits}/${imageStats.misses} 失败${imageStats.downloadFailures} 飞行${imageStats.inFlight}`);
       if (imageStats.lastError) lines.push(`最近图片错误: ${imageStats.lastError}`);

@@ -28,7 +28,7 @@ export function buildHelpTopic(topicRaw: string): string {
   if (['daily', 'day', '每日', '今日', 'fun', '娱乐', '好玩', '小考', '训练'].includes(topic)) {
     return [
       '每日CS/好玩功能帮助',
-      '/csplayer - 每日CS选手，带真实图源优先兜底',
+      '/csplayer - 每日CS选手，优先发专属图片池',
       '/csteam /csmap /csweapon /csskin /csrole - 队伍/地图/完整枪械池/Steam饰品图/定位',
       '/csutility /cstactic /csclutch /csloadout - 道具/战术/残局/套餐',
       '/csknife 或 今日发刀/发刀/.d - 每日刀具，覆盖全部刀型和常见刀皮，优先发专属美图池',

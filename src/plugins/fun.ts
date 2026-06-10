@@ -12,6 +12,14 @@ import { getCsgoSkinsApiStats, resolveCsgoSkinImage } from './csgo-skins-api';
 import { buildDailyCardImageDataUrl } from './daily-card-image';
 import { getCsPredictTrainingHint } from './cs-predict';
 import { buildUserProfileDailyCsHint } from './user-profile';
+import {
+  type AuthorizedImageManifestCard,
+  clearImageManifestCache,
+  compactManifestValue,
+  getImageManifestCacheStats,
+  loadImageManifest,
+  loadImageManifestByKinds,
+} from './authorized-image-manifest';
 
 /** 随机选择 */
 function randomPick(items: string[]): string {
@@ -122,27 +130,7 @@ interface DailyDuelWeapon {
   fandomFile?: string;
 }
 
-interface BestdoriCardImage {
-  kind?: string;
-  category?: string;
-  itemKey?: string;
-  itemName?: string;
-  characterKey?: string;
-  characterName?: string;
-  key?: string;
-  name?: string;
-  nick?: string;
-  weapon?: string;
-  skin?: string;
-  style?: string;
-  quality?: string;
-  tags?: string[] | string;
-  priority?: number;
-  url?: string;
-  urls?: string[];
-  images?: string[];
-  title?: string;
-}
+type BestdoriCardImage = AuthorizedImageManifestCard;
 
 interface ImageCandidate {
   url: string;
@@ -1606,8 +1594,8 @@ function dailyCardImagePlan(card: DailyCard): string {
   if (card.playerImageFallback) parts.push(`代表选手${card.playerImageFallback}`);
   if (card.image) parts.push('静态真实图URL');
   return parts.length > 0
-    ? `图源：${parts.join(' -> ')}；全失败才本地签位卡`
-    : '图源：Counter-Strike Wiki/Fandom；全失败才本地签位卡';
+    ? `图片路径：${parts.join(' -> ')}；都拿不到时给备用签位图`
+    : '图片路径：Counter-Strike Wiki/Fandom；都拿不到时给备用签位图';
 }
 
 function playerRoleAdvice(player: CSPlayer, score?: number): { style: string; avoid: string } {
@@ -2050,7 +2038,7 @@ async function probeImageCandidates(title: string, candidates: ImageCandidate[],
     lines.push(`FAIL ${candidate.source} ${candidate.label}`);
   }
   if (!image && fallbackCard) {
-    lines.push('LOCAL fallback 本地签位卡兜底；这不是外部真实图。');
+    lines.push('备用签位图已生成。');
     image = localDailyCardImage(fallbackCard, score);
   }
   const stats = getCacheStats();
@@ -2222,7 +2210,7 @@ async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fal
     if (dataUrl) {
       if (candidate.label.includes('/team-dynamic')) console.log(`[fun] ${fallbackCard?.name} 用Liquipedia队伍图成功`);
       else if (candidate.label.includes('/fandom-file')) console.log(`[fun] ${fallbackCard?.name} 用Fandom图片成功`);
-      else if (candidate.label.includes('-fallback-')) console.log(`[fun] ${fallbackCard?.name} 用代表选手真实图兜底成功`);
+      else if (candidate.label.includes('-fallback-')) console.log(`[fun] ${fallbackCard?.name} 用代表选手图成功`);
       else if (candidate.label.includes('/player-dynamic')) console.log(`[fun] ${fallbackPlayerNick} 用Liquipedia动态查图成功`);
       return [imageDataUrlToSegment(dataUrl)];
     }
@@ -2245,22 +2233,21 @@ async function imageSegmentOrNote(url?: string, fallbackPlayerNick?: string, fal
     } catch (err) { /* */ }
   }
 
-  // 最终兜底：本地生成 PNG，不依赖外网，确保每个今日CS分支都有图
   if (fallbackCard) {
-    console.log(`[fun] ${fallbackCard.title}/${fallbackCard.name} 使用本地签位卡兜底`);
+    console.log(`[fun] ${fallbackCard.title}/${fallbackCard.name} 使用备用签位图`);
     return [localDailyCardImage(fallbackCard, score)];
   }
 
   if (fallbackPlayerNick) {
-    console.log(`[fun] ${fallbackPlayerNick} 使用本地选手签位卡兜底`);
+    console.log(`[fun] ${fallbackPlayerNick} 使用备用选手签位图`);
     return [localDailyCardImage({
       key: `player-${fallbackPlayerNick}`,
       title: '今日CS选手',
       name: fallbackPlayerNick,
-      subtitle: '外部真实图源暂时失败，先给签位卡兜底',
+      subtitle: '图片源暂时没连上，先给今日签位图',
       scoreLabel: '签位',
-      advice: '真实图源恢复后会自动优先发外部图片。',
-      avoid: '别把本地卡当真实头像。',
+      advice: '图片池补好后会自动优先发对应图片。',
+      avoid: '别把签位图当选手照片。',
       line: '图没拉下来，但签不能断。',
       imageLabel: fallbackPlayerNick,
     }, score)];
@@ -2357,67 +2344,9 @@ let bestdoriCardManifestPathOverride = '';
 let playerImageManifestPathOverride = '';
 let genshinImageManifestPathOverride = '';
 let dailyBeautyImageManifestPathOverride = '';
-const authorizedImageCache: Map<string, { mtimeMs: number; cards: BestdoriCardImage[] }> = new Map();
 
 function bestdoriCardManifestPath(): string {
-  return bestdoriCardManifestPathOverride || BESTDORI_CARD_MANIFEST_PATH;
-}
-
-function manifestTags(item: BestdoriCardImage): string[] {
-  if (Array.isArray(item.tags)) return item.tags.map((tag) => String(tag || '').trim()).filter(Boolean);
-  if (typeof item.tags === 'string') return item.tags.split(/[,\s/|]+/).map((tag) => tag.trim()).filter(Boolean);
-  return [];
-}
-
-function expandImageManifestItems(rawCards: BestdoriCardImage[]): BestdoriCardImage[] {
-  return rawCards.flatMap((item: BestdoriCardImage) => {
-    if (!item || typeof item !== 'object') return [];
-    const urls = [
-      typeof item.url === 'string' ? item.url : '',
-      ...(Array.isArray(item.urls) ? item.urls : []),
-      ...(Array.isArray(item.images) ? item.images : []),
-    ]
-      .map((url) => String(url || '').trim())
-      .filter((url) => /^https?:\/\//i.test(url));
-    const tags = manifestTags(item);
-    return [...new Set(urls)].map((url, index) => ({
-      kind: String(item.kind || '').trim(),
-      category: String(item.category || '').trim(),
-      itemKey: String(item.itemKey || '').trim(),
-      itemName: String(item.itemName || '').trim(),
-      key: String(item.key || '').trim(),
-      nick: String(item.nick || '').trim(),
-      name: String(item.name || '').trim(),
-      characterKey: String(item.characterKey || '').trim(),
-      characterName: String(item.characterName || '').trim(),
-      weapon: String(item.weapon || '').trim(),
-      skin: String(item.skin || '').trim(),
-      style: String(item.style || '').trim(),
-      quality: String(item.quality || '').trim(),
-      tags,
-      priority: Number.isFinite(Number(item.priority)) ? Number(item.priority) : 0,
-      title: index === 0 ? String(item.title || '').trim() : `${String(item.title || '').trim() || 'card'} #${index + 1}`,
-      url,
-    }));
-  });
-}
-
-function loadImageManifest(manifestPath: string, cacheKey: string): BestdoriCardImage[] {
-  try {
-    if (!fs.existsSync(manifestPath)) return [];
-    const stat = fs.statSync(manifestPath);
-    const cacheId = `${cacheKey}:${manifestPath}`;
-    const cached = authorizedImageCache.get(cacheId);
-    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.cards;
-    const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-    const rawCards = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.cards) ? parsed.cards : [];
-    const cards = expandImageManifestItems(rawCards);
-    authorizedImageCache.set(cacheId, { mtimeMs: stat.mtimeMs, cards });
-    return cards;
-  } catch (err) {
-    console.warn(`[fun] 本地图片清单读取失败 ${cacheKey}:`, err instanceof Error ? err.message : err);
-    return [];
-  }
+  return bestdoriCardManifestPathOverride || process.env.BESTDORI_CARD_MANIFEST_PATH || BESTDORI_CARD_MANIFEST_PATH;
 }
 
 function loadBestdoriCardImages(): BestdoriCardImage[] {
@@ -2425,15 +2354,15 @@ function loadBestdoriCardImages(): BestdoriCardImage[] {
 }
 
 function playerImageManifestPath(): string {
-  return playerImageManifestPathOverride || PLAYER_IMAGE_MANIFEST_PATH;
+  return playerImageManifestPathOverride || process.env.DAILY_PLAYER_IMAGE_MANIFEST_PATH || PLAYER_IMAGE_MANIFEST_PATH;
 }
 
 function genshinImageManifestPath(): string {
-  return genshinImageManifestPathOverride || GENSHIN_IMAGE_MANIFEST_PATH;
+  return genshinImageManifestPathOverride || process.env.GENSHIN_IMAGE_MANIFEST_PATH || GENSHIN_IMAGE_MANIFEST_PATH;
 }
 
 function dailyBeautyImageManifestPath(): string {
-  return dailyBeautyImageManifestPathOverride || DAILY_BEAUTY_IMAGE_MANIFEST_PATH;
+  return dailyBeautyImageManifestPathOverride || process.env.DAILY_BEAUTY_IMAGE_MANIFEST_PATH || DAILY_BEAUTY_IMAGE_MANIFEST_PATH;
 }
 
 function loadPlayerManifestImages(): BestdoriCardImage[] {
@@ -2446,10 +2375,6 @@ function loadGenshinManifestImages(): BestdoriCardImage[] {
 
 function loadDailyBeautyImages(): BestdoriCardImage[] {
   return loadImageManifest(dailyBeautyImageManifestPath(), 'daily-beauty');
-}
-
-function compactManifestValue(value: unknown): string {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '');
 }
 
 const dailyImageKindAliases: Record<string, string[]> = {
@@ -2476,13 +2401,6 @@ function imageKindAliases(kind: string): string[] {
   const normalized = compactManifestValue(kind);
   const aliases = dailyImageKindAliases[normalized] || [normalized];
   return [...new Set([normalized, ...aliases.map(compactManifestValue)])].filter(Boolean);
-}
-
-function manifestKindMatches(kind: string, card: BestdoriCardImage): boolean {
-  const rawKind = card.kind || card.category || '';
-  if (!rawKind) return false;
-  const normalized = compactManifestValue(rawKind);
-  return imageKindAliases(kind).includes(normalized);
 }
 
 function manifestSearchValues(card: BestdoriCardImage): string[] {
@@ -2523,8 +2441,8 @@ function preferBeautyManifestImages(cards: BestdoriCardImage[]): BestdoriCardIma
 function dailyBeautyManifestImagesFor(kind: string, values: unknown[]): BestdoriCardImage[] {
   const keys = values.map(compactManifestValue).filter(Boolean);
   if (keys.length === 0) return [];
-  const matches = loadDailyBeautyImages().filter((card) => {
-    if (!manifestKindMatches(kind, card)) return false;
+  const kindCards = loadImageManifestByKinds(dailyBeautyImageManifestPath(), 'daily-beauty', imageKindAliases(kind));
+  const matches = kindCards.filter((card) => {
     const cardValues = manifestSearchValues(card);
     return cardValues.some((value) => keys.some((key) => value === key || value.includes(key) || key.includes(value)));
   });
@@ -2541,8 +2459,8 @@ function dailyBeautyManifestImagesForPair(kind: string, firstValues: unknown[], 
   const firstKeys = firstValues.map(compactManifestValue).filter(Boolean);
   const secondKeys = secondValues.map(compactManifestValue).filter(Boolean);
   if (firstKeys.length === 0 || secondKeys.length === 0) return [];
-  const matches = loadDailyBeautyImages().filter((card) => {
-    if (!manifestKindMatches(kind, card)) return false;
+  const kindCards = loadImageManifestByKinds(dailyBeautyImageManifestPath(), 'daily-beauty', imageKindAliases(kind));
+  const matches = kindCards.filter((card) => {
     const cardValues = manifestSearchValues(card);
     return manifestValueMatches(cardValues, firstKeys) && manifestValueMatches(cardValues, secondKeys);
   });
@@ -2689,6 +2607,22 @@ function buildDailyImageAuditReport(limit: number = 30): string {
     lines.push('全部对象都达到200张起步。');
   }
   return lines.join('\n');
+}
+
+function dailyImageManifestCacheLines(): string[] {
+  loadBestdoriCardImages();
+  loadPlayerManifestImages();
+  loadGenshinManifestImages();
+  loadDailyBeautyImages();
+  const stats = getImageManifestCacheStats();
+  const hits = stats.reduce((sum, item) => sum + item.hits, 0);
+  const reloads = stats.reduce((sum, item) => sum + item.reloads, 0);
+  const lines = [`清单缓存: ${stats.length}份 命中${hits} 重载${reloads}`];
+  for (const item of stats.slice(0, 4)) {
+    const rel = path.relative(process.cwd(), item.path).replace(/\\/g, '/');
+    lines.push(`${item.key}: ${item.exists ? `${item.cards}张/${item.kinds}类` : '未放清单'} hit${item.hits} reload${item.reloads} ${rel}${item.lastError ? ` 错误=${item.lastError.slice(0, 48)}` : ''}`);
+  }
+  return lines;
 }
 
 function bestdoriCardsForCharacter(character: DailyCharacter): BestdoriCardImage[] {
@@ -3889,11 +3823,12 @@ export const funPlugin: Plugin = {
         `通用每日美图: ${loadDailyBeautyImages().length}张`,
         `选手本地图片: ${loadPlayerManifestImages().length}张`,
         `原神本地图片: ${loadGenshinManifestImages().length}张`,
+        ...dailyImageManifestCacheLines(),
         ...currentDailyBeautyCoverageLines(ctx.event.user_id, ctx.groupId || 0),
         `冷知识/书摘/古诗词: ${dailyFacts.length}/${dailyBookExcerpts.length}/${dailyPoems.length}`,
         `紫禁之巅武器池: ${duelWeapons.length}种`,
-        `真实图策略: 通用美图/专用授权清单优先，外链全失败才发本地签位卡`,
-        `队伍示例: ${csTeams.slice(0, 3).map((item) => `${item.name}(${dailyCardImagePlan(item).replace(/^图源：/, '')})`).join(' | ')}`,
+        `发图顺序: 专属美图池 -> 专用清单 -> 公开图片接口 -> 备用签位图`,
+        `队伍示例: ${csTeams.slice(0, 3).map((item) => `${item.name}(${dailyCardImagePlan(item).replace(/^图片路径：/, '')})`).join(' | ')}`,
         (() => {
           const liq = getLiquipediaImageStats();
           return `Liquipedia图解析: 缓存${liq.entries} 限流${liq.rateLimited ? 'yes' : 'no'}`;
@@ -4189,6 +4124,8 @@ export const __test = {
   loadPlayerManifestImages,
   loadGenshinManifestImages,
   loadDailyBeautyImages,
+  dailyImageManifestCacheLines,
+  getImageManifestCacheStats,
   buildDailyTextCardMessage,
   buildDailyDuelMessage,
   buildLoadoutMessage,
@@ -4202,19 +4139,19 @@ export const __test = {
   },
   __setBestdoriCardManifestPathForTests: (filepath?: string) => {
     bestdoriCardManifestPathOverride = filepath || '';
-    authorizedImageCache.clear();
+    clearImageManifestCache();
   },
   __setPlayerImageManifestPathForTests: (filepath?: string) => {
     playerImageManifestPathOverride = filepath || '';
-    authorizedImageCache.clear();
+    clearImageManifestCache();
   },
   __setGenshinImageManifestPathForTests: (filepath?: string) => {
     genshinImageManifestPathOverride = filepath || '';
-    authorizedImageCache.clear();
+    clearImageManifestCache();
   },
   __setDailyBeautyImageManifestPathForTests: (filepath?: string) => {
     dailyBeautyImageManifestPathOverride = filepath || '';
-    authorizedImageCache.clear();
+    clearImageManifestCache();
   },
   __setImageResolverForTests: (resolver?: (url: string) => Promise<string | null>) => {
     imageDataUrlResolver = resolver || getImageDataUrl;

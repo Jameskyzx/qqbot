@@ -7,6 +7,8 @@
     "build": "tsc",
     "smoke": "node scripts/smoke.js",
     "doctor": "node scripts/doctor.js",
+    "daily:image:audit": "node scripts/daily-image-audit.js",
+    "daily:image:audit:strict": "node scripts/daily-image-audit.js --strict",
     "api:test": "node scripts/api-test.js",
     "config:sync": "node scripts/sync-config.js",
     "data:test": "node scripts/check-cs-data.js",

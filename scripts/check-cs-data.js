@@ -135,7 +135,7 @@ async function main() {
     console.log(`OK 选手 ${player.nick} -> ${playerHit.label}`);
   } else {
     warnings++;
-    console.log(`WARN 选手 ${player.nick} 外部真实图暂不可用，线上会发本地签位卡兜底`);
+    console.log(`WARN 选手 ${player.nick} 外部真实图暂不可用，线上会发当天签位图`);
   }
 
   for (const [kind, cards, seedKind] of groups) {
@@ -152,7 +152,7 @@ async function main() {
       console.log(`OK ${cardKindName(kind)} ${card.name} -> ${hit.label}`);
     } else {
       warnings++;
-      console.log(`WARN ${cardKindName(kind)} ${card.name} 外部真实图暂不可用，线上会发本地签位卡兜底`);
+      console.log(`WARN ${cardKindName(kind)} ${card.name} 外部真实图暂不可用，线上会发当天签位图`);
     }
   }
 
@@ -168,7 +168,7 @@ async function main() {
     console.log(`OK 皮肤 ${skin.name} -> ${skinHit.label}`);
   } else {
     warnings++;
-    console.log(`WARN 皮肤 ${skin.name} 外部真实图暂不可用，线上会发本地签位卡兜底`);
+    console.log(`WARN 皮肤 ${skin.name} 外部真实图暂不可用，线上会发当天签位图`);
   }
 
   const knife = testApi.dailyKnifeFor(userId, scopeId);
@@ -184,7 +184,7 @@ async function main() {
     console.log(`OK 发刀 ${knife.name} | ${knifeSkin.name} -> ${knifeHit.label}`);
   } else {
     warnings++;
-    console.log(`WARN 发刀 ${knife.name} | ${knifeSkin.name} 外部真实图暂不可用，线上会发本地签位卡兜底`);
+    console.log(`WARN 发刀 ${knife.name} | ${knifeSkin.name} 外部真实图暂不可用，线上会发当天签位图`);
   }
 
   const character = testApi.dailyCharacterFor(userId, scopeId);
@@ -197,7 +197,7 @@ async function main() {
     console.log(`OK 木柜子 ${character.name} -> ${characterHit.label}`);
   } else {
     warnings++;
-    console.log(`WARN 木柜子 ${character.name} 外部真实图暂不可用，线上会发本地签位卡兜底`);
+    console.log(`WARN 木柜子 ${character.name} 外部真实图暂不可用，线上会发当天签位图`);
   }
 
   const stats = image.getCacheStats();

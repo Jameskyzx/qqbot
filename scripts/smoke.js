@@ -2440,7 +2440,7 @@ async function testDataCommandObservability() {
     assert.ok(text.includes('--- 每日CS / 多模态 ---'), '/data should render daily CS multimodal section');
     assert.ok(text.includes('搜索缓存'), '/data should expose search cache stats');
     assert.ok(text.includes('每日CS池'), '/data should expose daily CS pool counts');
-    assert.ok(text.includes('真实图策略'), '/data should describe real-image strategy');
+    assert.ok(text.includes('每日图片'), '/data should describe daily image strategy');
     assert.ok(text.includes('Liquipedia图解析'), '/data should expose Liquipedia image resolver stats');
     assert.ok(text.includes('图片缓存'), '/data should expose image cache stats');
     assert.ok(text.includes('识图'), '/data should expose vision status');
@@ -5370,6 +5370,9 @@ async function testFunCsPlayer() {
     assert.ok(funTest.dailyBookExcerpts.length >= 40, 'daily book excerpt pool should be rich enough for variety');
     assert.ok(funTest.dailyPoems.length >= 40, 'daily poem pool should be rich enough for variety');
     assert.ok(funTest.duelWeapons.length >= 20, 'daily duel should include a broad weapon pool');
+    const manifestStats = funTest.getImageManifestCacheStats();
+    assert.ok(manifestStats.some((item) => item.key === 'daily-beauty' && item.cards === beautyCards.length && item.reloads >= 1), 'daily image manifests should be cached with reload stats');
+    assert.ok(funTest.dailyImageManifestCacheLines().some((line) => line.includes('清单缓存')), 'daily image manifest cache lines should render for status');
     const bestdoriCandidates = await funTest.buildCharacterImageCandidates(
       funTest.dailyCharacters.find((item) => item.key === 'tomori'),
       61,
@@ -5442,6 +5445,19 @@ async function testFunCsPlayer() {
     assert.ok(imageAuditReport.includes('每个具体对象200张起'), 'daily image audit should expose 200-image rule');
     assert.ok(imageAuditReport.includes('隔离规则'), 'daily image audit should expose non-mixing rule');
     assert.ok(imageAuditReport.includes('未达标'), 'daily image audit should expose missing coverage count');
+    const auditCli = spawnSync(process.execPath, [path.resolve(__dirname, 'daily-image-audit.js'), '--limit', '5'], {
+      cwd: path.resolve(__dirname, '..'),
+      env: { ...process.env, DAILY_BEAUTY_IMAGE_MANIFEST_PATH: dailyBeautyManifestPath },
+      encoding: 'utf-8',
+    });
+    assert.strictEqual(auditCli.status, 0, `daily image audit CLI should run: ${auditCli.stdout}\n${auditCli.stderr}`);
+    assert.ok(auditCli.stdout.includes('每日图片池全量审计'), 'daily image audit CLI should print report');
+    const strictAuditCli = spawnSync(process.execPath, [path.resolve(__dirname, 'daily-image-audit.js'), '--limit', '5', '--strict'], {
+      cwd: path.resolve(__dirname, '..'),
+      env: { ...process.env, DAILY_BEAUTY_IMAGE_MANIFEST_PATH: dailyBeautyManifestPath },
+      encoding: 'utf-8',
+    });
+    assert.strictEqual(strictAuditCli.status, 4, 'strict daily image audit CLI should fail when any object has fewer than 200 images');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天打什么位', 'role'), true, 'fuzzy daily role should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天丢什么道具', 'utility'), true, 'fuzzy daily utility should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天打什么战术', 'tactic'), true, 'fuzzy daily tactic should trigger');
@@ -5555,6 +5571,7 @@ async function testFunCsPlayer() {
     assert.ok(firstText(sent[1].message).includes(`通用每日美图: ${beautyCards.length}张`), 'csplayer status should expose generic daily beauty manifest size');
     assert.ok(firstText(sent[1].message).includes('选手本地图片: 3张'), 'csplayer status should expose local player image manifest size');
     assert.ok(firstText(sent[1].message).includes('原神本地图片: 3张'), 'csplayer status should expose local genshin image manifest size');
+    assert.ok(firstText(sent[1].message).includes('清单缓存:'), 'csplayer status should expose manifest cache stats');
     assert.ok(firstText(sent[1].message).includes('美图最低标准: 每个对象200张起'), 'csplayer status should expose the 200-image per-item minimum');
     assert.ok(firstText(sent[1].message).includes('图片隔离:'), 'csplayer status should explain that generic beauty images are not mixed across objects');
     assert.ok(firstText(sent[1].message).includes('选手205/200OK'), 'csplayer status should show selected player beauty pool coverage');
