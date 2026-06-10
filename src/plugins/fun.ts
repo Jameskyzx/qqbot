@@ -64,7 +64,7 @@ type CsImageProbeKind = DailyCardKind | 'player' | 'knife' | 'mokoko' | 'all';
 type TrainingArea = 'aim' | 'utility' | 'map' | 'role' | 'clutch' | 'review' | 'match';
 type TrainingWeaknessKey = 'death' | 'trade' | 'utility' | 'aim' | 'clutch' | 'map' | 'review';
 
-type FandomWiki = 'counterstrike' | 'bandori';
+type FandomWiki = 'counterstrike' | 'bandori' | 'genshin';
 
 interface SkinCard extends DailyCard {
   weapon: string;
@@ -88,6 +88,44 @@ interface DailyCharacter {
   file?: string;
 }
 
+interface DailyGenshinCharacter {
+  key: string;
+  title: string;
+  name: string;
+  page: string;
+  note: string;
+  tag: string;
+}
+
+interface DailyTextCard {
+  key: string;
+  title: string;
+  name: string;
+  subtitle: string;
+  body: string;
+  advice: string;
+  line: string;
+  scoreLabel: string;
+}
+
+interface DailyDuelWeapon {
+  key: string;
+  name: string;
+  style: string;
+  power: number;
+  tempo: number;
+  line: string;
+  image?: string;
+  fandomFile?: string;
+}
+
+interface BestdoriCardImage {
+  characterKey?: string;
+  characterName?: string;
+  url?: string;
+  title?: string;
+}
+
 interface ImageCandidate {
   url: string;
   label: string;
@@ -99,6 +137,7 @@ interface ImageCandidate {
     | 'representative-player-dynamic'
     | 'representative-player-static'
     | 'liquipedia-player'
+    | 'bestdori-card'
     | 'static-url';
 }
 
@@ -544,6 +583,137 @@ const dailyCharacters: DailyCharacter[] = [
   { key: 'umiri', title: '每日木柜子', name: '八幡海铃 / Yahata Umiri', band: 'Ave Mujica', role: 'Timoris / Bass', voice: '冈田梦以', note: '今天是海铃签，可靠但有距离感，做事别拖。', page: 'Yahata Umiri' },
   { key: 'nyamu', title: '每日木柜子', name: '祐天寺若麦 / Yutenji Nyamu', band: 'Ave Mujica', role: 'Amoris / Drums', voice: '米泽茜', note: '今天是若麦签，镜头感很强，但别只顾节目效果。', page: 'Yuutenji Nyamu' },
   { key: 'sakiko', title: '每日木柜子', name: '丰川祥子 / Togawa Sakiko', band: 'Ave Mujica', role: 'Oblivionis / Keyboard', voice: '高尾奏音', note: '今天是祥子签，计划感很强，但别把自己逼太紧。', page: 'Togawa Sakiko' },
+];
+
+function keyFromName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+const genshinCharacterNames = [
+  'Traveler', 'Albedo', 'Alhaitham', 'Aloy', 'Amber', 'Arataki Itto', 'Arlecchino', 'Baizhu', 'Barbara', 'Beidou',
+  'Bennett', 'Candace', 'Charlotte', 'Chasca', 'Chevreuse', 'Chiori', 'Chongyun', 'Citlali', 'Clorinde', 'Collei',
+  'Cyno', 'Dehya', 'Diluc', 'Diona', 'Dori', 'Emilie', 'Escoffier', 'Eula', 'Faruzan', 'Fischl',
+  'Freminet', 'Furina', 'Gaming', 'Ganyu', 'Gorou', 'Hu Tao', 'Iansan', 'Ifa', 'Jean', 'Kachina',
+  'Kaedehara Kazuha', 'Kaeya', 'Kamisato Ayaka', 'Kamisato Ayato', 'Kaveh', 'Keqing', 'Kinich', 'Kirara', 'Klee', 'Kujou Sara',
+  'Kuki Shinobu', 'Lan Yan', 'Layla', 'Lisa', 'Lynette', 'Lyney', 'Mavuika', 'Mika', 'Mona', 'Mualani',
+  'Nahida', 'Navia', 'Neuvillette', 'Nilou', 'Ningguang', 'Noelle', 'Ororon', 'Qiqi', 'Raiden Shogun', 'Razor',
+  'Rosaria', 'Sangonomiya Kokomi', 'Sayu', 'Sethos', 'Shenhe', 'Shikanoin Heizou', 'Sigewinne', 'Skirk', 'Sucrose', 'Tartaglia',
+  'Thoma', 'Tighnari', 'Varesa', 'Venti', 'Wanderer', 'Wriothesley', 'Xiangling', 'Xianyun', 'Xiao', 'Xilonen',
+  'Xingqiu', 'Xinyan', 'Yae Miko', 'Yanfei', 'Yaoyao', 'Yelan', 'Yoimiya', 'Yumemizuki Mizuki', 'Yun Jin', 'Zhongli',
+];
+
+const genshinNotes = [
+  '今天适合慢慢攒资源，别一口气把树脂和摩拉都花空。',
+  '今天适合补一个长期队伍短板，圣遗物别上头。',
+  '今天适合做探索和收集，路线比蛮跑更重要。',
+  '今天适合把天赋、武器、等级这种硬提升补一补。',
+  '今天适合换个配队思路，别只盯着同一套循环。',
+  '今天适合清任务和图鉴，细碎进度也算进度。',
+  '今天适合打深渊前先热手，别第一间就交学费。',
+  '今天适合留一点材料余量，未来的你会感谢今天的你。',
+];
+
+const genshinTags = ['探索签', '养成签', '配队签', '剧情签', '深渊签', '收集签', '材料签', '手感签'];
+
+const dailyGenshinCharacters: DailyGenshinCharacter[] = genshinCharacterNames.map((name, index) => ({
+  key: keyFromName(name),
+  title: '每日原神角色',
+  name,
+  page: name,
+  note: genshinNotes[index % genshinNotes.length],
+  tag: genshinTags[index % genshinTags.length],
+}));
+
+const dailyFacts: DailyTextCard[] = [
+  { key: 'octopus-heart', title: '每日冷知识', name: '章鱼有三颗心', subtitle: '生物 / 海洋', body: '两颗心负责把血送到鳃，一颗负责把血送到全身；游泳时全身那颗会短暂停工。', advice: '今天遇到复杂系统，先分清每个部件在干什么。', line: '冷知识的重点不是怪，是结构真的很会分工。', scoreLabel: '新鲜度' },
+  { key: 'honey-stable', title: '每日冷知识', name: '蜂蜜很难变质', subtitle: '食物 / 化学', body: '低含水量、高糖和酸性环境让多数微生物难以生长，所以考古样本里的蜂蜜常能保存很久。', advice: '今天做东西也一样，环境条件对了，稳定性会自己长出来。', line: '甜不是重点，重点是微生物住不舒服。', scoreLabel: '新鲜度' },
+  { key: 'banana-berry', title: '每日冷知识', name: '香蕉在植物学里算浆果', subtitle: '植物 / 分类', body: '植物学分类看果实结构，不看日常叫法；香蕉符合浆果的一些结构标准。', advice: '今天别被名字骗了，先看定义。', line: '生活常识和学科定义，偶尔会互相拆台。', scoreLabel: '新鲜度' },
+  { key: 'strawberry-not-berry', title: '每日冷知识', name: '草莓反而不算真正浆果', subtitle: '植物 / 分类', body: '草莓表面的“小籽”才是一个个小果，红色部分更像膨大的花托。', advice: '今天看热闹前先看结构，别只看表面红不红。', line: '草莓：我只是长得很像答案。', scoreLabel: '新鲜度' },
+  { key: 'venus-day', title: '每日冷知识', name: '金星的一天比一年还长', subtitle: '天文 / 行星', body: '金星自转很慢，绕太阳一圈反而更快，所以它的恒星日长过公转周期。', advice: '今天别只看速度，方向和尺度更要命。', line: '慢到极致，日历都开始拧巴。', scoreLabel: '新鲜度' },
+  { key: 'shark-old', title: '每日冷知识', name: '鲨鱼比树更古老', subtitle: '演化 / 时间尺度', body: '鲨鱼类群出现得非常早，比现代意义上大规模森林扩张还早。', advice: '今天遇到老东西，先尊重它的版本历史。', line: '它不是复古，它是一直没下线。', scoreLabel: '新鲜度' },
+  { key: 'water-hot-freeze', title: '每日冷知识', name: '热水有时会比冷水先结冰', subtitle: '物理 / 姆潘巴效应', body: '在特定条件下，蒸发、对流和容器影响会让热水先结冰，但这不是随便都成立的魔法。', advice: '今天别把例外当万能规律，条件要写清。', line: '物理最会说：看情况。', scoreLabel: '新鲜度' },
+  { key: 'cloud-weight', title: '每日冷知识', name: '云可以很重', subtitle: '气象 / 水滴', body: '一朵积云里有大量微小水滴，总质量可能达到数十万公斤，只是分布得足够稀。', advice: '今天别低估“分散的小东西”，堆起来也很可怕。', line: '看着轻，是因为摊得开。', scoreLabel: '新鲜度' },
+  { key: 'wombat-cube', title: '每日冷知识', name: '袋熊会排出近似方形的便便', subtitle: '动物 / 结构', body: '肠道弹性和收缩差异会把内容物塑成近似立方形，方便它们标记领地时不乱滚。', advice: '今天奇怪的问题可能有很现实的用途。', line: '自然界的设计感，有时非常朴素。', scoreLabel: '新鲜度' },
+  { key: 'library-smell', title: '每日冷知识', name: '旧书味来自纸张老化', subtitle: '材料 / 气味', body: '纸张里的木质素和纤维素分解会释放多种挥发物，混在一起就是熟悉的旧书气味。', advice: '今天怀旧可以，但也要知道它背后的化学。', line: '书香有时是真的分子在说话。', scoreLabel: '新鲜度' },
+  { key: 'alphabet-order', title: '每日冷知识', name: '字母顺序非常古老', subtitle: '文字 / 传承', body: '许多字母系统的排序能追溯到更早的闪米特文字传统，顺序比很多语言本身还耐活。', advice: '今天别小看约定俗成，它可能比你想的更有历史。', line: 'A 在前面，不只是因为它爱卷。', scoreLabel: '新鲜度' },
+  { key: 'cleopatra-pyramid', title: '每日冷知识', name: '埃及艳后离登月更近', subtitle: '历史 / 时间感', body: '克娄巴特拉生活的年代距离现代登月，比距离胡夫金字塔建成更近。', advice: '今天看历史别只凭“古埃及”三个字打包。', line: '时间轴一拉开，直觉经常输。', scoreLabel: '新鲜度' },
+  { key: 'roman-concrete', title: '每日冷知识', name: '古罗马混凝土很耐久', subtitle: '材料 / 建筑', body: '火山灰和石灰等成分让部分古罗马混凝土在海水环境里形成稳定矿物，越泡越结实。', advice: '今天做底层结构，材料选对比后期补救强。', line: '真正的老工程，靠配方说话。', scoreLabel: '新鲜度' },
+  { key: 'map-projection', title: '每日冷知识', name: '世界地图会变形', subtitle: '地理 / 投影', body: '把球面铺到平面必然变形，常见地图会放大高纬地区。', advice: '今天看图先问投影，别把显示方式当现实。', line: '地图不是撒谎，它只是压不平地球。', scoreLabel: '新鲜度' },
+  { key: 'coffee-bean', title: '每日冷知识', name: '咖啡豆其实是种子', subtitle: '植物 / 饮料', body: '日常说的咖啡豆来自咖啡果实内部的种子，烘焙后才变成熟悉的“豆”。', advice: '今天别被行业叫法骗了，名字常常很随意。', line: '豆不豆的，好喝就行，但它确实是种子。', scoreLabel: '新鲜度' },
+  { key: 'glass-liquid', title: '每日冷知识', name: '玻璃不是普通液体', subtitle: '材料 / 非晶态', body: '老窗玻璃下厚上薄更多来自制造工艺，不是玻璃在室温下慢慢流下去。', advice: '今天听到经典说法，先查机制再转述。', line: '流言最喜欢穿科学外套。', scoreLabel: '新鲜度' },
+  { key: 'sleep-clean', title: '每日冷知识', name: '睡眠会帮大脑清理代谢废物', subtitle: '神经科学 / 睡眠', body: '睡眠中脑脊液流动和胶质淋巴系统活动会增强，帮助清走一些代谢产物。', advice: '今天别硬熬，清缓存也是战斗力。', line: '困不是废，可能是在催你维护系统。', scoreLabel: '新鲜度' },
+  { key: 'mushroom-network', title: '每日冷知识', name: '菌根网络会连接植物', subtitle: '生态 / 真菌', body: '真菌和植物根系共生，能在土壤里形成物质和信号交换网络。', advice: '今天别只看地面，真正的关系可能在底下。', line: '森林的群聊，不一定在树冠上。', scoreLabel: '新鲜度' },
+  { key: 'paper-fold', title: '每日冷知识', name: '对折纸很快会变厚', subtitle: '数学 / 指数增长', body: '纸每对折一次厚度翻倍，指数增长会很快超过直觉。', advice: '今天别小看复利和累积，倍增最会吓人。', line: '薄纸的野心，比看起来大。', scoreLabel: '新鲜度' },
+  { key: 'north-pole-move', title: '每日冷知识', name: '磁北极会移动', subtitle: '地球物理 / 磁场', body: '指南针指向的是磁北附近，而磁北极会随地球内部活动缓慢移动。', advice: '今天别把参照物当永恒，基准也会跑。', line: '连北都会动，人别太死板。', scoreLabel: '新鲜度' },
+];
+
+const dailyBookExcerpts: DailyTextCard[] = [
+  { key: 'analects-learning', title: '每日书摘', name: '《论语》', subtitle: '学而时习之', body: '学而时习之，不亦说乎。', advice: '今天挑一件小事反复练，别只收藏方法。', line: '复习不是重复，是给理解续命。', scoreLabel: '共鸣度' },
+  { key: 'laozi-water', title: '每日书摘', name: '《道德经》', subtitle: '上善若水', body: '上善若水，水善利万物而不争。', advice: '今天能顺势就顺势，别每一步都硬顶。', line: '柔不是弱，是知道往哪流。', scoreLabel: '共鸣度' },
+  { key: 'zhuangzi-free', title: '每日书摘', name: '《庄子》', subtitle: '逍遥游', body: '至人无己，神人无功，圣人无名。', advice: '今天少一点表演欲，多一点真松弛。', line: '不被评价牵着走，也是一种本事。', scoreLabel: '共鸣度' },
+  { key: 'mencius-heart', title: '每日书摘', name: '《孟子》', subtitle: '尽心', body: '尽信书，则不如无书。', advice: '今天读东西要带脑子，别把文字当遥控器。', line: '好书也怕照单全收。', scoreLabel: '共鸣度' },
+  { key: 'xunzi-step', title: '每日书摘', name: '《荀子》', subtitle: '劝学', body: '不积跬步，无以至千里。', advice: '今天做一点能累积的事，别嫌它小。', line: '千里路最怕第一步也想豪华。', scoreLabel: '共鸣度' },
+  { key: 'sunzi-know', title: '每日书摘', name: '《孙子兵法》', subtitle: '谋攻', body: '知彼知己，百战不殆。', advice: '今天先收集信息，再下判断。', line: '莽之前先侦察。', scoreLabel: '共鸣度' },
+  { key: 'caigentan-quiet', title: '每日书摘', name: '《菜根谭》', subtitle: '静中见真境', body: '静中静非真静，动处静得来，才是性天之真境。', advice: '今天练在杂事里稳住，不要只在安静时才安静。', line: '真正的稳，是吵的时候也不乱。', scoreLabel: '共鸣度' },
+  { key: 'shishuo-snow', title: '每日书摘', name: '《世说新语》', subtitle: '咏雪', body: '未若柳絮因风起。', advice: '今天表达可以轻一点，画面感比解释更有力。', line: '好比喻一出来，空气都亮了。', scoreLabel: '共鸣度' },
+  { key: 'dream-red', title: '每日书摘', name: '《红楼梦》', subtitle: '好了歌注', body: '乱哄哄你方唱罢我登场。', advice: '今天看热闹别太入戏，台上台下都会换人。', line: '人生舞台最稳定的部分，是换场。', scoreLabel: '共鸣度' },
+  { key: 'journey-mountain', title: '每日书摘', name: '《西游记》', subtitle: '山高自有客行路', body: '山高自有客行路，水深自有渡船人。', advice: '今天遇到难题先找路径，别只盯着山高。', line: '路不是没有，是还没走到拐弯处。', scoreLabel: '共鸣度' },
+  { key: 'water-margin', title: '每日书摘', name: '《水浒传》', subtitle: '世情', body: '人无千日好，花无百日红。', advice: '今天顺风也别飘，逆风也别把话说死。', line: '涨落是常态，心态别跟着过山车。', scoreLabel: '共鸣度' },
+  { key: 'three-kingdoms', title: '每日书摘', name: '《三国演义》', subtitle: '开篇', body: '分久必合，合久必分。', advice: '今天看局势别只看当下，结构会自己找平衡。', line: '天下大势，最会提醒人别站太死。', scoreLabel: '共鸣度' },
+  { key: 'fusheng', title: '每日书摘', name: '《浮生六记》', subtitle: '闲情', body: '情之所钟，虽丑不嫌。', advice: '今天珍惜自己的偏爱，它未必需要别人审核。', line: '审美有时就是偏心的证据。', scoreLabel: '共鸣度' },
+  { key: 'xiaochuang', title: '每日书摘', name: '《小窗幽记》', subtitle: '醒句', body: '宠辱不惊，看庭前花开花落。', advice: '今天别让一条消息决定全天心情。', line: '花开花落都很忙，你也不用一直紧绷。', scoreLabel: '共鸣度' },
+  { key: 'renjian-cihua', title: '每日书摘', name: '《人间词话》', subtitle: '境界', body: '词以境界为最上。', advice: '今天做表达先有画面，再讲道理。', line: '境界一出来，句子就站住了。', scoreLabel: '共鸣度' },
+  { key: 'letter-family', title: '每日书摘', name: '《曾国藩家书》', subtitle: '勤与恒', body: '天下古今之庸人，皆以一惰字致败。', advice: '今天少拖一个小任务，别让惰性滚雪球。', line: '勤不一定轰烈，但很克制。', scoreLabel: '共鸣度' },
+  { key: 'tang-caizi', title: '每日书摘', name: '《唐才子传》', subtitle: '诗心', body: '诗者，志之所之也。', advice: '今天写一句真实的话，胜过憋十句漂亮话。', line: '表达先有心，修辞后面再说。', scoreLabel: '共鸣度' },
+  { key: 'wenxin', title: '每日书摘', name: '《文心雕龙》', subtitle: '神思', body: '寂然凝虑，思接千载。', advice: '今天给自己十分钟安静，别让灵感一直被通知切断。', line: '好想法需要一点无人打扰的深水区。', scoreLabel: '共鸣度' },
+  { key: 'guwen', title: '每日书摘', name: '《古文观止》', subtitle: '读文', body: '文章千古事，得失寸心知。', advice: '今天做输出别急着讨好所有人，先对得起自己的判断。', line: '写得好不好，心里常有第一裁判。', scoreLabel: '共鸣度' },
+  { key: 'mingxian', title: '每日书摘', name: '《名贤集》', subtitle: '惜时', body: '一寸光阴一寸金。', advice: '今天把最清醒的一小时留给最重要的事。', line: '时间不吵，但它很会结账。', scoreLabel: '共鸣度' },
+];
+
+const dailyPoems: DailyTextCard[] = [
+  { key: 'li-bai-night', title: '每日古诗词', name: '李白《静夜思》', subtitle: '唐诗 / 思乡', body: '床前明月光，疑是地上霜。举头望明月，低头思故乡。', advice: '今天给远处的人发句话，别只在心里想。', line: '月光最会把距离照出来。', scoreLabel: '诗意值' },
+  { key: 'du-fu-spring', title: '每日古诗词', name: '杜甫《春望》', subtitle: '唐诗 / 家国', body: '国破山河在，城春草木深。感时花溅泪，恨别鸟惊心。', advice: '今天看见细小变化，也别忘了它背后的重量。', line: '草木很轻，时代很重。', scoreLabel: '诗意值' },
+  { key: 'wang-wei-bird', title: '每日古诗词', name: '王维《鸟鸣涧》', subtitle: '唐诗 / 山水', body: '人闲桂花落，夜静春山空。月出惊山鸟，时鸣春涧中。', advice: '今天留一点安静给自己，别把空白全填满。', line: '静下来，声音反而更清楚。', scoreLabel: '诗意值' },
+  { key: 'meng-spring', title: '每日古诗词', name: '孟浩然《春晓》', subtitle: '唐诗 / 春日', body: '春眠不觉晓，处处闻啼鸟。夜来风雨声，花落知多少。', advice: '今天别急着赶路，先看看昨夜留下了什么。', line: '春天最会轻轻提醒人。', scoreLabel: '诗意值' },
+  { key: 'liu-willow', title: '每日古诗词', name: '贺知章《咏柳》', subtitle: '唐诗 / 春景', body: '碧玉妆成一树高，万条垂下绿丝绦。', advice: '今天适合修整外在，也适合整理心情。', line: '新绿一出来，世界就有了发型。', scoreLabel: '诗意值' },
+  { key: 'wang-lushan', title: '每日古诗词', name: '李白《望庐山瀑布》', subtitle: '唐诗 / 壮景', body: '飞流直下三千尺，疑是银河落九天。', advice: '今天给目标留一点想象力，别把自己算太小。', line: '夸张用得好，世界会变高。', scoreLabel: '诗意值' },
+  { key: 'wang-bo', title: '每日古诗词', name: '王勃《送杜少府之任蜀州》', subtitle: '唐诗 / 送别', body: '海内存知己，天涯若比邻。', advice: '今天别怕距离，真正的关系不只靠定位。', line: '远不远，有时看心有没有在线。', scoreLabel: '诗意值' },
+  { key: 'gao-shi', title: '每日古诗词', name: '高适《别董大》', subtitle: '唐诗 / 赠别', body: '莫愁前路无知己，天下谁人不识君。', advice: '今天给自己一点底气，别把未知都想成坏消息。', line: '离别也可以很有劲。', scoreLabel: '诗意值' },
+  { key: 'bai-juyi-grass', title: '每日古诗词', name: '白居易《赋得古原草送别》', subtitle: '唐诗 / 离别', body: '野火烧不尽，春风吹又生。', advice: '今天允许自己重来，生命力不靠一次胜负定义。', line: '草最懂复盘。', scoreLabel: '诗意值' },
+  { key: 'li-shangyin-rain', title: '每日古诗词', name: '李商隐《夜雨寄北》', subtitle: '唐诗 / 相思', body: '何当共剪西窗烛，却话巴山夜雨时。', advice: '今天把想见的人放进计划里，别只放进情绪里。', line: '夜雨很会替人攒话。', scoreLabel: '诗意值' },
+  { key: 'du-mu-autumn', title: '每日古诗词', name: '杜牧《山行》', subtitle: '唐诗 / 秋色', body: '停车坐爱枫林晚，霜叶红于二月花。', advice: '今天慢一点，可能会看到赶路看不到的颜色。', line: '秋天不是结束，也可能是高光。', scoreLabel: '诗意值' },
+  { key: 'wang-changling', title: '每日古诗词', name: '王昌龄《出塞》', subtitle: '唐诗 / 边塞', body: '秦时明月汉时关，万里长征人未还。', advice: '今天做难事要看长期，不要只看眼前一段路。', line: '边关的月亮，照的是很长的时间。', scoreLabel: '诗意值' },
+  { key: 'cen-shen-snow', title: '每日古诗词', name: '岑参《白雪歌送武判官归京》', subtitle: '唐诗 / 边塞雪', body: '忽如一夜春风来，千树万树梨花开。', advice: '今天别急着给坏天气下结论，它可能换个样子很好看。', line: '雪一认真，也能开花。', scoreLabel: '诗意值' },
+  { key: 'su-shi-moon', title: '每日古诗词', name: '苏轼《水调歌头》', subtitle: '宋词 / 中秋', body: '但愿人长久，千里共婵娟。', advice: '今天把祝愿说出口，别只藏在节日里。', line: '月亮最擅长做共享屏幕。', scoreLabel: '诗意值' },
+  { key: 'su-shi-river', title: '每日古诗词', name: '苏轼《念奴娇》', subtitle: '宋词 / 怀古', body: '大江东去，浪淘尽，千古风流人物。', advice: '今天别被一时得失困住，时间会冲刷很多东西。', line: '江水一开口，人就小了。', scoreLabel: '诗意值' },
+  { key: 'li-qingzhao', title: '每日古诗词', name: '李清照《如梦令》', subtitle: '宋词 / 春游', body: '争渡，争渡，惊起一滩鸥鹭。', advice: '今天可以有点冒失的快乐，但别忘了看路。', line: '热闹到惊起一滩，说明真的活过。', scoreLabel: '诗意值' },
+  { key: 'xin-qiji', title: '每日古诗词', name: '辛弃疾《青玉案》', subtitle: '宋词 / 元夕', body: '众里寻他千百度，蓦然回首，那人却在灯火阑珊处。', advice: '今天别只往最亮的地方找答案。', line: '答案有时很低调，站在灯火边上。', scoreLabel: '诗意值' },
+  { key: 'yue-fei', title: '每日古诗词', name: '岳飞《满江红》', subtitle: '宋词 / 壮怀', body: '莫等闲，白了少年头，空悲切。', advice: '今天别空耗，做一件能让明天少后悔的事。', line: '热血不是喊出来的，是别等闲。', scoreLabel: '诗意值' },
+  { key: 'lu-you', title: '每日古诗词', name: '陆游《游山西村》', subtitle: '宋诗 / 柳暗花明', body: '山重水复疑无路，柳暗花明又一村。', advice: '今天卡住也别急，先多走两步看看。', line: '转机常常躲在弯后面。', scoreLabel: '诗意值' },
+  { key: 'yang-wanli', title: '每日古诗词', name: '杨万里《小池》', subtitle: '宋诗 / 夏日', body: '小荷才露尖尖角，早有蜻蜓立上头。', advice: '今天保护刚冒头的小想法，别急着批评它。', line: '新东西刚露头，也值得被看见。', scoreLabel: '诗意值' },
+];
+
+const duelWeapons: DailyDuelWeapon[] = [
+  { key: 'deagle', name: '沙鹰', style: '一发入魂', power: 92, tempo: 45, line: '准了封神，空了当场沉默。', fandomFile: 'CS2_Desert_Eagle_Inventory.png' },
+  { key: 'awp', name: '大狙', style: '架点审判', power: 98, tempo: 32, line: '一枪一个道理，前提是别空。', fandomFile: 'CS2_AWP_Inventory.png' },
+  { key: 'ak47', name: 'AK-47', style: '正面压制', power: 88, tempo: 72, line: '第一发稳住，后面才有故事。', fandomFile: 'CS2_AK-47_Inventory.png' },
+  { key: 'm4a1s', name: 'M4A1-S', style: '消音偷人', power: 82, tempo: 68, line: '低调开枪，高调拿分。', fandomFile: 'CS2_M4A1-S_Inventory.png' },
+  { key: 'glock', name: '格洛克', style: '近点抱团', power: 48, tempo: 85, line: '不贵，但很会把人冲乱。', fandomFile: 'CS2_Glock-18_Inventory.png' },
+  { key: 'usp', name: 'USP-S', style: '手枪点头', power: 60, tempo: 58, line: '慢一点，第一发会说话。', fandomFile: 'CS2_USP-S_Inventory.png' },
+  { key: 'flash', name: '闪光弹', style: '白屏武学', power: 70, tempo: 90, line: '不杀人，但能让对面忘了自己是谁。', fandomFile: 'Flashbanghud_csgo.png' },
+  { key: 'smoke', name: '烟雾弹', style: '切割战场', power: 58, tempo: 64, line: '看不见，也是一种压迫。', fandomFile: 'Smokegrenadehud_csgo.png' },
+  { key: 'zeus', name: '电击枪', style: '贴脸天雷', power: 95, tempo: 25, line: '距离到了就很不讲理。', fandomFile: 'CS2_Zeus_x27_Inventory.png' },
+  { key: 'knife', name: '小刀', style: '精神羞辱', power: 100, tempo: 18, line: '赢了上嘴脸，输了上素材。', fandomFile: 'Cs2-knife-bayonet-stock-market.png' },
+  { key: 'p90', name: 'P90', style: '横冲直撞', power: 62, tempo: 96, line: '不解释，先跑起来。', fandomFile: 'CS2_P90_Inventory.png' },
+  { key: 'nova', name: 'Nova', style: '近点伏击', power: 76, tempo: 38, line: '距离对了就是答案。', fandomFile: 'CS2_Nova_Inventory.png' },
+  { key: 'negev', name: '内格夫', style: '弹幕压制', power: 84, tempo: 30, line: '扫得很热闹，命中就更热闹。', fandomFile: 'CS2_Negev_Inventory.png' },
+  { key: 'r8', name: '左轮', style: '慢热怪力', power: 90, tempo: 22, line: '枪声很大，责任也很大。', fandomFile: 'CS2_R8_Revolver_Inventory.png' },
+  { key: 'folding-chair', name: '折凳', style: '江湖暗器', power: 73, tempo: 70, line: '朴素，但是很有画面。' },
+  { key: 'keyboard', name: '机械键盘', style: '键气外放', power: 66, tempo: 88, line: '手速起来了，谁都别想说完整话。' },
+  { key: 'thermos', name: '保温杯', style: '养生重击', power: 59, tempo: 40, line: '看着温和，砸下来很现实。' },
+  { key: 'mouse', name: '鼠标', style: '微操决胜', power: 55, tempo: 94, line: 'DPI 一拉，气势先到。' },
+  { key: 'baguette', name: '法棍', style: '长枪替身', power: 52, tempo: 62, line: '硬度和节目效果都在线。' },
+  { key: 'slipper', name: '拖鞋', style: '家庭秘传', power: 80, tempo: 76, line: '出手很轻，威慑很重。' },
 ];
 
 csSkins.push(
@@ -1104,6 +1274,30 @@ function dailyCharacterFor(userId: number, scopeId: number): DailyCharacter {
   return dailyCharacters[dailySeedForKind('mokoko', userId, scopeId) % dailyCharacters.length];
 }
 
+function dailyGenshinFor(userId: number, scopeId: number): DailyGenshinCharacter {
+  return dailyGenshinCharacters[dailySeedForKind('genshin', userId, scopeId) % dailyGenshinCharacters.length];
+}
+
+function dailyFactFor(userId: number, scopeId: number): DailyTextCard {
+  return dailyFacts[dailySeedForKind('daily_fact', userId, scopeId) % dailyFacts.length];
+}
+
+function dailyBookExcerptFor(userId: number, scopeId: number): DailyTextCard {
+  return dailyBookExcerpts[dailySeedForKind('daily_book', userId, scopeId) % dailyBookExcerpts.length];
+}
+
+function dailyPoemFor(userId: number, scopeId: number): DailyTextCard {
+  return dailyPoems[dailySeedForKind('daily_poem', userId, scopeId) % dailyPoems.length];
+}
+
+function dailyDuelPlayerWeaponFor(userId: number, scopeId: number): DailyDuelWeapon {
+  return duelWeapons[dailySeedForKind('daily_duel_user_weapon', userId, scopeId) % duelWeapons.length];
+}
+
+function dailyDuelBotWeaponFor(userId: number, scopeId: number): DailyDuelWeapon {
+  return duelWeapons[dailySeedForKind('daily_duel_bot_weapon', userId, scopeId) % duelWeapons.length];
+}
+
 function dailyScoreForKind(kind: string, userId: number, scopeId: number): number {
   return (dailySeedForKind(`${kind}_score`, userId, scopeId) % 100) + 1;
 }
@@ -1405,6 +1599,47 @@ function isDailyMokokoRequest(command: string | null, rawText: string): boolean 
   if (['每日木柜子', '今日木柜子', '木柜子', '抽木柜子', '今天木柜子', '今日mygo', '今日avemujica'].includes(text)) return true;
   const hasDaily = /(今日|每日|今天|抽|来个|给我)/.test(text);
   return hasDaily && /(木柜子|mygo|avemujica|ave|mujica|迷子|母鸡卡)/.test(text);
+}
+
+function isDailyGenshinRequest(command: string | null, rawText: string): boolean {
+  if (['genshin', 'ys', '原神', '原神角色', '每日原神', '今日原神', '每日原神角色', '今日原神角色'].includes(command || '')) return true;
+  const text = normalizeDrawText(rawText);
+  if (!text) return false;
+  if (['每日原神', '今日原神', '每日原神角色', '今日原神角色', '抽原神角色', '今天原神角色'].includes(text)) return true;
+  const hasDaily = /(今日|每日|今天|抽|来个|给我)/.test(text);
+  return hasDaily && /(原神|genshin|提瓦特)/.test(text) && /(角色|人物|谁|抽)/.test(text);
+}
+
+function isDailyFactRequest(command: string | null, rawText: string): boolean {
+  if (['fact', 'cold', 'coldfact', '冷知识', '每日冷知识', '今日冷知识'].includes(command || '')) return true;
+  const text = normalizeDrawText(rawText);
+  if (!text) return false;
+  return ['每日冷知识', '今日冷知识', '冷知识', '来个冷知识', '今天冷知识'].includes(text)
+    || (/(今日|每日|今天|来个|给我)/.test(text) && /(冷知识|小知识|奇怪知识|小众知识)/.test(text));
+}
+
+function isDailyBookRequest(command: string | null, rawText: string): boolean {
+  if (['book', 'excerpt', 'quote', '书摘', '每日书摘', '今日书摘'].includes(command || '')) return true;
+  const text = normalizeDrawText(rawText);
+  if (!text) return false;
+  return ['每日书摘', '今日书摘', '书摘', '来个书摘', '今天书摘'].includes(text)
+    || (/(今日|每日|今天|来个|给我)/.test(text) && /(书摘|摘抄|读书|书句)/.test(text));
+}
+
+function isDailyPoemRequest(command: string | null, rawText: string): boolean {
+  if (['poem', 'poetry', '古诗', '古诗词', '诗词', '每日古诗词', '今日古诗词'].includes(command || '')) return true;
+  const text = normalizeDrawText(rawText);
+  if (!text) return false;
+  return ['每日古诗词', '今日古诗词', '每日古诗', '今日古诗', '古诗词', '来首诗'].includes(text)
+    || (/(今日|每日|今天|来个|给我|来首)/.test(text) && /(古诗词|古诗|诗词|唐诗|宋词)/.test(text));
+}
+
+function isDailyDuelRequest(command: string | null, rawText: string): boolean {
+  if (['duel', '决斗', '紫禁之巅', '决战紫禁之巅', '每日决战紫禁之巅', '今日决战紫禁之巅'].includes(command || '')) return true;
+  const text = normalizeDrawText(rawText);
+  if (!text) return false;
+  return ['决战紫禁之巅', '每日决战紫禁之巅', '今日决战紫禁之巅', '紫禁之巅'].includes(text)
+    || (/(今日|每日|今天|来个|给我)/.test(text) && /(决战|决斗|紫禁之巅|单挑)/.test(text));
 }
 
 function isDailyCardRequest(command: string | null, rawText: string, kind: DailyCardKind): boolean {
@@ -1728,7 +1963,7 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
       avoid: '这是角色抽签，不是CS事实。',
       line: character.voice,
     };
-    return probeImageCandidates(`每日木柜子 ${character.name}`, await buildCharacterImageCandidates(character), card, score);
+    return probeImageCandidates(`每日木柜子 ${character.name}`, await buildCharacterImageCandidates(character, userId, scopeId), card, score);
   }
   if (kind === 'all') {
     const kinds: CsImageProbeKind[] = ['player', 'team', 'map', 'weapon', 'skin', 'role', 'utility', 'tactic', 'clutch', 'knife', 'mokoko'];
@@ -1765,7 +2000,7 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
       }
       if (item === 'mokoko') {
         const character = dailyCharacterFor(userId, scopeId);
-        const candidates = await buildCharacterImageCandidates(character);
+        const candidates = await buildCharacterImageCandidates(character, userId, scopeId);
         let ok = false;
         for (const candidate of candidates.slice(0, 4)) {
           if (await tryImageDataUrl(candidate.url, candidate.label)) {
@@ -1952,8 +2187,58 @@ async function imageFromCandidatesOrCard(candidates: ImageCandidate[], fallbackC
   return [localDailyCardImage(fallbackCard, score)];
 }
 
-async function buildCharacterImageCandidates(character: DailyCharacter): Promise<ImageCandidate[]> {
+const BESTDORI_CARD_MANIFEST_PATH = path.resolve(__dirname, '..', '..', 'data', 'bestdori-cards.json');
+let bestdoriCardCache: { mtimeMs: number; cards: BestdoriCardImage[] } | null = null;
+
+function loadBestdoriCardImages(): BestdoriCardImage[] {
+  try {
+    if (!fs.existsSync(BESTDORI_CARD_MANIFEST_PATH)) return [];
+    const stat = fs.statSync(BESTDORI_CARD_MANIFEST_PATH);
+    if (bestdoriCardCache && bestdoriCardCache.mtimeMs === stat.mtimeMs) return bestdoriCardCache.cards;
+    const parsed = JSON.parse(fs.readFileSync(BESTDORI_CARD_MANIFEST_PATH, 'utf-8'));
+    const rawCards = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.cards) ? parsed.cards : [];
+    const cards = rawCards
+      .filter((item: Partial<BestdoriCardImage>) => item && typeof item.url === 'string' && /^https?:\/\//i.test(item.url))
+      .map((item: BestdoriCardImage) => ({
+        characterKey: String(item.characterKey || '').trim(),
+        characterName: String(item.characterName || '').trim(),
+        title: String(item.title || '').trim(),
+        url: String(item.url || '').trim(),
+      }));
+    bestdoriCardCache = { mtimeMs: stat.mtimeMs, cards };
+    return cards;
+  } catch (err) {
+    console.warn('[fun] Bestdori本地卡面清单读取失败:', err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+function bestdoriCardsForCharacter(character: DailyCharacter): BestdoriCardImage[] {
+  const key = character.key.toLowerCase();
+  const names = character.name.toLowerCase().split('/').map((item) => item.trim()).filter(Boolean);
+  return loadBestdoriCardImages().filter((card) => {
+    const cardKey = String(card.characterKey || '').toLowerCase();
+    const cardName = String(card.characterName || '').toLowerCase();
+    return cardKey === key || names.some((name) => cardName.includes(name) || name.includes(cardName));
+  });
+}
+
+async function buildCharacterImageCandidates(character: DailyCharacter, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
   const candidateUrls: ImageCandidate[] = [];
+  const bestdoriCards = bestdoriCardsForCharacter(character);
+  if (bestdoriCards.length > 0) {
+    const start = dailySeedForKind(`mokoko_bestdori_${character.key}`, userId, scopeId) % bestdoriCards.length;
+    for (let i = 0; i < Math.min(bestdoriCards.length, 5); i++) {
+      const card = bestdoriCards[(start + i) % bestdoriCards.length];
+      if (card.url) {
+        candidateUrls.push({
+          url: card.url,
+          label: `${character.name}/bestdori-card/${card.title || i + 1}`,
+          source: 'bestdori-card',
+        });
+      }
+    }
+  }
   if (character.file) {
     try {
       const fileUrl = await Promise.race([
@@ -1988,6 +2273,55 @@ async function buildCharacterImageCandidates(character: DailyCharacter): Promise
   }
   const seen = new Set<string>();
   return candidateUrls.filter((item) => {
+    if (!item.url || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  });
+}
+
+async function buildGenshinImageCandidates(character: DailyGenshinCharacter): Promise<ImageCandidate[]> {
+  const candidateUrls: ImageCandidate[] = [];
+  try {
+    const pageUrl = await Promise.race([
+      fandomPageImageResolver(character.page, 'genshin'),
+      new Promise<null>((r) => setTimeout(() => r(null), 5000)),
+    ]);
+    if (pageUrl) {
+      candidateUrls.push({
+        url: pageUrl,
+        label: `${character.name}/genshin-page`,
+        source: 'fandom-page',
+      });
+    }
+  } catch (err) {
+    console.warn(`[fun] ${character.name} Genshin页面图解析失败:`, err instanceof Error ? err.message : err);
+  }
+  const seen = new Set<string>();
+  return candidateUrls.filter((item) => {
+    if (!item.url || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  });
+}
+
+async function buildDuelImageCandidates(weapon: DailyDuelWeapon): Promise<ImageCandidate[]> {
+  const candidates: ImageCandidate[] = [];
+  if (weapon.image) {
+    candidates.push({ url: weapon.image, label: `${weapon.name}/static`, source: 'static-url' });
+  }
+  if (weapon.fandomFile) {
+    try {
+      const fandomUrl = await Promise.race([
+        fandomImageResolver(weapon.fandomFile, 'counterstrike'),
+        new Promise<null>((r) => setTimeout(() => r(null), 5000)),
+      ]);
+      if (fandomUrl) candidates.push({ url: fandomUrl, label: `${weapon.name}/${weapon.fandomFile}`, source: 'fandom-file' });
+    } catch (err) {
+      console.warn(`[fun] ${weapon.name} 紫禁之巅图片解析失败:`, err instanceof Error ? err.message : err);
+    }
+  }
+  const seen = new Set<string>();
+  return candidates.filter((item) => {
     if (!item.url || seen.has(item.url)) return false;
     seen.add(item.url);
     return true;
@@ -2099,7 +2433,7 @@ async function buildKnifeMessage(userId: number, knife: KnifeCard, skin: KnifeSk
   return message;
 }
 
-async function buildMokokoMessage(userId: number, character: DailyCharacter, score: number, isPrivate: boolean): Promise<MessageSegment[]> {
+async function buildMokokoMessage(userId: number, character: DailyCharacter, score: number, isPrivate: boolean, scopeId: number = 0): Promise<MessageSegment[]> {
   const card: DailyCard = {
     key: `mokoko-${character.key}`,
     title: character.title,
@@ -2121,7 +2455,136 @@ async function buildMokokoMessage(userId: number, character: DailyCharacter, sco
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(...await imageFromCandidatesOrCard(await buildCharacterImageCandidates(character), card, score));
+  message.push(...await imageFromCandidatesOrCard(await buildCharacterImageCandidates(character, userId, scopeId), card, score));
+  return message;
+}
+
+async function buildGenshinMessage(userId: number, character: DailyGenshinCharacter, score: number, isPrivate: boolean): Promise<MessageSegment[]> {
+  const card: DailyCard = {
+    key: `genshin-${character.key}`,
+    title: character.title,
+    name: character.name,
+    subtitle: character.tag,
+    scoreLabel: '共鸣指数',
+    advice: character.note,
+    avoid: '别把今日角色当抽卡建议，先看钱包和版本安排。',
+    line: `${character.tag}，今天把节奏打稳一点。`,
+    imageLabel: character.name,
+  };
+  const text = [
+    `${character.title} | ${character.name}`,
+    `今日关键词：${character.tag}`,
+    `共鸣指数：${score}/100`,
+    `今日短评：${character.note}`,
+    '提醒：这只是每日角色签，不是抽卡建议。',
+  ].join('\n');
+  const message: MessageSegment[] = [];
+  if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
+  message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
+  message.push(...await imageFromCandidatesOrCard(await buildGenshinImageCandidates(character), card, score));
+  return message;
+}
+
+function dailyTextCardAsImageCard(card: DailyTextCard): DailyCard {
+  return {
+    key: card.key,
+    title: card.title,
+    name: card.name,
+    subtitle: card.subtitle,
+    scoreLabel: card.scoreLabel,
+    advice: card.advice,
+    avoid: '',
+    line: card.line,
+    imageLabel: card.name,
+  };
+}
+
+async function buildDailyTextCardMessage(userId: number, card: DailyTextCard, score: number, isPrivate: boolean): Promise<MessageSegment[]> {
+  const text = [
+    `${card.title} | ${card.name}`,
+    card.subtitle,
+    `${card.scoreLabel}：${score}/100`,
+    card.body,
+    `今日短评：${card.line}`,
+    `可以试试：${card.advice}`,
+  ].join('\n');
+  const message: MessageSegment[] = [];
+  if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
+  message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
+  message.push(localDailyCardImage(dailyTextCardAsImageCard(card), score));
+  return message;
+}
+
+function duelOutcome(userWeapon: DailyDuelWeapon, botWeapon: DailyDuelWeapon, userId: number, scopeId: number): {
+  winner: 'user' | 'bot' | 'draw';
+  title: string;
+  detail: string;
+  userRoll: number;
+  botRoll: number;
+} {
+  const chaos = dailySeedForKind(`daily_duel_chaos_${userWeapon.key}_${botWeapon.key}`, userId, scopeId) % 41;
+  const userRoll = userWeapon.power + Math.floor(userWeapon.tempo / 3) + (chaos % 21);
+  const botRoll = botWeapon.power + Math.floor(botWeapon.tempo / 3) + ((chaos * 7) % 21);
+  if (Math.abs(userRoll - botRoll) <= 4) {
+    return {
+      winner: 'draw',
+      title: '平局收场',
+      detail: `${userWeapon.name} 和 ${botWeapon.name} 打到最后谁也没服，紫禁之巅只剩一地节目效果。`,
+      userRoll,
+      botRoll,
+    };
+  }
+  if (userRoll > botRoll) {
+    return {
+      winner: 'user',
+      title: '你赢了',
+      detail: `${userWeapon.name} ${userWeapon.style}，硬是压过了机器的 ${botWeapon.name}。`,
+      userRoll,
+      botRoll,
+    };
+  }
+  return {
+    winner: 'bot',
+    title: '机器赢了',
+    detail: `机器掏出 ${botWeapon.name} 打出 ${botWeapon.style}，你这把 ${userWeapon.name} 差了半口气。`,
+    userRoll,
+    botRoll,
+  };
+}
+
+async function buildDailyDuelMessage(userId: number, scopeId: number, isPrivate: boolean): Promise<MessageSegment[]> {
+  const userWeapon = dailyDuelPlayerWeaponFor(userId, scopeId);
+  const botWeapon = dailyDuelBotWeaponFor(userId, scopeId);
+  const outcome = duelOutcome(userWeapon, botWeapon, userId, scopeId);
+  const score = dailyScoreForKind('daily_duel', userId, scopeId);
+  const card: DailyCard = {
+    key: `duel-${userWeapon.key}-${botWeapon.key}`,
+    title: '每日决战紫禁之巅',
+    name: `${userWeapon.name} VS ${botWeapon.name}`,
+    subtitle: outcome.title,
+    scoreLabel: '节目效果',
+    advice: outcome.detail,
+    avoid: '',
+    line: `${userWeapon.line} / ${botWeapon.line}`,
+    imageLabel: `${userWeapon.name} VS ${botWeapon.name}`,
+  };
+  const text = [
+    '每日决战紫禁之巅',
+    `你：${userWeapon.name}（${userWeapon.style}）`,
+    `机器：${botWeapon.name}（${botWeapon.style}）`,
+    `结果：${outcome.title}`,
+    `判定：${outcome.detail}`,
+    `战力：你 ${outcome.userRoll} / 机器 ${outcome.botRoll}`,
+    `节目效果：${score}/100`,
+  ].join('\n');
+  const message: MessageSegment[] = [];
+  if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
+  message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
+  const candidates = [
+    ...await buildDuelImageCandidates(userWeapon),
+    ...await buildDuelImageCandidates(botWeapon),
+  ];
+  message.push(...await imageFromCandidatesOrCard(candidates, card, score));
   return message;
 }
 
@@ -2916,7 +3379,35 @@ export const funPlugin: Plugin = {
     if (isDailyMokokoRequest(ctx.command, raw)) {
       const character = dailyCharacterFor(ctx.event.user_id, scopeId);
       const score = dailyScoreForKind('mokoko', ctx.event.user_id, scopeId);
-      ctx.reply(await buildMokokoMessage(ctx.event.user_id, character, score, ctx.isPrivate));
+      ctx.reply(await buildMokokoMessage(ctx.event.user_id, character, score, ctx.isPrivate, scopeId));
+      return true;
+    }
+    if (isDailyGenshinRequest(ctx.command, raw)) {
+      const character = dailyGenshinFor(ctx.event.user_id, scopeId);
+      const score = dailyScoreForKind('genshin', ctx.event.user_id, scopeId);
+      ctx.reply(await buildGenshinMessage(ctx.event.user_id, character, score, ctx.isPrivate));
+      return true;
+    }
+    if (isDailyFactRequest(ctx.command, raw)) {
+      const card = dailyFactFor(ctx.event.user_id, scopeId);
+      const score = dailyScoreForKind('daily_fact', ctx.event.user_id, scopeId);
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      return true;
+    }
+    if (isDailyBookRequest(ctx.command, raw)) {
+      const card = dailyBookExcerptFor(ctx.event.user_id, scopeId);
+      const score = dailyScoreForKind('daily_book', ctx.event.user_id, scopeId);
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      return true;
+    }
+    if (isDailyPoemRequest(ctx.command, raw)) {
+      const card = dailyPoemFor(ctx.event.user_id, scopeId);
+      const score = dailyScoreForKind('daily_poem', ctx.event.user_id, scopeId);
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      return true;
+    }
+    if (isDailyDuelRequest(ctx.command, raw)) {
+      ctx.reply(await buildDailyDuelMessage(ctx.event.user_id, scopeId, ctx.isPrivate));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'loadout') || fuzzy === 'csloadout') {
@@ -2990,6 +3481,11 @@ export const __test = {
   csKnives,
   knifeSkins,
   dailyCharacters,
+  dailyGenshinCharacters,
+  dailyFacts,
+  dailyBookExcerpts,
+  dailyPoems,
+  duelWeapons,
   dailyPlayerFor,
   dailyPlayerScore,
   dailyCardFor,
@@ -3000,11 +3496,22 @@ export const __test = {
   knifeSkinAvailableFor,
   knifeSkinPoolFor,
   dailyCharacterFor,
+  dailyGenshinFor,
+  dailyFactFor,
+  dailyBookExcerptFor,
+  dailyPoemFor,
+  dailyDuelPlayerWeaponFor,
+  dailyDuelBotWeaponFor,
   dailyScoreForKind,
   isCsPlayerDrawRequest,
   isCsPlayerStatusRequest,
   isDailyKnifeRequest,
   isDailyMokokoRequest,
+  isDailyGenshinRequest,
+  isDailyFactRequest,
+  isDailyBookRequest,
+  isDailyPoemRequest,
+  isDailyDuelRequest,
   isDailyCardRequest,
   isCsTrainingRequest,
   isCsQuizRequest,
@@ -3024,6 +3531,9 @@ export const __test = {
   buildSkinMessage,
   buildKnifeMessage,
   buildMokokoMessage,
+  buildGenshinMessage,
+  buildDailyTextCardMessage,
+  buildDailyDuelMessage,
   buildLoadoutMessage,
   buildCsTrainingMessage,
   dailyCsQuizFor,

@@ -5222,6 +5222,11 @@ async function testFunCsPlayer() {
     assert.strictEqual(compatibleKnifeSkinKeys.size, funTest.knifeSkins.length, 'every daily knife skin should be available for at least one knife family');
     assert.ok(funTest.csSkins.length >= 55, 'daily CS skin pool should cover the full weapon pool');
     assert.strictEqual(funTest.dailyCharacters.length, 10, 'mokoko pool should cover MyGO and Ave Mujica members');
+    assert.ok(funTest.dailyGenshinCharacters.length >= 90, 'daily genshin pool should include a broad character pool');
+    assert.ok(funTest.dailyFacts.length >= 20, 'daily fact pool should be rich enough for variety');
+    assert.ok(funTest.dailyBookExcerpts.length >= 20, 'daily book excerpt pool should be rich enough for variety');
+    assert.ok(funTest.dailyPoems.length >= 20, 'daily poem pool should be rich enough for variety');
+    assert.ok(funTest.duelWeapons.length >= 20, 'daily duel should include a broad weapon pool');
     const skinWeapons = new Set(funTest.csSkins.map((item) => item.weapon));
     assert.deepStrictEqual(
       funTest.csWeapons.filter((item) => !skinWeapons.has(item.name)).map((item) => item.name),
@@ -5247,6 +5252,11 @@ async function testFunCsPlayer() {
     assert.strictEqual(funTest.isDailyKnifeRequest(null, '发刀'), true, 'short daily knife fuzzy should trigger');
     assert.strictEqual(funTest.isDailyKnifeRequest(null, '.d'), true, '.d should trigger daily knife');
     assert.strictEqual(funTest.isDailyMokokoRequest(null, '每日木柜子'), true, 'daily mokoko fuzzy should trigger');
+    assert.strictEqual(funTest.isDailyGenshinRequest(null, '每日原神角色'), true, 'daily genshin fuzzy should trigger');
+    assert.strictEqual(funTest.isDailyFactRequest(null, '每日冷知识'), true, 'daily fact fuzzy should trigger');
+    assert.strictEqual(funTest.isDailyBookRequest(null, '每日书摘'), true, 'daily book fuzzy should trigger');
+    assert.strictEqual(funTest.isDailyPoemRequest(null, '每日古诗词'), true, 'daily poem fuzzy should trigger');
+    assert.strictEqual(funTest.isDailyDuelRequest(null, '决战紫禁之巅'), true, 'daily duel fuzzy should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天打什么位', 'role'), true, 'fuzzy daily role should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天丢什么道具', 'utility'), true, 'fuzzy daily utility should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天打什么战术', 'tactic'), true, 'fuzzy daily tactic should trigger');
@@ -5274,6 +5284,23 @@ async function testFunCsPlayer() {
     assert.ok(firstText(mokokoMessage).includes('MyGO!!!!!') || firstText(mokokoMessage).includes('Ave Mujica'), 'daily mokoko builder should include band');
     assertCleanDailyText(firstText(mokokoMessage), 'daily mokoko template');
     assert.ok(mokokoMessage.some((seg) => seg.type === 'image'), 'daily mokoko builder should include image');
+    const genshinMessage = await funTest.buildGenshinMessage(61, funTest.dailyGenshinFor(61, 6657), funTest.dailyScoreForKind('genshin', 61, 6657), false);
+    assert.ok(firstText(genshinMessage).includes('每日原神角色'), 'daily genshin builder should include title');
+    assertCleanDailyText(firstText(genshinMessage), 'daily genshin template');
+    assert.ok(genshinMessage.some((seg) => seg.type === 'image'), 'daily genshin builder should include image');
+    const factMessage = await funTest.buildDailyTextCardMessage(61, funTest.dailyFactFor(61, 6657), funTest.dailyScoreForKind('daily_fact', 61, 6657), false);
+    assert.ok(firstText(factMessage).includes('每日冷知识'), 'daily fact builder should include title');
+    assert.ok(factMessage.some((seg) => seg.type === 'image'), 'daily fact builder should include image');
+    const bookMessage = await funTest.buildDailyTextCardMessage(61, funTest.dailyBookExcerptFor(61, 6657), funTest.dailyScoreForKind('daily_book', 61, 6657), false);
+    assert.ok(firstText(bookMessage).includes('每日书摘'), 'daily book builder should include title');
+    assert.ok(bookMessage.some((seg) => seg.type === 'image'), 'daily book builder should include image');
+    const poemMessage = await funTest.buildDailyTextCardMessage(61, funTest.dailyPoemFor(61, 6657), funTest.dailyScoreForKind('daily_poem', 61, 6657), false);
+    assert.ok(firstText(poemMessage).includes('每日古诗词'), 'daily poem builder should include title');
+    assert.ok(poemMessage.some((seg) => seg.type === 'image'), 'daily poem builder should include image');
+    const duelMessage = await funTest.buildDailyDuelMessage(61, 6657, false);
+    assert.ok(firstText(duelMessage).includes('每日决战紫禁之巅'), 'daily duel builder should include title');
+    assert.ok(firstText(duelMessage).includes('你：'), 'daily duel builder should include user weapon');
+    assert.ok(duelMessage.some((seg) => seg.type === 'image'), 'daily duel builder should include image');
     const parsedTraining = funTest.parseTrainingLogInput(['35', 'Mirage', 'AK', '急停']);
     assert.strictEqual(parsedTraining.area, 'aim', 'training log parser should infer aim practice');
     assert.strictEqual(parsedTraining.minutes, 35, 'training log parser should extract minutes');
@@ -5483,6 +5510,31 @@ async function testFunCsPlayer() {
   await waitFor(() => sent.length === 27, 'daily mokoko fuzzy');
   assert.ok(firstText(sent[26].message).includes('每日木柜子'), 'daily mokoko fuzzy should include title');
   assert.ok(sent[26].message.some((seg) => seg.type === 'image'), 'daily mokoko fuzzy should include image');
+
+  handler.handleEvent(makePlainEvent(627, 83, '每日原神角色'));
+  await waitFor(() => sent.length === 28, 'daily genshin fuzzy');
+  assert.ok(firstText(sent[27].message).includes('每日原神角色'), 'daily genshin fuzzy should include title');
+  assert.ok(sent[27].message.some((seg) => seg.type === 'image'), 'daily genshin fuzzy should include image');
+
+  handler.handleEvent(makePlainEvent(628, 84, '每日冷知识'));
+  await waitFor(() => sent.length === 29, 'daily fact fuzzy');
+  assert.ok(firstText(sent[28].message).includes('每日冷知识'), 'daily fact fuzzy should include title');
+  assert.ok(sent[28].message.some((seg) => seg.type === 'image'), 'daily fact fuzzy should include image');
+
+  handler.handleEvent(makePlainEvent(629, 85, '每日书摘'));
+  await waitFor(() => sent.length === 30, 'daily book fuzzy');
+  assert.ok(firstText(sent[29].message).includes('每日书摘'), 'daily book fuzzy should include title');
+  assert.ok(sent[29].message.some((seg) => seg.type === 'image'), 'daily book fuzzy should include image');
+
+  handler.handleEvent(makePlainEvent(630, 86, '每日古诗词'));
+  await waitFor(() => sent.length === 31, 'daily poem fuzzy');
+  assert.ok(firstText(sent[30].message).includes('每日古诗词'), 'daily poem fuzzy should include title');
+  assert.ok(sent[30].message.some((seg) => seg.type === 'image'), 'daily poem fuzzy should include image');
+
+  handler.handleEvent(makePlainEvent(631, 87, '决战紫禁之巅'));
+  await waitFor(() => sent.length === 32, 'daily duel fuzzy');
+  assert.ok(firstText(sent[31].message).includes('每日决战紫禁之巅'), 'daily duel fuzzy should include title');
+  assert.ok(sent[31].message.some((seg) => seg.type === 'image'), 'daily duel fuzzy should include image');
   } finally {
     funTest.__setImageResolverForTests();
     funTest.__setImageSourceResolversForTests();

@@ -8,11 +8,12 @@ import * as zlib from 'zlib';
  * 但 MediaWiki API 能稳定返回 File:imageinfo 的真实图片 URL。
  */
 
-type FandomWiki = 'counterstrike' | 'bandori';
+type FandomWiki = 'counterstrike' | 'bandori' | 'genshin';
 
 const API_BASES: Record<FandomWiki, string> = {
   counterstrike: 'https://counterstrike.fandom.com/api.php',
   bandori: 'https://bandori.fandom.com/api.php',
+  genshin: 'https://genshin-impact.fandom.com/api.php',
 };
 const USER_AGENT = 'wanjier-bot/1.0 (https://github.com/2711944586/qqbot; CS2 group chat bot)';
 const POSITIVE_TTL = 24 * 60 * 60 * 1000;
