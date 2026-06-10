@@ -60,11 +60,14 @@ interface DailyCard {
 
 type DailyCardKind = 'team' | 'map' | 'weapon' | 'skin' | 'role' | 'loadout' | 'utility' | 'tactic' | 'clutch';
 type CsQuizKind = 'map' | 'weapon' | 'utility' | 'tactic' | 'clutch';
-type CsImageProbeKind = DailyCardKind | 'player' | 'knife' | 'mokoko' | 'all';
+type CsImageProbeKind = DailyCardKind | 'player' | 'knife' | 'mokoko' | 'genshin' | 'all';
 type TrainingArea = 'aim' | 'utility' | 'map' | 'role' | 'clutch' | 'review' | 'match';
 type TrainingWeaknessKey = 'death' | 'trade' | 'utility' | 'aim' | 'clutch' | 'map' | 'review';
 
 type FandomWiki = 'counterstrike' | 'bandori' | 'genshin';
+
+const DAILY_BEAUTY_MIN_IMAGES_PER_ITEM = 200;
+const DAILY_IMAGE_CANDIDATE_LIMIT = 200;
 
 interface SkinCard extends DailyCard {
   weapon: string;
@@ -120,8 +123,21 @@ interface DailyDuelWeapon {
 }
 
 interface BestdoriCardImage {
+  kind?: string;
+  category?: string;
+  itemKey?: string;
+  itemName?: string;
   characterKey?: string;
   characterName?: string;
+  key?: string;
+  name?: string;
+  nick?: string;
+  weapon?: string;
+  skin?: string;
+  style?: string;
+  quality?: string;
+  tags?: string[] | string;
+  priority?: number;
   url?: string;
   urls?: string[];
   images?: string[];
@@ -140,6 +156,7 @@ interface ImageCandidate {
     | 'representative-player-static'
     | 'liquipedia-player'
     | 'bestdori-card'
+    | 'authorized-image'
     | 'static-url';
 }
 
@@ -532,19 +549,37 @@ const csKnives: KnifeCard[] = [
 const knifeSkins: KnifeSkin[] = [
   { key: 'vanilla', name: 'Vanilla', rarity: 'Covert', advice: '原版签吃的是刀型本身，今天别花，赢回合最有排面。', avoid: '别原版刀很干净，操作很凌乱。', line: 'Vanilla签，朴素但硬。', fileSuffixes: ['Vanilla', 'Stock', 'stock'] },
   { key: 'doppler', name: 'Doppler', rarity: 'Covert', advice: '多普勒签很亮，亮归亮，别把自己亮给对面。', avoid: '别检视比补枪还积极。', line: 'Doppler一出，群里先沉默三秒。', fileSuffixes: ['Doppler', 'doppler_phase2', 'doppler_phase3', 'doppler_phase4'] },
+  { key: 'doppler-phase1', name: 'Doppler Phase 1', rarity: 'Covert', advice: 'P1签是暗紫冷调，今天稳着打也有高级感。', avoid: '别颜色低调，脚步高调。', line: 'Doppler P1签，低调里有光。', fileSuffixes: ['Doppler_Phase_1', 'Doppler_Phase1', 'doppler_phase1'] },
+  { key: 'doppler-phase2', name: 'Doppler Phase 2', rarity: 'Covert', advice: 'P2签粉紫很出片，但别光顾着截图。', avoid: '别截图比补枪还快。', line: 'Doppler P2签，颜值先顶住。', fileSuffixes: ['Doppler_Phase_2', 'Doppler_Phase2', 'doppler_phase2'] },
+  { key: 'doppler-phase3', name: 'Doppler Phase 3', rarity: 'Covert', advice: 'P3签有点冷门质感，今天靠细节赢。', avoid: '别冷门到队友都跟不上节奏。', line: 'Doppler P3签，懂的人会懂。', fileSuffixes: ['Doppler_Phase_3', 'Doppler_Phase3', 'doppler_phase3'] },
+  { key: 'doppler-phase4', name: 'Doppler Phase 4', rarity: 'Covert', advice: 'P4签蓝调很稳，今天架枪也稳一点。', avoid: '别蓝得好看，人却急得发红。', line: 'Doppler P4签，冷静就完事。', fileSuffixes: ['Doppler_Phase_4', 'Doppler_Phase4', 'doppler_phase4'] },
+  { key: 'doppler-ruby', name: 'Doppler Ruby', rarity: 'Covert', advice: '红宝石签是大货，回合也得打出大货样。', avoid: '别刀像红宝石，经济像碎玻璃。', line: 'Ruby签，群里可以短暂安静一下。', fileSuffixes: ['Doppler_Ruby', 'Ruby', 'doppler_ruby'] },
+  { key: 'doppler-sapphire', name: 'Doppler Sapphire', rarity: 'Covert', advice: '蓝宝石签压迫感够，今天别乱送节奏。', avoid: '别蓝宝石拿着，蓝屏操作打着。', line: 'Sapphire签，冷贵冷贵的。', fileSuffixes: ['Doppler_Sapphire', 'Sapphire', 'doppler_sapphire'] },
+  { key: 'doppler-black-pearl', name: 'Doppler Black Pearl', rarity: 'Covert', advice: '黑珍珠签很稀，今天别把机会打稀碎。', avoid: '别黑珍珠配黑色幽默。', line: 'Black Pearl签，有点传家宝味。', fileSuffixes: ['Doppler_Black_Pearl', 'Black_Pearl', 'doppler_black_pearl'] },
   { key: 'gamma-doppler', name: 'Gamma Doppler', rarity: 'Covert', advice: '绿宝石气质拉满，但回合别绿。', avoid: '别为了看颜色忘了看包点。', line: 'Gamma Doppler签，今天有点贵气。', fileSuffixes: ['Gamma_Doppler', 'gamma_doppler'] },
+  { key: 'gamma-doppler-phase1', name: 'Gamma Doppler Phase 1', rarity: 'Covert', advice: 'Gamma P1签偏沉稳，今天信息别断。', avoid: '别绿光一闪，人就没了。', line: 'Gamma P1签，稳里带亮。', fileSuffixes: ['Gamma_Doppler_Phase_1', 'Gamma_Doppler_Phase1', 'gamma_doppler_phase1'] },
+  { key: 'gamma-doppler-phase2', name: 'Gamma Doppler Phase 2', rarity: 'Covert', advice: 'Gamma P2签更亮，今天正面可以硬一点。', avoid: '别亮刀亮到暴露timing。', line: 'Gamma P2签，亮得有攻击性。', fileSuffixes: ['Gamma_Doppler_Phase_2', 'Gamma_Doppler_Phase2', 'gamma_doppler_phase2'] },
+  { key: 'gamma-doppler-phase3', name: 'Gamma Doppler Phase 3', rarity: 'Covert', advice: 'Gamma P3签有层次，今天别一条路走黑。', avoid: '别颜色有层次，打法没层次。', line: 'Gamma P3签，细节派。', fileSuffixes: ['Gamma_Doppler_Phase_3', 'Gamma_Doppler_Phase3', 'gamma_doppler_phase3'] },
+  { key: 'gamma-doppler-phase4', name: 'Gamma Doppler Phase 4', rarity: 'Covert', advice: 'Gamma P4签清爽，今天交流也清楚点。', avoid: '别报点比刀纹还模糊。', line: 'Gamma P4签，干净利落。', fileSuffixes: ['Gamma_Doppler_Phase_4', 'Gamma_Doppler_Phase4', 'gamma_doppler_phase4'] },
+  { key: 'gamma-doppler-emerald', name: 'Gamma Doppler Emerald', rarity: 'Covert', advice: '绿宝石签到手，今天少犯低级错。', avoid: '别满眼绿宝石，满脑子空枪。', line: 'Emerald签，这把真有点贵。', fileSuffixes: ['Gamma_Doppler_Emerald', 'Emerald', 'gamma_doppler_emerald'] },
   { key: 'fade', name: 'Fade', rarity: 'Covert', advice: '渐变签很顺眼，打法也要顺。', avoid: '别渐变很丝滑，急停很抽象。', line: 'Fade签，老审美不会错。', fileSuffixes: ['Fade'] },
   { key: 'marble-fade', name: 'Marble Fade', rarity: 'Covert', advice: '大理石渐变可以花，回合别花。', avoid: '别花刀配花活，最后花式白给。', line: 'Marble Fade签，颜色先赢了。', fileSuffixes: ['Marble_Fade'] },
+  { key: 'marble-fade-fire-ice', name: 'Marble Fade Fire & Ice', rarity: 'Covert', advice: '冰火签看着就狠，今天决策也得干脆。', avoid: '别冰火两重天，上一秒自信下一秒白给。', line: 'Fire & Ice签，节目效果很足。', fileSuffixes: ['Marble_Fade_Fire_And_Ice', 'Marble_Fade_Fire_Ice', 'Fire_And_Ice'] },
   { key: 'tiger-tooth', name: 'Tiger Tooth', rarity: 'Covert', advice: '虎牙签就是锋利，今天正面可以硬一点。', avoid: '别虎牙变乳牙。', line: 'Tiger Tooth签，咬住别松。', fileSuffixes: ['Tiger_Tooth'] },
   { key: 'case-hardened', name: 'Case Hardened', rarity: 'Covert', advice: '淬火签看脸，回合可不能全看脸。', avoid: '别蓝顶没出，红温先出。', line: 'Case Hardened签，赌狗气质来了。', fileSuffixes: ['Case_Hardened', 'case_hardened'] },
+  { key: 'case-hardened-blue-gem', name: 'Case Hardened Blue Gem', rarity: 'Covert', advice: '蓝宝石淬火签拉满，今天别把好签打成坏账。', avoid: '别蓝顶在手，脑子离线。', line: 'Blue Gem签，懂价的已经开始算了。', fileSuffixes: ['Case_Hardened_Blue_Gem', 'Blue_Gem', 'case_hardened_blue_gem'] },
   { key: 'blue-steel', name: 'Blue Steel', rarity: 'Covert', advice: '蓝钢签低调耐看，今天靠纪律和补枪吃饭。', avoid: '别冷色刀配热头打法。', line: 'Blue Steel签，稳里带一点冷。', fileSuffixes: ['Blue_Steel', 'blue_steel'] },
   { key: 'crimson-web', name: 'Crimson Web', rarity: 'Covert', advice: '红网签压迫感强，但别自己陷进去。', avoid: '别卡在自己编的网里。', line: 'Crimson Web签，红得有道理。', fileSuffixes: ['Crimson_Web', 'Crimson_web'] },
+  { key: 'crimson-web-centered', name: 'Crimson Web Centered', rarity: 'Covert', advice: '正网签讲究一个位置，今天站位也讲究点。', avoid: '别网居中，人站歪。', line: 'Centered Web签，强迫症舒服了。', fileSuffixes: ['Crimson_Web_Centered', 'Centered_Web', 'crimson_web_centered'] },
   { key: 'slaughter', name: 'Slaughter', rarity: 'Covert', advice: '屠夫签要狠，但狠之前先确认队友位置。', avoid: '别屠的是队伍经济。', line: 'Slaughter签，今天别手软也别上头。', fileSuffixes: ['Slaughter'] },
   { key: 'lore', name: 'Lore', rarity: 'Covert', advice: '传说签有味，今天拿信息要有耐心。', avoid: '别传说没打出来，笑话先出来。', line: 'Lore签，老金色排面。', fileSuffixes: ['Lore'] },
+  { key: 'lore-gold', name: 'Lore Gold', rarity: 'Covert', advice: '金色传说签，今天少说多赢。', avoid: '别金得晃眼，枪线晃没。', line: 'Lore Gold签，排面是够的。', fileSuffixes: ['Lore_Gold', 'Golden_Lore', 'lore_gold'] },
   { key: 'autotronic', name: 'Autotronic', rarity: 'Covert', advice: '自动化签很硬，打法别像没上电。', avoid: '别机械感有了，判断没了。', line: 'Autotronic签，红银硬货。', fileSuffixes: ['Autotronic', 'autotronic'] },
   { key: 'black-laminate', name: 'Black Laminate', rarity: 'Covert', advice: '黑层压低调，今天就靠纪律说话。', avoid: '别低调到队友找不到你。', line: 'Black Laminate签，冷静派。', fileSuffixes: ['Black_Laminate', 'black_laminate'] },
+  { key: 'black-laminate-clean', name: 'Black Laminate Clean', rarity: 'Covert', advice: '干净黑层压签，今天操作也干净点。', avoid: '别刀面干净，残局脏乱。', line: 'Clean Black Laminate签，耐看。', fileSuffixes: ['Black_Laminate_Clean', 'Clean_Black_Laminate', 'black_laminate_clean'] },
   { key: 'boreal-forest', name: 'Boreal Forest', rarity: 'Covert', advice: '北方森林签主打隐蔽，别先把脚步送出去。', avoid: '别迷彩没藏住，意图先暴露。', line: 'Boreal Forest签，朴素但能活。', fileSuffixes: ['Boreal_Forest', 'boreal_forest'] },
   { key: 'damascus', name: 'Damascus Steel', rarity: 'Covert', advice: '大马士革签要稳，细节纹路别打散。', avoid: '别刀纹很细，枪法很粗。', line: 'Damascus Steel签，老工艺感。', fileSuffixes: ['Damascus_Steel'] },
+  { key: 'damascus-bright', name: 'Damascus Steel Bright', rarity: 'Covert', advice: '亮面大马士革签，今天少犯暗亏。', avoid: '别刀面有光，思路没光。', line: 'Bright Damascus签，质感在线。', fileSuffixes: ['Damascus_Steel_Bright', 'Bright_Damascus', 'damascus_bright'] },
   { key: 'forest-ddpat', name: 'Forest DDPAT', rarity: 'Covert', advice: '森林数码签很实用，今天多拿信息少赌命。', avoid: '别伪装得很好，回合目标也跟着消失。', line: 'Forest DDPAT签，低调务实派。', fileSuffixes: ['Forest_DDPAT', 'forest_ddpat'] },
   { key: 'night', name: 'Night', rarity: 'Covert', advice: '夜色签很沉，今天别急着亮自己位置。', avoid: '别黑刀配黑屏操作。', line: 'Night签，暗得有气质。', fileSuffixes: ['Night'] },
   { key: 'night-stripe', name: 'Night Stripe', rarity: 'Covert', advice: '夜色条纹签冷静一点，先打信息再打人。', avoid: '别条纹很稳，人先乱了。', line: 'Night Stripe签，干净低调。', fileSuffixes: ['Night_Stripe', 'night_stripe'] },
@@ -552,15 +587,33 @@ const knifeSkins: KnifeSkin[] = [
   { key: 'stained', name: 'Stained', rarity: 'Covert', advice: '表面淬色签耐看，今天每个peek都要有理由。', avoid: '别刀面有痕，思路也有坑。', line: 'Stained签，老派稳定。', fileSuffixes: ['Stained'] },
   { key: 'ultraviolet', name: 'Ultraviolet', rarity: 'Covert', advice: '紫外线签低调酷，今天少嘴硬多补枪。', avoid: '别紫得发黑，回合也发黑。', line: 'Ultraviolet签，冷色但别冷场。', fileSuffixes: ['Ultraviolet'] },
   { key: 'freehand', name: 'Freehand', rarity: 'Covert', advice: '自由手签可以飘，但打法别飘。', avoid: '别自由到没有队形。', line: 'Freehand签，花纹随意，人别随意。', fileSuffixes: ['Freehand'] },
+  { key: 'freehand-purple', name: 'Freehand Purple', rarity: 'Covert', advice: '紫手绘签很有辨识度，今天别打成随手。', avoid: '别自由手变随便手。', line: 'Purple Freehand签，花得有分寸。', fileSuffixes: ['Freehand_Purple', 'Purple_Freehand', 'freehand_purple'] },
   { key: 'rust-coat', name: 'Rust Coat', rarity: 'Covert', advice: '锈蚀签很接地气，今天别嫌，赢回合才香。', avoid: '别刀生锈，脑子也生锈。', line: 'Rust Coat签，穷也穷得有态度。', fileSuffixes: ['Rust_Coat'] },
   { key: 'bright-water', name: 'Bright Water', rarity: 'Covert', advice: '澄澈之水签，今天信息也要清楚。', avoid: '别水很亮，人很迷。', line: 'Bright Water签，清爽但要能打。', fileSuffixes: ['Bright_Water'] },
   { key: 'safari-mesh', name: 'Safari Mesh', rarity: 'Covert', advice: '狩猎网格签朴素，朴素不是白给。', avoid: '别被对面当猎物。', line: 'Safari Mesh签，主打实用主义。', fileSuffixes: ['Safari_Mesh'] },
   { key: 'urban-masked', name: 'Urban Masked', rarity: 'Covert', advice: '都市伪装签适合稳扎稳打，先清近点再动。', avoid: '别伪装了半天，自己先迷路。', line: 'Urban Masked签，城市老兵味。', fileSuffixes: ['Urban_Masked', 'urban_masked'] },
+  { key: 'urban-masked-clean', name: 'Urban Masked Clean', rarity: 'Covert', advice: '干净都市伪装签，今天清点别拖。', avoid: '别清清爽爽进点，稀里糊涂掉包。', line: 'Clean Urban Masked签，朴素但顺眼。', fileSuffixes: ['Urban_Masked_Clean', 'Clean_Urban_Masked', 'urban_masked_clean'] },
 ];
 
 const legacyKnifeKeys = new Set(['bayonet', 'm9-bayonet', 'karambit', 'butterfly', 'flip', 'gut', 'huntsman', 'falchion', 'bowie', 'shadow-daggers']);
 const limitedKnifeKeys = new Set(['classic', 'kukri']);
-const legacyOnlyKnifeSkinKeys = new Set(['autotronic', 'black-laminate', 'bright-water', 'freehand', 'gamma-doppler', 'lore', 'night']);
+const legacyOnlyKnifeSkinKeys = new Set([
+  'autotronic',
+  'black-laminate',
+  'black-laminate-clean',
+  'bright-water',
+  'freehand',
+  'freehand-purple',
+  'gamma-doppler',
+  'gamma-doppler-phase1',
+  'gamma-doppler-phase2',
+  'gamma-doppler-phase3',
+  'gamma-doppler-phase4',
+  'gamma-doppler-emerald',
+  'lore',
+  'lore-gold',
+  'night',
+]);
 const limitedKnifeSkinKeys = new Set(['vanilla', 'blue-steel', 'boreal-forest', 'case-hardened', 'crimson-web', 'fade', 'forest-ddpat', 'night-stripe', 'safari-mesh', 'scorched', 'slaughter', 'stained', 'urban-masked']);
 
 function knifeSkinAvailableFor(knife: KnifeCard, skin: KnifeSkin): boolean {
@@ -1617,6 +1670,7 @@ function normalizeCsImageKind(input: string): CsImageProbeKind {
   if (/^(player|选手|csplayer|今日选手)$/.test(text)) return 'player';
   if (/^(knife|刀|发刀|csknife|今日发刀)$/.test(text)) return 'knife';
   if (/^(mokoko|木柜子|mygo|avemujica|角色|每日木柜子)$/.test(text)) return 'mokoko';
+  if (/^(genshin|ys|原神|原神角色|每日原神)$/.test(text)) return 'genshin';
   if (/^(team|队伍|战队|csteam|今日队伍|今日战队)$/.test(text)) return 'team';
   if (/^(map|地图|csmap|今日地图)$/.test(text)) return 'map';
   if (/^(weapon|gun|枪|武器|枪械|csweapon|今日武器)$/.test(text)) return 'weapon';
@@ -2002,7 +2056,7 @@ async function probeImageCandidates(title: string, candidates: ImageCandidate[],
 async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: number): Promise<MessageSegment[]> {
   if (kind === 'player') {
     const player = dailyPlayerFor(userId, scopeId);
-    const candidates = await buildImageCandidates(player.image, player.nick);
+    const candidates = await buildCsPlayerImageCandidates(player, userId, scopeId);
     return probeImageCandidates(`今日选手 ${player.nick}`, candidates);
   }
   if (kind === 'knife') {
@@ -2019,7 +2073,7 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
       avoid: `${knife.avoid} ${skin.avoid}`,
       line: `${knife.line} ${skin.line}`,
     };
-    return probeImageCandidates(`今日发刀 ${knife.name} | ${skin.name}`, await buildKnifeImageCandidates(knife, skin), card, score);
+    return probeImageCandidates(`今日发刀 ${knife.name} | ${skin.name}`, await buildKnifeImageCandidates(knife, skin, userId, scopeId), card, score);
   }
   if (kind === 'mokoko') {
     const character = dailyCharacterFor(userId, scopeId);
@@ -2036,13 +2090,28 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
     };
     return probeImageCandidates(`每日木柜子 ${character.name}`, await buildCharacterImageCandidates(character, userId, scopeId), card, score);
   }
+  if (kind === 'genshin') {
+    const character = dailyGenshinFor(userId, scopeId);
+    const score = dailyScoreForKind('genshin', userId, scopeId);
+    const card: DailyCard = {
+      key: `probe-genshin-${character.key}`,
+      title: character.title,
+      name: character.name,
+      subtitle: character.tag,
+      scoreLabel: '共鸣指数',
+      advice: character.note,
+      avoid: '这是每日角色签，不是抽卡建议。',
+      line: character.tag,
+    };
+    return probeImageCandidates(`每日原神角色 ${character.name}`, await buildGenshinImageCandidates(character, userId, scopeId), card, score);
+  }
   if (kind === 'all') {
-    const kinds: CsImageProbeKind[] = ['player', 'team', 'map', 'weapon', 'skin', 'role', 'utility', 'tactic', 'clutch', 'knife', 'mokoko'];
+    const kinds: CsImageProbeKind[] = ['player', 'team', 'map', 'weapon', 'skin', 'role', 'utility', 'tactic', 'clutch', 'knife', 'mokoko', 'genshin'];
     const lines = ['CS真实图片批量测试'];
     for (const item of kinds) {
       if (item === 'player') {
         const player = dailyPlayerFor(userId, scopeId);
-        const candidates = await buildImageCandidates(player.image, player.nick);
+        const candidates = await buildCsPlayerImageCandidates(player, userId, scopeId);
         let ok = false;
         for (const candidate of candidates.slice(0, 4)) {
           if (await tryImageDataUrl(candidate.url, candidate.label)) {
@@ -2057,7 +2126,7 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
       if (item === 'knife') {
         const knife = dailyKnifeFor(userId, scopeId);
         const skin = dailyKnifeSkinFor(userId, scopeId, knife);
-        const candidates = await buildKnifeImageCandidates(knife, skin);
+        const candidates = await buildKnifeImageCandidates(knife, skin, userId, scopeId);
         let ok = false;
         for (const candidate of candidates.slice(0, 4)) {
           if (await tryImageDataUrl(candidate.url, candidate.label)) {
@@ -2083,9 +2152,23 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
         if (!ok) lines.push(`FAIL mokoko ${character.name}`);
         continue;
       }
+      if (item === 'genshin') {
+        const character = dailyGenshinFor(userId, scopeId);
+        const candidates = await buildGenshinImageCandidates(character, userId, scopeId);
+        let ok = false;
+        for (const candidate of candidates.slice(0, 4)) {
+          if (await tryImageDataUrl(candidate.url, candidate.label)) {
+            ok = true;
+            lines.push(`OK genshin ${character.name} -> ${candidate.source}`);
+            break;
+          }
+        }
+        if (!ok) lines.push(`FAIL genshin ${character.name}`);
+        continue;
+      }
       const cards = cardsForImageKind(item);
       const card = dailyCardFor(`cs${item}`, userId, scopeId, cards);
-      const candidates = await buildImageCandidates(card.image, undefined, card);
+      const candidates = await buildDailyCardImageCandidates(item, card, userId, scopeId);
       let ok = false;
       for (const candidate of candidates.slice(0, 4)) {
         if (await tryImageDataUrl(candidate.url, candidate.label)) {
@@ -2104,7 +2187,7 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
   const cards = cardsForImageKind(kind);
   const card = dailyCardFor(kind === 'loadout' ? 'csteam_pack' : `cs${kind}`, userId, scopeId, cards);
   const score = dailyScoreForKind(kind === 'loadout' ? 'csloadout' : `cs${kind}`, userId, scopeId);
-  const candidates = await buildImageCandidates(card.image, undefined, card);
+  const candidates = await buildDailyCardImageCandidates(kind, card, userId, scopeId);
   return probeImageCandidates(`${card.title} ${card.name}`, candidates, card, score);
 }
 
@@ -2207,8 +2290,14 @@ function knifeSkinFileCandidates(knife: KnifeCard, skin: KnifeSkin): string[] {
   return [...new Set(files)];
 }
 
-async function buildKnifeImageCandidates(knife: KnifeCard, skin: KnifeSkin): Promise<ImageCandidate[]> {
-  const candidateUrls: ImageCandidate[] = [];
+async function buildKnifeImageCandidates(knife: KnifeCard, skin: KnifeSkin, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
+  const candidateUrls: ImageCandidate[] = dailyBeautyCandidatesFor(
+    'knife',
+    `${knife.name} ${skin.name}`,
+    [knife.key, knife.name, ...knife.aliases, skin.key, skin.name, `${knife.name} ${skin.name}`, `${knife.name} | ${skin.name}`],
+    userId,
+    scopeId,
+  );
   try {
     const skinUrl = await Promise.race([
       csgoSkinImageResolver(knife.name, skin.name),
@@ -2259,43 +2348,247 @@ async function imageFromCandidatesOrCard(candidates: ImageCandidate[], fallbackC
 }
 
 const BESTDORI_CARD_MANIFEST_PATH = path.resolve(__dirname, '..', '..', 'data', 'bestdori-cards.json');
-let bestdoriCardCache: { mtimeMs: number; cards: BestdoriCardImage[] } | null = null;
+const PLAYER_IMAGE_MANIFEST_PATH = path.resolve(__dirname, '..', '..', 'data', 'daily-player-images.json');
+const GENSHIN_IMAGE_MANIFEST_PATH = path.resolve(__dirname, '..', '..', 'data', 'genshin-character-images.json');
+const DAILY_BEAUTY_IMAGE_MANIFEST_PATH = path.resolve(__dirname, '..', '..', 'data', 'daily-beauty-images.json');
 let bestdoriCardManifestPathOverride = '';
+let playerImageManifestPathOverride = '';
+let genshinImageManifestPathOverride = '';
+let dailyBeautyImageManifestPathOverride = '';
+const authorizedImageCache: Map<string, { mtimeMs: number; cards: BestdoriCardImage[] }> = new Map();
 
 function bestdoriCardManifestPath(): string {
   return bestdoriCardManifestPathOverride || BESTDORI_CARD_MANIFEST_PATH;
 }
 
-function loadBestdoriCardImages(): BestdoriCardImage[] {
+function manifestTags(item: BestdoriCardImage): string[] {
+  if (Array.isArray(item.tags)) return item.tags.map((tag) => String(tag || '').trim()).filter(Boolean);
+  if (typeof item.tags === 'string') return item.tags.split(/[,\s/|]+/).map((tag) => tag.trim()).filter(Boolean);
+  return [];
+}
+
+function expandImageManifestItems(rawCards: BestdoriCardImage[]): BestdoriCardImage[] {
+  return rawCards.flatMap((item: BestdoriCardImage) => {
+    if (!item || typeof item !== 'object') return [];
+    const urls = [
+      typeof item.url === 'string' ? item.url : '',
+      ...(Array.isArray(item.urls) ? item.urls : []),
+      ...(Array.isArray(item.images) ? item.images : []),
+    ]
+      .map((url) => String(url || '').trim())
+      .filter((url) => /^https?:\/\//i.test(url));
+    const tags = manifestTags(item);
+    return [...new Set(urls)].map((url, index) => ({
+      kind: String(item.kind || '').trim(),
+      category: String(item.category || '').trim(),
+      itemKey: String(item.itemKey || '').trim(),
+      itemName: String(item.itemName || '').trim(),
+      key: String(item.key || '').trim(),
+      nick: String(item.nick || '').trim(),
+      name: String(item.name || '').trim(),
+      characterKey: String(item.characterKey || '').trim(),
+      characterName: String(item.characterName || '').trim(),
+      weapon: String(item.weapon || '').trim(),
+      skin: String(item.skin || '').trim(),
+      style: String(item.style || '').trim(),
+      quality: String(item.quality || '').trim(),
+      tags,
+      priority: Number.isFinite(Number(item.priority)) ? Number(item.priority) : 0,
+      title: index === 0 ? String(item.title || '').trim() : `${String(item.title || '').trim() || 'card'} #${index + 1}`,
+      url,
+    }));
+  });
+}
+
+function loadImageManifest(manifestPath: string, cacheKey: string): BestdoriCardImage[] {
   try {
-    const manifestPath = bestdoriCardManifestPath();
     if (!fs.existsSync(manifestPath)) return [];
     const stat = fs.statSync(manifestPath);
-    if (bestdoriCardCache && bestdoriCardCache.mtimeMs === stat.mtimeMs) return bestdoriCardCache.cards;
+    const cacheId = `${cacheKey}:${manifestPath}`;
+    const cached = authorizedImageCache.get(cacheId);
+    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.cards;
     const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     const rawCards = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.cards) ? parsed.cards : [];
-    const cards = rawCards.flatMap((item: BestdoriCardImage) => {
-      if (!item || typeof item !== 'object') return [];
-      const urls = [
-        typeof item.url === 'string' ? item.url : '',
-        ...(Array.isArray(item.urls) ? item.urls : []),
-        ...(Array.isArray(item.images) ? item.images : []),
-      ]
-        .map((url) => String(url || '').trim())
-        .filter((url) => /^https?:\/\//i.test(url));
-      return [...new Set(urls)].map((url, index) => ({
-        characterKey: String(item.characterKey || '').trim(),
-        characterName: String(item.characterName || '').trim(),
-        title: index === 0 ? String(item.title || '').trim() : `${String(item.title || '').trim() || 'card'} #${index + 1}`,
-        url,
-      }));
-    });
-    bestdoriCardCache = { mtimeMs: stat.mtimeMs, cards };
+    const cards = expandImageManifestItems(rawCards);
+    authorizedImageCache.set(cacheId, { mtimeMs: stat.mtimeMs, cards });
     return cards;
   } catch (err) {
-    console.warn('[fun] Bestdori本地卡面清单读取失败:', err instanceof Error ? err.message : err);
+    console.warn(`[fun] 本地图片清单读取失败 ${cacheKey}:`, err instanceof Error ? err.message : err);
     return [];
   }
+}
+
+function loadBestdoriCardImages(): BestdoriCardImage[] {
+  return loadImageManifest(bestdoriCardManifestPath(), 'bestdori');
+}
+
+function playerImageManifestPath(): string {
+  return playerImageManifestPathOverride || PLAYER_IMAGE_MANIFEST_PATH;
+}
+
+function genshinImageManifestPath(): string {
+  return genshinImageManifestPathOverride || GENSHIN_IMAGE_MANIFEST_PATH;
+}
+
+function dailyBeautyImageManifestPath(): string {
+  return dailyBeautyImageManifestPathOverride || DAILY_BEAUTY_IMAGE_MANIFEST_PATH;
+}
+
+function loadPlayerManifestImages(): BestdoriCardImage[] {
+  return loadImageManifest(playerImageManifestPath(), 'players');
+}
+
+function loadGenshinManifestImages(): BestdoriCardImage[] {
+  return loadImageManifest(genshinImageManifestPath(), 'genshin');
+}
+
+function loadDailyBeautyImages(): BestdoriCardImage[] {
+  return loadImageManifest(dailyBeautyImageManifestPath(), 'daily-beauty');
+}
+
+function compactManifestValue(value: unknown): string {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '');
+}
+
+const dailyImageKindAliases: Record<string, string[]> = {
+  player: ['player', 'csplayer', 'dailyplayer', '选手', '每日选手', '今日选手'],
+  team: ['team', 'csteam', 'squad', '战队', '队伍', '每日战队', '今日队伍'],
+  map: ['map', 'csmap', '地图', '每日地图', '今日地图'],
+  weapon: ['weapon', 'gun', 'csweapon', '武器', '枪', '枪械'],
+  skin: ['skin', 'skins', 'csskin', '皮肤', '饰品'],
+  role: ['role', 'position', 'csrole', '定位', '位置'],
+  loadout: ['loadout', 'pack', 'package', '套餐', '套装', '今日cs'],
+  utility: ['utility', 'nade', 'grenade', 'csutility', '道具', '投掷物'],
+  tactic: ['tactic', 'strat', 'strategy', 'cstactic', '战术'],
+  clutch: ['clutch', 'csclutch', '残局'],
+  knife: ['knife', 'csknife', '刀', '发刀', '刀皮'],
+  mokoko: ['mokoko', 'mygo', 'avemujica', 'bandori', '木柜子', '迷子', '母鸡卡'],
+  genshin: ['genshin', 'ys', '原神', '提瓦特'],
+  duel: ['duel', 'dailyduel', '紫禁之巅', '决战'],
+  fact: ['fact', 'cold', 'coldfact', '冷知识'],
+  book: ['book', 'excerpt', '书摘'],
+  poem: ['poem', '古诗词', '诗词'],
+};
+
+function imageKindAliases(kind: string): string[] {
+  const normalized = compactManifestValue(kind);
+  const aliases = dailyImageKindAliases[normalized] || [normalized];
+  return [...new Set([normalized, ...aliases.map(compactManifestValue)])].filter(Boolean);
+}
+
+function manifestKindMatches(kind: string, card: BestdoriCardImage): boolean {
+  const rawKind = card.kind || card.category || '';
+  if (!rawKind) return false;
+  const normalized = compactManifestValue(rawKind);
+  return imageKindAliases(kind).includes(normalized);
+}
+
+function manifestSearchValues(card: BestdoriCardImage): string[] {
+  return [
+    card.key,
+    card.itemKey,
+    card.nick,
+    card.name,
+    card.itemName,
+    card.characterKey,
+    card.characterName,
+    card.weapon,
+    card.skin,
+    card.title,
+    ...(Array.isArray(card.tags) ? card.tags : []),
+  ].map(compactManifestValue).filter(Boolean);
+}
+
+function manifestBeautyScore(card: BestdoriCardImage): number {
+  const text = [
+    card.title,
+    card.style,
+    card.quality,
+    ...(Array.isArray(card.tags) ? card.tags : []),
+  ].join(' ').toLowerCase();
+  let score = Number.isFinite(Number(card.priority)) ? Number(card.priority) : 0;
+  if (/(splash|card|art|artwork|illustration|poster|wallpaper|keyvisual|scene|stage|ingame|inspect|render|showcase|cinematic|卡面|立绘|海报|壁纸|场景|舞台|检视|展示|官图|美图)/i.test(text)) score += 80;
+  if (/(headshot|portrait|avatar|profile|idphoto|大头|头像|证件|半身像)/i.test(text)) score -= 120;
+  return score;
+}
+
+function preferBeautyManifestImages(cards: BestdoriCardImage[]): BestdoriCardImage[] {
+  const sorted = [...cards].sort((a, b) => manifestBeautyScore(b) - manifestBeautyScore(a));
+  const beautiful = sorted.filter((card) => manifestBeautyScore(card) > -80);
+  return beautiful.length > 0 ? beautiful : sorted;
+}
+
+function dailyBeautyManifestImagesFor(kind: string, values: unknown[]): BestdoriCardImage[] {
+  const keys = values.map(compactManifestValue).filter(Boolean);
+  if (keys.length === 0) return [];
+  const matches = loadDailyBeautyImages().filter((card) => {
+    if (!manifestKindMatches(kind, card)) return false;
+    const cardValues = manifestSearchValues(card);
+    return cardValues.some((value) => keys.some((key) => value === key || value.includes(key) || key.includes(value)));
+  });
+  return preferBeautyManifestImages(matches);
+}
+
+function dailyBeautyCandidatesFor(kind: string, label: string, values: unknown[], userId: number, scopeId: number, limit = DAILY_IMAGE_CANDIDATE_LIMIT): ImageCandidate[] {
+  return rotateManifestCards(dailyBeautyManifestImagesFor(kind, values), `daily_beauty_${kind}_${compactManifestValue(label)}`, userId, scopeId, limit)
+    .filter((card) => card.url)
+    .map((card, index): ImageCandidate => ({
+      url: String(card.url),
+      label: `${label}/beauty/${card.title || index + 1}`,
+      source: 'authorized-image',
+    }));
+}
+
+function dailyBeautyImageCountFor(kind: string, values: unknown[]): number {
+  return dailyBeautyManifestImagesFor(kind, values).length;
+}
+
+function formatBeautyCoverage(name: string, count: number): string {
+  const status = count >= DAILY_BEAUTY_MIN_IMAGES_PER_ITEM ? 'OK' : '不足';
+  return `${name}${count}/${DAILY_BEAUTY_MIN_IMAGES_PER_ITEM}${status}`;
+}
+
+function currentDailyBeautyCoverageLines(userId: number, scopeId: number): string[] {
+  const player = dailyPlayerFor(userId, scopeId);
+  const team = dailyCardFor('csteam', userId, scopeId, csTeams);
+  const map = dailyCardFor('csmap', userId, scopeId, csMaps);
+  const weapon = dailyCardFor('csweapon', userId, scopeId, csWeapons);
+  const skin = dailySkinForWeapon(weapon, userId, scopeId);
+  const role = dailyCardFor('csrole', userId, scopeId, csRoles);
+  const utility = dailyCardFor('csutility', userId, scopeId, csUtilities);
+  const tactic = dailyCardFor('cstactic', userId, scopeId, csTactics);
+  const clutch = dailyCardFor('csclutch', userId, scopeId, csClutches);
+  const knife = dailyKnifeFor(userId, scopeId);
+  const knifeSkin = dailyKnifeSkinFor(userId, scopeId, knife);
+  const mokoko = dailyCharacterFor(userId, scopeId);
+  const genshin = dailyGenshinFor(userId, scopeId);
+  const fact = dailyFactFor(userId, scopeId);
+  const book = dailyBookExcerptFor(userId, scopeId);
+  const poem = dailyPoemFor(userId, scopeId);
+  const duelWeapon = dailyDuelPlayerWeaponFor(userId, scopeId);
+  const rows = [
+    formatBeautyCoverage('选手', dailyBeautyImageCountFor('player', [player.nick, player.name, ...(player.aliases || [])])),
+    formatBeautyCoverage('战队', dailyBeautyImageCountFor('team', dailyCardManifestSearchValues(team))),
+    formatBeautyCoverage('地图', dailyBeautyImageCountFor('map', dailyCardManifestSearchValues(map))),
+    formatBeautyCoverage('武器', dailyBeautyImageCountFor('weapon', dailyCardManifestSearchValues(weapon))),
+    formatBeautyCoverage('皮肤', dailyBeautyImageCountFor('skin', dailyCardManifestSearchValues(localSkinCard(skin)))),
+    formatBeautyCoverage('定位', dailyBeautyImageCountFor('role', dailyCardManifestSearchValues(role))),
+    formatBeautyCoverage('道具', dailyBeautyImageCountFor('utility', dailyCardManifestSearchValues(utility))),
+    formatBeautyCoverage('战术', dailyBeautyImageCountFor('tactic', dailyCardManifestSearchValues(tactic))),
+    formatBeautyCoverage('残局', dailyBeautyImageCountFor('clutch', dailyCardManifestSearchValues(clutch))),
+    formatBeautyCoverage('刀皮', dailyBeautyImageCountFor('knife', [knife.key, knife.name, ...knife.aliases, knifeSkin.key, knifeSkin.name, `${knife.name} ${knifeSkin.name}`, `${knife.name} | ${knifeSkin.name}`])),
+    formatBeautyCoverage('木柜子', dailyBeautyImageCountFor('mokoko', [mokoko.key, mokoko.name, mokoko.band, mokoko.role, mokoko.page])),
+    formatBeautyCoverage('原神', dailyBeautyImageCountFor('genshin', [genshin.key, genshin.name, genshin.page, genshin.tag])),
+    formatBeautyCoverage('冷知识', dailyBeautyImageCountFor('fact', [fact.key, fact.title, fact.name, fact.subtitle, fact.body, fact.line])),
+    formatBeautyCoverage('书摘', dailyBeautyImageCountFor('book', [book.key, book.title, book.name, book.subtitle, book.body, book.line])),
+    formatBeautyCoverage('古诗词', dailyBeautyImageCountFor('poem', [poem.key, poem.title, poem.name, poem.subtitle, poem.body, poem.line])),
+    formatBeautyCoverage('紫禁之巅', dailyBeautyImageCountFor('duel', [duelWeapon.key, duelWeapon.name, duelWeapon.style])),
+  ];
+  return [
+    `美图最低标准: 每个对象${DAILY_BEAUTY_MIN_IMAGES_PER_ITEM}张起`,
+    `当前签位美图覆盖: ${rows.join(' / ')}`,
+    '图片隔离: daily-beauty清单必须写kind和对象标识，不能跨功能混用',
+  ];
 }
 
 function bestdoriCardsForCharacter(character: DailyCharacter): BestdoriCardImage[] {
@@ -2304,21 +2597,101 @@ function bestdoriCardsForCharacter(character: DailyCharacter): BestdoriCardImage
   return loadBestdoriCardImages().filter((card) => {
     const cardKey = String(card.characterKey || '').toLowerCase();
     const cardName = String(card.characterName || '').toLowerCase();
-    return cardKey === key || names.some((name) => cardName.includes(name) || name.includes(cardName));
+    return (cardKey && cardKey === key) || (cardName && names.some((name) => cardName.includes(name) || name.includes(cardName)));
   });
 }
 
+function rotateManifestCards(cards: BestdoriCardImage[], seedKey: string, userId: number, scopeId: number, limit = DAILY_IMAGE_CANDIDATE_LIMIT): BestdoriCardImage[] {
+  if (cards.length === 0) return [];
+  const start = dailySeedForKind(seedKey, userId, scopeId) % cards.length;
+  return Array.from({ length: Math.min(cards.length, limit) }, (_unused, index) => cards[(start + index) % cards.length]);
+}
+
+function playerManifestImagesFor(player: CSPlayer): BestdoriCardImage[] {
+  const keys = [player.nick, player.name, ...(player.aliases || [])]
+    .map(compactManifestValue)
+    .filter(Boolean);
+  return preferBeautyManifestImages(loadPlayerManifestImages().filter((card) => {
+    const values = [card.key, card.nick, card.name, card.characterKey, card.characterName]
+      .map(compactManifestValue)
+      .filter(Boolean);
+    return values.some((value) => keys.some((key) => value === key || value.includes(key) || key.includes(value)));
+  }));
+}
+
+function genshinManifestImagesFor(character: DailyGenshinCharacter): BestdoriCardImage[] {
+  const keys = [character.key, character.name]
+    .map(compactManifestValue)
+    .filter(Boolean);
+  return preferBeautyManifestImages(loadGenshinManifestImages().filter((card) => {
+    const values = [card.key, card.name, card.characterKey, card.characterName]
+      .map(compactManifestValue)
+      .filter(Boolean);
+    return values.some((value) => keys.some((key) => value === key || value.includes(key) || key.includes(value)));
+  }));
+}
+
+async function buildCsPlayerImageCandidates(player: CSPlayer, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
+  const beautyCandidates = dailyBeautyCandidatesFor(
+    'player',
+    player.nick,
+    [player.nick, player.name, ...(player.aliases || [])],
+    userId,
+    scopeId,
+  );
+  const manifestCandidates = rotateManifestCards(playerManifestImagesFor(player), `csplayer_manifest_${player.nick}`, userId, scopeId)
+    .filter((card) => card.url)
+    .map((card, index): ImageCandidate => ({
+      url: String(card.url),
+      label: `${player.nick}/authorized-player/${card.title || index + 1}`,
+      source: 'authorized-image',
+    }));
+  return [
+    ...beautyCandidates,
+    ...manifestCandidates,
+    ...await buildImageCandidates(player.image, player.nick),
+  ];
+}
+
+function dailyCardManifestSearchValues(card: DailyCard): unknown[] {
+  const skinCard = isSkinCard(card) ? card : null;
+  return [
+    card.key,
+    card.name,
+    card.imageLabel,
+    card.subtitle,
+    card.liquipediaPage,
+    card.fandomPage,
+    card.fandomFile,
+    card.playerImageFallback,
+    skinCard?.weapon,
+    skinCard ? `${skinCard.weapon} ${skinCard.name}` : '',
+    skinCard ? `${skinCard.weapon} | ${skinCard.name}` : '',
+  ];
+}
+
+async function buildDailyCardImageCandidates(kind: string, card: DailyCard, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
+  return [
+    ...dailyBeautyCandidatesFor(kind, card.name, dailyCardManifestSearchValues(card), userId, scopeId),
+    ...await buildImageCandidates(card.image, undefined, card),
+  ];
+}
+
 async function buildCharacterImageCandidates(character: DailyCharacter, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
-  const candidateUrls: ImageCandidate[] = [];
+  const candidateUrls: ImageCandidate[] = dailyBeautyCandidatesFor(
+    'mokoko',
+    character.name,
+    [character.key, character.name, character.band, character.role, character.page],
+    userId,
+    scopeId,
+  );
   const bestdoriCards = bestdoriCardsForCharacter(character);
   if (bestdoriCards.length > 0) {
-    const start = dailySeedForKind(`mokoko_bestdori_${character.key}`, userId, scopeId) % bestdoriCards.length;
-    for (let i = 0; i < Math.min(bestdoriCards.length, 5); i++) {
-      const card = bestdoriCards[(start + i) % bestdoriCards.length];
+    for (const card of rotateManifestCards(bestdoriCards, `mokoko_bestdori_${character.key}`, userId, scopeId)) {
       if (card.url) {
         candidateUrls.push({
           url: card.url,
-          label: `${character.name}/bestdori-card/${card.title || i + 1}`,
+          label: `${character.name}/bestdori-card/${card.title || candidateUrls.length + 1}`,
           source: 'bestdori-card',
         });
       }
@@ -2364,8 +2737,23 @@ async function buildCharacterImageCandidates(character: DailyCharacter, userId: 
   });
 }
 
-async function buildGenshinImageCandidates(character: DailyGenshinCharacter): Promise<ImageCandidate[]> {
-  const candidateUrls: ImageCandidate[] = [];
+async function buildGenshinImageCandidates(character: DailyGenshinCharacter, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
+  const candidateUrls: ImageCandidate[] = dailyBeautyCandidatesFor(
+    'genshin',
+    character.name,
+    [character.key, character.name, character.page, character.tag],
+    userId,
+    scopeId,
+  );
+  const manifestCards = rotateManifestCards(genshinManifestImagesFor(character), `genshin_manifest_${character.key}`, userId, scopeId);
+  for (const card of manifestCards) {
+    if (!card.url) continue;
+    candidateUrls.push({
+      url: card.url,
+      label: `${character.name}/authorized-genshin/${card.title || candidateUrls.length + 1}`,
+      source: 'authorized-image',
+    });
+  }
   const fileCandidates = [
     `Character ${character.name} Card.png`,
     `${character.name} Card.png`,
@@ -2417,8 +2805,14 @@ async function buildGenshinImageCandidates(character: DailyGenshinCharacter): Pr
   });
 }
 
-async function buildDuelImageCandidates(weapon: DailyDuelWeapon): Promise<ImageCandidate[]> {
-  const candidates: ImageCandidate[] = [];
+async function buildDuelImageCandidates(weapon: DailyDuelWeapon, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
+  const candidates: ImageCandidate[] = dailyBeautyCandidatesFor(
+    'duel',
+    weapon.name,
+    [weapon.key, weapon.name, weapon.style],
+    userId,
+    scopeId,
+  );
   if (weapon.image) {
     candidates.push({ url: weapon.image, label: `${weapon.name}/static`, source: 'static-url' });
   }
@@ -2441,7 +2835,7 @@ async function buildDuelImageCandidates(weapon: DailyDuelWeapon): Promise<ImageC
   });
 }
 
-async function buildCsPlayerMessage(userId: number, player: CSPlayer, score?: number): Promise<MessageSegment[]> {
+async function buildCsPlayerMessage(userId: number, player: CSPlayer, score?: number, scopeId: number = 0): Promise<MessageSegment[]> {
   const scoreText = typeof score === 'number' ? `${scoreLine(score)} ${score}/100` : '';
   const roleAdvice = playerRoleAdvice(player, score);
   const text = [
@@ -2457,16 +2851,26 @@ async function buildCsPlayerMessage(userId: number, player: CSPlayer, score?: nu
     { type: 'at', data: { qq: String(userId) } },
     { type: 'text', data: { text: ` ${text}` } },
   ];
-    message.push(...await imageSegmentOrNote(player.image, player.nick, undefined, score));
+  message.push(...await imageFromCandidatesOrCard(await buildCsPlayerImageCandidates(player, userId, scopeId), {
+    key: `player-${player.nick}`,
+    title: '今日CS选手',
+    name: player.nick,
+    subtitle: `${player.team} / ${player.role}`,
+    scoreLabel: '签位',
+    advice: roleAdvice.style,
+    avoid: roleAdvice.avoid,
+    line: player.note,
+    imageLabel: player.nick,
+  }, typeof score === 'number' ? score : dailyPlayerScore(userId, scopeId)));
   return message;
 }
 
-async function buildPrivateCsPlayerMessage(player: CSPlayer, score?: number): Promise<MessageSegment[]> {
-  const message = (await buildCsPlayerMessage(0, player, score)).filter((seg) => seg.type !== 'at');
+async function buildPrivateCsPlayerMessage(player: CSPlayer, score?: number, userId: number = 0, scopeId: number = 0): Promise<MessageSegment[]> {
+  const message = (await buildCsPlayerMessage(userId, player, score, scopeId)).filter((seg) => seg.type !== 'at');
   return message;
 }
 
-async function buildDailyCardMessage(userId: number, card: DailyCard, score: number, isPrivate: boolean): Promise<MessageSegment[]> {
+async function buildDailyCardMessage(userId: number, card: DailyCard, score: number, isPrivate: boolean, kind: string = 'daily', scopeId: number = 0): Promise<MessageSegment[]> {
   const text = [
     `${card.title} | ${card.name}`,
     card.subtitle,
@@ -2478,11 +2882,11 @@ async function buildDailyCardMessage(userId: number, card: DailyCard, score: num
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(...await imageSegmentOrNote(card.image, undefined, card, score));
+  message.push(...await imageFromCandidatesOrCard(await buildDailyCardImageCandidates(kind, card, userId, scopeId), card, score));
   return message;
 }
 
-async function buildSkinMessage(userId: number, skin: SkinCard, score: number, isPrivate: boolean): Promise<MessageSegment[]> {
+async function buildSkinMessage(userId: number, skin: SkinCard, score: number, isPrivate: boolean, scopeId: number = 0): Promise<MessageSegment[]> {
   const text = [
     `${skin.title} | ${skin.name}`,
     `${skin.weapon} / ${skin.rarity}`,
@@ -2495,11 +2899,11 @@ async function buildSkinMessage(userId: number, skin: SkinCard, score: number, i
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(...await imageSegmentOrNote(skin.image, undefined, localSkinCard(skin), score));
+  message.push(...await imageFromCandidatesOrCard(await buildDailyCardImageCandidates('skin', localSkinCard(skin), userId, scopeId), localSkinCard(skin), score));
   return message;
 }
 
-async function buildWeaponMessage(userId: number, weapon: DailyCard, skin: SkinCard, score: number, isPrivate: boolean): Promise<MessageSegment[]> {
+async function buildWeaponMessage(userId: number, weapon: DailyCard, skin: SkinCard, score: number, isPrivate: boolean, scopeId: number = 0): Promise<MessageSegment[]> {
   const text = [
     `${weapon.title} | ${weapon.name}`,
     weapon.subtitle,
@@ -2513,12 +2917,12 @@ async function buildWeaponMessage(userId: number, weapon: DailyCard, skin: SkinC
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(...await imageSegmentOrNote(weapon.image, undefined, weapon, score));
-  message.push(...await imageSegmentOrNote(skin.image, undefined, localSkinCard(skin), score));
+  message.push(...await imageFromCandidatesOrCard(await buildDailyCardImageCandidates('weapon', weapon, userId, scopeId), weapon, score));
+  message.push(...await imageFromCandidatesOrCard(await buildDailyCardImageCandidates('skin', localSkinCard(skin), userId, scopeId), localSkinCard(skin), score));
   return message;
 }
 
-async function buildKnifeMessage(userId: number, knife: KnifeCard, skin: KnifeSkin, score: number, isPrivate: boolean): Promise<MessageSegment[]> {
+async function buildKnifeMessage(userId: number, knife: KnifeCard, skin: KnifeSkin, score: number, isPrivate: boolean, scopeId: number = 0): Promise<MessageSegment[]> {
   const card: DailyCard = {
     key: `knife-${knife.key}-${skin.key}`,
     title: '今日发刀',
@@ -2542,7 +2946,7 @@ async function buildKnifeMessage(userId: number, knife: KnifeCard, skin: KnifeSk
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(...await imageFromCandidatesOrCard(await buildKnifeImageCandidates(knife, skin), card, score));
+  message.push(...await imageFromCandidatesOrCard(await buildKnifeImageCandidates(knife, skin, userId, scopeId), card, score));
   return message;
 }
 
@@ -2572,7 +2976,7 @@ async function buildMokokoMessage(userId: number, character: DailyCharacter, sco
   return message;
 }
 
-async function buildGenshinMessage(userId: number, character: DailyGenshinCharacter, score: number, isPrivate: boolean): Promise<MessageSegment[]> {
+async function buildGenshinMessage(userId: number, character: DailyGenshinCharacter, score: number, isPrivate: boolean, scopeId: number = 0): Promise<MessageSegment[]> {
   const card: DailyCard = {
     key: `genshin-${character.key}`,
     title: character.title,
@@ -2594,7 +2998,7 @@ async function buildGenshinMessage(userId: number, character: DailyGenshinCharac
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(...await imageFromCandidatesOrCard(await buildGenshinImageCandidates(character), card, score));
+  message.push(...await imageFromCandidatesOrCard(await buildGenshinImageCandidates(character, userId, scopeId), card, score));
   return message;
 }
 
@@ -2612,7 +3016,17 @@ function dailyTextCardAsImageCard(card: DailyTextCard): DailyCard {
   };
 }
 
-async function buildDailyTextCardMessage(userId: number, card: DailyTextCard, score: number, isPrivate: boolean): Promise<MessageSegment[]> {
+async function buildDailyTextImageCandidates(kind: string, card: DailyTextCard, userId: number = 0, scopeId: number = 0): Promise<ImageCandidate[]> {
+  return dailyBeautyCandidatesFor(
+    kind,
+    card.name,
+    [card.key, card.title, card.name, card.subtitle, card.body, card.line],
+    userId,
+    scopeId,
+  );
+}
+
+async function buildDailyTextCardMessage(userId: number, card: DailyTextCard, score: number, isPrivate: boolean, kind: string = 'text', scopeId: number = 0): Promise<MessageSegment[]> {
   const text = [
     `${card.title} | ${card.name}`,
     card.subtitle,
@@ -2624,7 +3038,8 @@ async function buildDailyTextCardMessage(userId: number, card: DailyTextCard, sc
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(localDailyCardImage(dailyTextCardAsImageCard(card), score));
+  const imageCard = dailyTextCardAsImageCard(card);
+  message.push(...await imageFromCandidatesOrCard(await buildDailyTextImageCandidates(kind, card, userId, scopeId), imageCard, score));
   return message;
 }
 
@@ -2694,8 +3109,8 @@ async function buildDailyDuelMessage(userId: number, scopeId: number, isPrivate:
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
   const candidates = [
-    ...await buildDuelImageCandidates(userWeapon),
-    ...await buildDuelImageCandidates(botWeapon),
+    ...await buildDuelImageCandidates(userWeapon, userId, scopeId),
+    ...await buildDuelImageCandidates(botWeapon, userId, scopeId),
   ];
   message.push(...await imageFromCandidatesOrCard(candidates, card, score));
   return message;
@@ -2724,8 +3139,8 @@ async function buildLoadoutMessage(userId: number, scopeId: number, isPrivate: b
   const message: MessageSegment[] = [];
   if (!isPrivate) message.push({ type: 'at', data: { qq: String(userId) } });
   message.push({ type: 'text', data: { text: isPrivate ? text : ` ${text}` } });
-  message.push(...await imageSegmentOrNote(team.image, undefined, team, score));
-  message.push(...await imageSegmentOrNote(skin.image, undefined, localSkinCard(skin), score));
+  message.push(...await imageFromCandidatesOrCard(await buildDailyCardImageCandidates('team', team, userId, scopeId), team, score));
+  message.push(...await imageFromCandidatesOrCard(await buildDailyCardImageCandidates('skin', localSkinCard(skin), userId, scopeId), localSkinCard(skin), score));
   return message;
 }
 
@@ -3362,9 +3777,13 @@ export const funPlugin: Plugin = {
         `木柜子池: MyGO!!!!!/Ave Mujica 共${dailyCharacters.length}人`,
         `Bestdori本地卡面: ${loadBestdoriCardImages().length}张`,
         `原神角色池: ${dailyGenshinCharacters.length}人`,
+        `通用每日美图: ${loadDailyBeautyImages().length}张`,
+        `选手本地图片: ${loadPlayerManifestImages().length}张`,
+        `原神本地图片: ${loadGenshinManifestImages().length}张`,
+        ...currentDailyBeautyCoverageLines(ctx.event.user_id, ctx.groupId || 0),
         `冷知识/书摘/古诗词: ${dailyFacts.length}/${dailyBookExcerpts.length}/${dailyPoems.length}`,
         `紫禁之巅武器池: ${duelWeapons.length}种`,
-        `真实图策略: Liquipedia/Steam饰品图/Fandom/Wikimedia/BanG Dream Wiki优先，外链全失败才发本地签位卡`,
+        `真实图策略: 通用美图/专用授权清单优先，外链全失败才发本地签位卡`,
         `队伍示例: ${csTeams.slice(0, 3).map((item) => `${item.name}(${dailyCardImagePlan(item).replace(/^图源：/, '')})`).join(' | ')}`,
         (() => {
           const liq = getLiquipediaImageStats();
@@ -3378,7 +3797,7 @@ export const funPlugin: Plugin = {
         `图片命中: ${stats.hits}/${stats.misses} 失败${stats.downloadFailures} 飞行${stats.inFlight}`,
         ...(stats.lastError ? [`最近图片错误: ${stats.lastError}`] : []),
         '',
-        '/csimage test team|map|weapon|skin|role|utility|tactic|clutch|knife|mokoko|player|all 测真实图源',
+        '/csimage test team|map|weapon|skin|role|utility|tactic|clutch|knife|mokoko|genshin|player|all 测真实图源',
         'admin: /csprewarm 预下载所有选手图(慢，受限流影响)',
       ].join('\n'));
       return true;
@@ -3424,8 +3843,8 @@ export const funPlugin: Plugin = {
       const player = dailyPlayerFor(ctx.event.user_id, scopeId);
       const score = dailyPlayerScore(ctx.event.user_id, scopeId);
       ctx.reply(ctx.isPrivate
-        ? await buildPrivateCsPlayerMessage(player, score)
-        : await buildCsPlayerMessage(ctx.event.user_id, player, score));
+        ? await buildPrivateCsPlayerMessage(player, score, ctx.event.user_id, scopeId)
+        : await buildCsPlayerMessage(ctx.event.user_id, player, score, scopeId));
       return true;
     }
 
@@ -3490,7 +3909,7 @@ export const funPlugin: Plugin = {
       const knife = dailyKnifeFor(ctx.event.user_id, scopeId);
       const skin = dailyKnifeSkinFor(ctx.event.user_id, scopeId, knife);
       const score = dailyScoreForKind('csknife', ctx.event.user_id, scopeId);
-      ctx.reply(await buildKnifeMessage(ctx.event.user_id, knife, skin, score, ctx.isPrivate));
+      ctx.reply(await buildKnifeMessage(ctx.event.user_id, knife, skin, score, ctx.isPrivate, scopeId));
       return true;
     }
     if (isDailyMokokoRequest(ctx.command, raw)) {
@@ -3502,25 +3921,25 @@ export const funPlugin: Plugin = {
     if (isDailyGenshinRequest(ctx.command, raw)) {
       const character = dailyGenshinFor(ctx.event.user_id, scopeId);
       const score = dailyScoreForKind('genshin', ctx.event.user_id, scopeId);
-      ctx.reply(await buildGenshinMessage(ctx.event.user_id, character, score, ctx.isPrivate));
+      ctx.reply(await buildGenshinMessage(ctx.event.user_id, character, score, ctx.isPrivate, scopeId));
       return true;
     }
     if (isDailyFactRequest(ctx.command, raw)) {
       const card = dailyFactFor(ctx.event.user_id, scopeId);
       const score = dailyScoreForKind('daily_fact', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'fact', scopeId));
       return true;
     }
     if (isDailyBookRequest(ctx.command, raw)) {
       const card = dailyBookExcerptFor(ctx.event.user_id, scopeId);
       const score = dailyScoreForKind('daily_book', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'book', scopeId));
       return true;
     }
     if (isDailyPoemRequest(ctx.command, raw)) {
       const card = dailyPoemFor(ctx.event.user_id, scopeId);
       const score = dailyScoreForKind('daily_poem', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'poem', scopeId));
       return true;
     }
     if (isDailyDuelRequest(ctx.command, raw)) {
@@ -3534,50 +3953,50 @@ export const funPlugin: Plugin = {
     if (isDailyCardRequest(ctx.command, raw, 'team') || fuzzy === 'csteam') {
       const card = dailyCardFor('csteam', ctx.event.user_id, scopeId, csTeams);
       const score = dailyScoreForKind('csteam', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'team', scopeId));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'map') || fuzzy === 'csmap') {
       const card = dailyCardFor('csmap', ctx.event.user_id, scopeId, csMaps);
       const score = dailyScoreForKind('csmap', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'map', scopeId));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'weapon') || fuzzy === 'csweapon') {
       const card = dailyCardFor('csweapon', ctx.event.user_id, scopeId, csWeapons);
       const skin = dailySkinForWeapon(card, ctx.event.user_id, scopeId);
       const score = dailyScoreForKind('csweapon', ctx.event.user_id, scopeId);
-      ctx.reply(await buildWeaponMessage(ctx.event.user_id, card, skin, score, ctx.isPrivate));
+      ctx.reply(await buildWeaponMessage(ctx.event.user_id, card, skin, score, ctx.isPrivate, scopeId));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'skin')) {
       const skin = dailySkinFor(ctx.event.user_id, scopeId);
       const score = dailyScoreForKind('csskin', ctx.event.user_id, scopeId);
-      ctx.reply(await buildSkinMessage(ctx.event.user_id, skin, score, ctx.isPrivate));
+      ctx.reply(await buildSkinMessage(ctx.event.user_id, skin, score, ctx.isPrivate, scopeId));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'role') || fuzzy === 'csrole') {
       const card = dailyCardFor('csrole', ctx.event.user_id, scopeId, csRoles);
       const score = dailyScoreForKind('csrole', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'role', scopeId));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'utility') || fuzzy === 'csutility') {
       const card = dailyCardFor('csutility', ctx.event.user_id, scopeId, csUtilities);
       const score = dailyScoreForKind('csutility', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'utility', scopeId));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'tactic') || fuzzy === 'cstactic') {
       const card = dailyCardFor('cstactic', ctx.event.user_id, scopeId, csTactics);
       const score = dailyScoreForKind('cstactic', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'tactic', scopeId));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'clutch') || fuzzy === 'csclutch') {
       const card = dailyCardFor('csclutch', ctx.event.user_id, scopeId, csClutches);
       const score = dailyScoreForKind('csclutch', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate));
+      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'clutch', scopeId));
       return true;
     }
 
@@ -3649,8 +4068,17 @@ export const __test = {
   buildKnifeMessage,
   buildMokokoMessage,
   buildGenshinMessage,
+  buildCsPlayerImageCandidates,
+  buildDailyCardImageCandidates,
+  buildKnifeImageCandidates,
   buildCharacterImageCandidates,
   buildGenshinImageCandidates,
+  buildDuelImageCandidates,
+  buildDailyTextImageCandidates,
+  loadBestdoriCardImages,
+  loadPlayerManifestImages,
+  loadGenshinManifestImages,
+  loadDailyBeautyImages,
   buildDailyTextCardMessage,
   buildDailyDuelMessage,
   buildLoadoutMessage,
@@ -3662,7 +4090,19 @@ export const __test = {
   },
   __setBestdoriCardManifestPathForTests: (filepath?: string) => {
     bestdoriCardManifestPathOverride = filepath || '';
-    bestdoriCardCache = null;
+    authorizedImageCache.clear();
+  },
+  __setPlayerImageManifestPathForTests: (filepath?: string) => {
+    playerImageManifestPathOverride = filepath || '';
+    authorizedImageCache.clear();
+  },
+  __setGenshinImageManifestPathForTests: (filepath?: string) => {
+    genshinImageManifestPathOverride = filepath || '';
+    authorizedImageCache.clear();
+  },
+  __setDailyBeautyImageManifestPathForTests: (filepath?: string) => {
+    dailyBeautyImageManifestPathOverride = filepath || '';
+    authorizedImageCache.clear();
   },
   __setImageResolverForTests: (resolver?: (url: string) => Promise<string | null>) => {
     imageDataUrlResolver = resolver || getImageDataUrl;

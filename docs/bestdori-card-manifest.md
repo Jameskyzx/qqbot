@@ -44,3 +44,5 @@ tomori, anon, rana, soyo, taki, uika, mutsumi, umiri, nyamu, sakiko
 ```
 
 If multiple cards match the same character, the daily draw rotates through those images by user, chat, and date. If the manifest is missing or an image URL fails, the bot falls back to Bandori Wiki page images and then the local daily card.
+
+For CS player and Genshin character manifests, see [daily-image-manifests.md](daily-image-manifests.md).

@@ -5176,6 +5176,9 @@ async function testFunCsPlayer() {
   const trainingStorePath = path.resolve(__dirname, '..', 'data', `cs-training-smoke-${Date.now()}.json`);
   const profileStorePath = path.resolve(__dirname, '..', 'data', `cs-profile-smoke-${Date.now()}.json`);
   const bestdoriManifestPath = path.resolve(__dirname, '..', 'data', `bestdori-cards-smoke-${Date.now()}.json`);
+  const playerManifestPath = path.resolve(__dirname, '..', 'data', `daily-player-images-smoke-${Date.now()}.json`);
+  const genshinManifestPath = path.resolve(__dirname, '..', 'data', `genshin-character-images-smoke-${Date.now()}.json`);
+  const dailyBeautyManifestPath = path.resolve(__dirname, '..', 'data', `daily-beauty-images-smoke-${Date.now()}.json`);
   const sent = [];
   const bot = {
     getConfig: () => config,
@@ -5219,6 +5222,119 @@ async function testFunCsPlayer() {
       assert.ok(!dailyTemplateLeakPattern.test(String(value || '')), `${label} should not leak source/debug template notes`);
     };
     const player = funTest.dailyPlayerFor(61, 6657);
+    const genshin = funTest.dailyGenshinFor(61, 6657);
+    const team = funTest.dailyCardFor('csteam', 61, 6657, funTest.csTeams);
+    const knife = funTest.dailyKnifeFor(61, 6657);
+    const knifeSkin = funTest.dailyKnifeSkinFor(61, 6657, knife);
+    const tomori = funTest.dailyCharacters.find((item) => item.key === 'tomori');
+    const fact = funTest.dailyFactFor(61, 6657);
+    const book = funTest.dailyBookExcerptFor(61, 6657);
+    const poem = funTest.dailyPoemFor(61, 6657);
+    const duelWeapon = funTest.dailyDuelPlayerWeaponFor(61, 6657);
+    const beautyCards = [
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'player',
+        nick: player.nick,
+        name: player.name,
+        title: `action poster ${index + 1}`,
+        tags: ['action', 'poster', 'wallpaper'],
+        url: `https://example.com/beauty-player-${index + 1}.jpg`,
+      })),
+      { kind: 'player', nick: player.nick, title: 'profile headshot', tags: ['headshot', 'profile'], url: 'https://example.com/beauty-player-headshot.jpg' },
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'team',
+        key: team.key,
+        name: team.name,
+        title: `team key visual ${index + 1}`,
+        tags: ['keyvisual', 'stage', 'poster'],
+        url: `https://example.com/beauty-team-${index + 1}.jpg`,
+      })),
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'knife',
+        key: knife.key,
+        name: knife.name,
+        skin: knifeSkin.name,
+        title: `knife inspect showcase ${index + 1}`,
+        tags: ['inspect', 'showcase', 'skin'],
+        url: `https://example.com/beauty-knife-${index + 1}.jpg`,
+      })),
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'mokoko',
+        characterKey: tomori.key,
+        characterName: tomori.name,
+        title: `band card art ${index + 1}`,
+        tags: ['card', 'artwork'],
+        url: `https://example.com/beauty-mokoko-${index + 1}.jpg`,
+      })),
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'genshin',
+        key: genshin.key,
+        name: genshin.name,
+        title: `splash art ${index + 1}`,
+        tags: ['splash', 'artwork'],
+        url: `https://example.com/beauty-genshin-${index + 1}.png`,
+      })),
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'fact',
+        key: fact.key,
+        name: fact.name,
+        title: `fact visual ${index + 1}`,
+        tags: ['poster', 'scene'],
+        url: `https://example.com/beauty-fact-${index + 1}.jpg`,
+      })),
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'book',
+        key: book.key,
+        name: book.name,
+        title: `book cover mood ${index + 1}`,
+        tags: ['cover', 'artwork'],
+        url: `https://example.com/beauty-book-${index + 1}.jpg`,
+      })),
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'poem',
+        key: poem.key,
+        name: poem.name,
+        title: `poem scene ${index + 1}`,
+        tags: ['scene', 'wallpaper'],
+        url: `https://example.com/beauty-poem-${index + 1}.jpg`,
+      })),
+      ...Array.from({ length: 205 }, (_, index) => ({
+        kind: 'duel',
+        key: duelWeapon.key,
+        name: duelWeapon.name,
+        title: `duel weapon poster ${index + 1}`,
+        tags: ['poster', 'action'],
+        url: `https://example.com/beauty-duel-${index + 1}.jpg`,
+      })),
+    ];
+    fs.writeFileSync(dailyBeautyManifestPath, JSON.stringify({ cards: beautyCards }), 'utf-8');
+    fs.writeFileSync(playerManifestPath, JSON.stringify({
+      cards: [
+        { nick: player.nick, name: player.name, title: 'smoke player portrait 1', url: 'https://example.com/player-authorized-1.jpg' },
+        {
+          nick: player.nick,
+          name: player.name,
+          title: 'smoke player batch',
+          urls: ['https://example.com/player-authorized-2.jpg'],
+          images: ['https://example.com/player-authorized-3.jpg'],
+        },
+      ],
+    }), 'utf-8');
+    fs.writeFileSync(genshinManifestPath, JSON.stringify({
+      cards: [
+        { key: genshin.key, name: genshin.name, title: 'smoke genshin art 1', url: 'https://example.com/genshin-authorized-1.png' },
+        {
+          key: genshin.key,
+          name: genshin.name,
+          title: 'smoke genshin batch',
+          urls: ['https://example.com/genshin-authorized-2.png'],
+          images: ['https://example.com/genshin-authorized-3.png'],
+        },
+      ],
+    }), 'utf-8');
+    funTest.__setDailyBeautyImageManifestPathForTests(dailyBeautyManifestPath);
+    funTest.__setPlayerImageManifestPathForTests(playerManifestPath);
+    funTest.__setGenshinImageManifestPathForTests(genshinManifestPath);
     assert.ok(funTest.csPlayers.every((item) => item.image), 'all daily CS players should have image URLs');
     assert.ok(funTest.csPlayers.every((item) => item.imageSource), 'all daily CS players should have image source labels');
     assert.ok(funTest.csTeams.length >= 30, 'daily CS team pool should cover major, regional, and classic teams');
@@ -5226,7 +5342,8 @@ async function testFunCsPlayer() {
     assert.ok(funTest.csWeapons.length >= 35, 'daily CS weapon pool should cover the full gun pool');
     assert.ok(funTest.csClutches.length >= 12, 'daily CS clutch pool should include richer scenarios');
     assert.strictEqual(funTest.csKnives.length, 20, 'daily knife pool should cover all CS2/CSGO knife families');
-    assert.ok(funTest.knifeSkins.length >= 26, 'daily knife skin pool should include vanilla and the major finishes');
+    assert.ok(funTest.knifeSkins.length >= 40, 'daily knife skin pool should include vanilla, major finishes, and rare variants');
+    assert.ok(funTest.loadDailyBeautyImages().length >= 1800, 'daily beauty manifest should support 200+-image pools per item');
     const compatibleKnifeSkinKeys = new Set();
     for (const knife of funTest.csKnives) {
       const pool = funTest.knifeSkinPoolFor(knife);
@@ -5249,6 +5366,27 @@ async function testFunCsPlayer() {
     );
     assert.ok(bestdoriCandidates.some((item) => item.source === 'bestdori-card'), 'daily mokoko should prefer local authorized Bestdori card manifest when present');
     assert.ok(bestdoriCandidates.filter((item) => item.source === 'bestdori-card').length >= 4, 'daily mokoko should expand url/urls/images from Bestdori manifest');
+    const playerManifestCandidates = await funTest.buildCsPlayerImageCandidates(player, 61, 6657);
+    assert.ok(playerManifestCandidates.some((item) => item.source === 'authorized-image'), 'daily CS player should prefer local authorized player image manifest when present');
+    assert.ok(playerManifestCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily CS player should rotate a 200+-image authorized beauty pool before headshot fallbacks');
+    assert.ok(!playerManifestCandidates[0].label.toLowerCase().includes('headshot'), 'daily CS player should not put headshot-tagged images first when beauty images exist');
+    const teamBeautyCandidates = await funTest.buildDailyCardImageCandidates('team', team, 61, 6657);
+    assert.ok(teamBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily team should prefer 200+-image authorized beauty pools');
+    const knifeBeautyCandidates = await funTest.buildKnifeImageCandidates(knife, knifeSkin, 61, 6657);
+    assert.ok(knifeBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily knife should prefer 200+-image authorized inspect/showcase pools');
+    const genshinManifestCandidates = await funTest.buildGenshinImageCandidates(genshin, 61, 6657);
+    assert.ok(genshinManifestCandidates.some((item) => item.source === 'authorized-image'), 'daily genshin should prefer local authorized character image manifest when present');
+    assert.ok(genshinManifestCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily genshin should rotate a 200+-image authorized beauty pool');
+    const mokokoBeautyCandidates = await funTest.buildCharacterImageCandidates(tomori, 61, 6657);
+    assert.ok(mokokoBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily mokoko should rotate a 200+-image authorized card-art pool');
+    const factBeautyCandidates = await funTest.buildDailyTextImageCandidates('fact', fact, 61, 6657);
+    assert.ok(factBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily fact should rotate a 200+-image authorized visual pool');
+    const bookBeautyCandidates = await funTest.buildDailyTextImageCandidates('book', book, 61, 6657);
+    assert.ok(bookBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily book should rotate a 200+-image authorized visual pool');
+    const poemBeautyCandidates = await funTest.buildDailyTextImageCandidates('poem', poem, 61, 6657);
+    assert.ok(poemBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily poem should rotate a 200+-image authorized visual pool');
+    const duelBeautyCandidates = await funTest.buildDuelImageCandidates(duelWeapon, 61, 6657);
+    assert.ok(duelBeautyCandidates.filter((item) => item.source === 'authorized-image').length >= 200, 'daily duel should rotate a 200+-image authorized visual pool');
     const skinWeapons = new Set(funTest.csSkins.map((item) => item.weapon));
     assert.deepStrictEqual(
       funTest.csWeapons.filter((item) => !skinWeapons.has(item.name)).map((item) => item.name),
@@ -5279,6 +5417,11 @@ async function testFunCsPlayer() {
     assert.strictEqual(funTest.isDailyBookRequest(null, '每日书摘'), true, 'daily book fuzzy should trigger');
     assert.strictEqual(funTest.isDailyPoemRequest(null, '每日古诗词'), true, 'daily poem fuzzy should trigger');
     assert.strictEqual(funTest.isDailyDuelRequest(null, '决战紫禁之巅'), true, 'daily duel fuzzy should trigger');
+    assert.strictEqual(funTest.isDailyGenshinRequest('genshin', '/genshin'), true, '/genshin should trigger daily genshin');
+    assert.strictEqual(funTest.isDailyFactRequest('cold', '/cold'), true, '/cold should trigger daily fact');
+    assert.strictEqual(funTest.isDailyBookRequest('book', '/book'), true, '/book should trigger daily book');
+    assert.strictEqual(funTest.isDailyPoemRequest('poem', '/poem'), true, '/poem should trigger daily poem');
+    assert.strictEqual(funTest.isDailyDuelRequest('duel', '/duel'), true, '/duel should trigger daily duel');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天打什么位', 'role'), true, 'fuzzy daily role should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天丢什么道具', 'utility'), true, 'fuzzy daily utility should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天打什么战术', 'tactic'), true, 'fuzzy daily tactic should trigger');
@@ -5293,10 +5436,8 @@ async function testFunCsPlayer() {
     assert.strictEqual(matchingSkin.weapon, 'AK-47', 'daily weapon skin should match the selected weapon when possible');
     const skinMessage = await funTest.buildSkinMessage(61, matchingSkin, funTest.dailyScoreForKind('csskin', 61, 6657), false);
     assertCleanDailyText(firstText(skinMessage), 'daily skin template');
-    const knife = funTest.dailyKnifeFor(61, 6657);
-    const knifeSkin = funTest.dailyKnifeSkinFor(61, 6657, knife);
     assert.ok(funTest.knifeSkinAvailableFor(knife, knifeSkin), 'daily knife skin should exist for the selected knife');
-    const knifeMessage = await funTest.buildKnifeMessage(61, knife, knifeSkin, funTest.dailyScoreForKind('csknife', 61, 6657), false);
+    const knifeMessage = await funTest.buildKnifeMessage(61, knife, knifeSkin, funTest.dailyScoreForKind('csknife', 61, 6657), false, 6657);
     assert.ok(firstText(knifeMessage).includes('今日发刀'), 'daily knife builder should include title');
     assert.ok(firstText(knifeMessage).includes('皮肤：'), 'daily knife builder should include skin name');
     assertCleanDailyText(firstText(knifeMessage), 'daily knife template');
@@ -5306,7 +5447,7 @@ async function testFunCsPlayer() {
     assert.ok(firstText(mokokoMessage).includes('MyGO!!!!!') || firstText(mokokoMessage).includes('Ave Mujica'), 'daily mokoko builder should include band');
     assertCleanDailyText(firstText(mokokoMessage), 'daily mokoko template');
     assert.ok(mokokoMessage.some((seg) => seg.type === 'image'), 'daily mokoko builder should include image');
-    const genshinMessage = await funTest.buildGenshinMessage(61, funTest.dailyGenshinFor(61, 6657), funTest.dailyScoreForKind('genshin', 61, 6657), false);
+    const genshinMessage = await funTest.buildGenshinMessage(61, genshin, funTest.dailyScoreForKind('genshin', 61, 6657), false, 6657);
     assert.ok(firstText(genshinMessage).includes('每日原神角色'), 'daily genshin builder should include title');
     assertCleanDailyText(firstText(genshinMessage), 'daily genshin template');
     assert.ok(genshinMessage.some((seg) => seg.type === 'image'), 'daily genshin builder should include image');
@@ -5386,11 +5527,18 @@ async function testFunCsPlayer() {
     assert.ok(text.includes('签位：'), 'csplayer reply should include score label');
     assert.ok(sent[0].message.some((seg) => seg.type === 'image' && seg.data.file.startsWith('base64://')), 'csplayer should include base64 image');
 
-    handler.handleEvent(makePlainEvent(613, 73, '/csplayer status'));
+    handler.handleEvent(makePlainEvent(613, 61, '/csplayer status'));
     await waitFor(() => sent.length === 2, 'csplayer status command');
     assert.ok(firstText(sent[1].message).includes('每日CS选手状态'), 'csplayer status should render status header');
     assert.ok(firstText(sent[1].message).includes('Bestdori本地卡面: 4张'), 'csplayer status should expose local Bestdori manifest size');
     assert.ok(firstText(sent[1].message).includes('原神角色池:'), 'csplayer status should expose genshin pool size');
+    assert.ok(firstText(sent[1].message).includes(`通用每日美图: ${beautyCards.length}张`), 'csplayer status should expose generic daily beauty manifest size');
+    assert.ok(firstText(sent[1].message).includes('选手本地图片: 3张'), 'csplayer status should expose local player image manifest size');
+    assert.ok(firstText(sent[1].message).includes('原神本地图片: 3张'), 'csplayer status should expose local genshin image manifest size');
+    assert.ok(firstText(sent[1].message).includes('美图最低标准: 每个对象200张起'), 'csplayer status should expose the 200-image per-item minimum');
+    assert.ok(firstText(sent[1].message).includes('图片隔离:'), 'csplayer status should explain that generic beauty images are not mixed across objects');
+    assert.ok(firstText(sent[1].message).includes('选手205/200OK'), 'csplayer status should show selected player beauty pool coverage');
+    assert.ok(firstText(sent[1].message).includes('刀皮205/200OK'), 'csplayer status should show selected knife beauty pool coverage');
     assert.ok(firstText(sent[1].message).includes('冷知识/书摘/古诗词:'), 'csplayer status should expose expanded text pools');
 
   handler.handleEvent(makePlainEvent(602, 62, '今天抽个CS选手'));
@@ -5560,15 +5708,46 @@ async function testFunCsPlayer() {
   await waitFor(() => sent.length === 32, 'daily duel fuzzy');
   assert.ok(firstText(sent[31].message).includes('每日决战紫禁之巅'), 'daily duel fuzzy should include title');
   assert.ok(sent[31].message.some((seg) => seg.type === 'image'), 'daily duel fuzzy should include image');
+
+  handler.handleEvent(makePlainEvent(632, 88, '/genshin'));
+  await waitFor(() => sent.length === 33, 'daily genshin slash command');
+  assert.ok(firstText(sent[32].message).includes('每日原神角色'), '/genshin should include title');
+  assert.ok(sent[32].message.some((seg) => seg.type === 'image'), '/genshin should include image');
+
+  handler.handleEvent(makePlainEvent(633, 89, '/cold'));
+  await waitFor(() => sent.length === 34, 'daily fact slash command');
+  assert.ok(firstText(sent[33].message).includes('每日冷知识'), '/cold should include title');
+  assert.ok(sent[33].message.some((seg) => seg.type === 'image'), '/cold should include image');
+
+  handler.handleEvent(makePlainEvent(634, 90, '/book'));
+  await waitFor(() => sent.length === 35, 'daily book slash command');
+  assert.ok(firstText(sent[34].message).includes('每日书摘'), '/book should include title');
+  assert.ok(sent[34].message.some((seg) => seg.type === 'image'), '/book should include image');
+
+  handler.handleEvent(makePlainEvent(635, 91, '/poem'));
+  await waitFor(() => sent.length === 36, 'daily poem slash command');
+  assert.ok(firstText(sent[35].message).includes('每日古诗词'), '/poem should include title');
+  assert.ok(sent[35].message.some((seg) => seg.type === 'image'), '/poem should include image');
+
+  handler.handleEvent(makePlainEvent(636, 92, '/duel'));
+  await waitFor(() => sent.length === 37, 'daily duel slash command');
+  assert.ok(firstText(sent[36].message).includes('每日决战紫禁之巅'), '/duel should include title');
+  assert.ok(sent[36].message.some((seg) => seg.type === 'image'), '/duel should include image');
   } finally {
     funTest.__setImageResolverForTests();
     funTest.__setImageSourceResolversForTests();
     funTest.__setTrainingStorePathForTests();
     funTest.__setBestdoriCardManifestPathForTests();
+    funTest.__setPlayerImageManifestPathForTests();
+    funTest.__setGenshinImageManifestPathForTests();
+    funTest.__setDailyBeautyImageManifestPathForTests();
     userProfile.__test.setStorePathForTests();
     if (fs.existsSync(trainingStorePath)) fs.unlinkSync(trainingStorePath);
     if (fs.existsSync(profileStorePath)) fs.unlinkSync(profileStorePath);
     if (fs.existsSync(bestdoriManifestPath)) fs.unlinkSync(bestdoriManifestPath);
+    if (fs.existsSync(playerManifestPath)) fs.unlinkSync(playerManifestPath);
+    if (fs.existsSync(genshinManifestPath)) fs.unlinkSync(genshinManifestPath);
+    if (fs.existsSync(dailyBeautyManifestPath)) fs.unlinkSync(dailyBeautyManifestPath);
   }
 }
 
