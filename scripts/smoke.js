@@ -15,9 +15,9 @@ const userProfile = require('../dist/plugins/user-profile');
 const imageCache = require('../dist/plugins/image-cache');
 const hltv = require('../dist/plugins/hltv-api');
 const { csPlugin, __test: csTest } = require('../dist/plugins/cs');
-const { csPredictPlugin, getCsPredictStats, buildCsPredictDigestForChat, __test: csPredictTest } = require('../dist/plugins/cs-predict');
-const { csReportPlugin, __test: csReportTest } = require('../dist/plugins/cs-report');
-const { csWatchPlugin, __test: csWatchTest } = require('../dist/plugins/cs-watch');
+const { csPredictPlugin, getCsPredictStats, buildCsPredictDigestForChat, shutdownCsPredictTasks, __test: csPredictTest } = require('../dist/plugins/cs-predict');
+const { csReportPlugin, shutdownCsReportTasks, __test: csReportTest } = require('../dist/plugins/cs-report');
+const { csWatchPlugin, shutdownCsWatchTasks, __test: csWatchTest } = require('../dist/plugins/cs-watch');
 const { registerGiftThanksListener, __test: giftThanksTest } = require('../dist/plugins/gift-thanks');
 const { registerPokeListener, __test: pokeTest } = require('../dist/plugins/poke');
 const { repeaterPlugin } = require('../dist/plugins/repeater');
@@ -29,12 +29,48 @@ const { pingPlugin } = require('../dist/plugins/ping');
 const { statusPlugin } = require('../dist/plugins/status');
 const { diagPlugin, __test: diagTest } = require('../dist/plugins/diag');
 const { helpPlugin } = require('../dist/plugins/help');
-const { dailyPulsePlugin, __test: dailyPulseTest } = require('../dist/plugins/daily-pulse');
+const { dailyPulsePlugin, shutdownDailyPulseTasks, __test: dailyPulseTest } = require('../dist/plugins/daily-pulse');
 const { Bot } = require('../dist/bot');
 const { MessageHandler } = require('../dist/handler');
+const { startWebServer, stopWebServer } = require('../dist/web-server');
+const { createLogger } = require('../dist/logger');
+const llmApi = require('../dist/plugins/llm-api');
+const aiEvidence = require('../dist/plugins/ai-evidence');
+const aiMessageBuilders = require('../dist/plugins/ai-message-builders');
+const aiKnowledgeDiagnostics = require('../dist/plugins/ai-knowledge-diagnostics');
+const aiKnowledgeRoute = require('../dist/plugins/ai-knowledge-route');
+const aiMediaPreflight = require('../dist/plugins/ai-media-preflight');
+const aiMediaSources = require('../dist/plugins/ai-media-sources');
+const aiMediaStatus = require('../dist/plugins/ai-media-status');
+const aiMediaTrace = require('../dist/plugins/ai-media-trace');
+const aiMediaWarmup = require('../dist/plugins/ai-media-warmup');
+const aiHumanDelay = require('../dist/plugins/ai-human-delay');
+const aiMemoryUtils = require('../dist/plugins/ai-memory-utils');
+const aiPromptBuilders = require('../dist/plugins/ai-prompt-builders');
+const aiReplyCacheDiagnostics = require('../dist/plugins/ai-reply-cache-diagnostics');
+const aiReplyCacheRuntime = require('../dist/plugins/ai-reply-cache-runtime');
+const aiReplyDedupe = require('../dist/plugins/ai-reply-dedupe');
+const aiReplyFallback = require('../dist/plugins/ai-reply-fallback');
+const aiReplyGuard = require('../dist/plugins/ai-reply-guard');
+const aiSttEndToEnd = require('../dist/plugins/ai-stt-end-to-end');
+const aiStyleScene = require('../dist/plugins/ai-style-scene');
+const aiStylePreflight = require('../dist/plugins/ai-style-preflight');
+const aiTraceFormat = require('../dist/plugins/ai-trace-format');
+const aiTriggerPolicy = require('../dist/plugins/ai-trigger-policy');
+const aiVoiceCacheWarm = require('../dist/plugins/ai-voice-cache-warm');
+const aiVoiceDiagnostics = require('../dist/plugins/ai-voice-diagnostics');
+const { parseLocalCommand } = require('../dist/plugins/local-command');
 const sanitize = require('../dist/message-sanitize');
 
 const SOURCE_STATE_PATH = path.resolve(__dirname, '..', 'knowledge', 'source-state.json');
+
+function cleanupSmokeRuntime() {
+  try { aiChat.shutdownAiChat(); } catch { /* noop */ }
+  try { shutdownCsPredictTasks(); } catch { /* noop */ }
+  try { shutdownCsReportTasks(); } catch { /* noop */ }
+  try { shutdownCsWatchTasks(); } catch { /* noop */ }
+  try { shutdownDailyPulseTasks(); } catch { /* noop */ }
+}
 
 function firstText(message) {
   if (typeof message === 'string') return message;
@@ -61,11 +97,1663 @@ function spawnNode(args, options = {}) {
   });
 }
 
+async function getFreePort() {
+  const server = http.createServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const port = address && typeof address === 'object' ? address.port : 0;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
 function assertNoTechnicalChatFallback(text, label) {
   assert.ok(text && text.length > 0, `${label} should send a visible chat fallback`);
   assert.ok(
     !/API|HTTP|key|接口|trace|错误|超时|模型链路/i.test(text),
     `${label} should not leak technical failure wording: ${text}`,
+  );
+}
+
+async function testLoggerSerialization() {
+  const originalError = console.error;
+  const calls = [];
+  try {
+    console.error = (...args) => calls.push(args.map(String).join(' '));
+    createLogger('Smoke').error('boom', new Error('serialized failure'));
+  } finally {
+    console.error = originalError;
+  }
+  const line = calls.join('\n');
+  assert.ok(line.includes('[Smoke]'), 'logger should include scope');
+  assert.ok(line.includes('serialized failure'), 'logger should serialize Error message instead of {}');
+}
+
+async function testLlmApiDefaults() {
+  const variants = llmApi.buildVisionMessageVariants([
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: '看图' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+      ],
+    },
+  ], 'image_url_object');
+  const imagePart = variants[0].messages[0].content[1];
+  assert.strictEqual(imagePart.image_url.detail, 'low', 'vision payload default detail should stay low');
+
+  let capturedBody = null;
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      capturedBody = JSON.parse(body || '{}');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content: '收到' }, finish_reason: 'stop' }] }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  try {
+    const config = readConfig();
+    config.ai.api_url = `http://127.0.0.1:${address.port}/v1/chat/completions`;
+    config.ai.api_key = 'sk-smoke-llm-api-key';
+    config.ai.model = 'smoke-model';
+    const result = await llmApi.postLLMOnce(config.ai, [{ role: 'user', content: 'hi' }], false, 'smoke');
+    assert.strictEqual(result.content, '收到');
+    assert.ok(capturedBody, 'llm api smoke should capture request body');
+    assert.ok(!('frequency_penalty' in capturedBody), 'llm api should not add frequency_penalty implicitly');
+    assert.ok(!('presence_penalty' in capturedBody), 'llm api should not add presence_penalty implicitly');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+async function testAiEvidenceHelpers() {
+  const evidenceText = [
+    '来源：CS API / 单场详情 / 拉取 2026/6/8 18:20:00 / 链接 CS API: https://api.csapi.de/',
+    '缓存: match:2390002 fresh，age=12s ttl=300s source=cs-api',
+    '缓存: ranking stale，age=900s ttl=300s expired=600s source=hltv',
+    '当前缓存: matches miss，还没有成功快照',
+  ].join('\n');
+  const evidenceLines = aiEvidence.extractEvidenceLines(evidenceText, 2);
+  assert.strictEqual(evidenceLines.length, 2, 'AI evidence helper should cap extracted evidence lines');
+  assert.ok(evidenceLines[0].includes('CS API'), 'AI evidence helper should preserve source hints');
+  const freshness = aiEvidence.extractRealtimeFreshnessLines(evidenceText, 5);
+  assert.ok(freshness.some((line) => line.includes('match:2390002 fresh')), 'AI evidence helper should extract fresh cache lines');
+  assert.ok(freshness.some((line) => line.includes('ranking stale')), 'AI evidence helper should extract stale cache lines');
+  assert.ok(freshness.some((line) => line.includes('matches miss')), 'AI evidence helper should extract miss cache lines');
+  const summary = aiEvidence.summarizeRealtimeEvidence(evidenceText, ['单场2390002'], ['CS风格'], 2);
+  assert.ok(summary.some((line) => line.includes('HLTV/CS API')), 'AI evidence summary should include realtime labels');
+  assert.ok(summary.some((line) => line.includes('知识库')), 'AI evidence summary should include knowledge titles');
+  assert.ok(summary.some((line) => line.includes('RAG记忆')), 'AI evidence summary should include memory hits');
+  const pack = aiEvidence.buildRealtimeReferencePack(evidenceText);
+  assert.ok(pack.includes('[实时事实参考]'), 'AI realtime reference pack should render marker');
+  assert.ok(pack.includes('stale/旧缓存'), 'AI realtime reference pack should warn about stale evidence');
+  assert.ok(pack.includes('miss/无快照'), 'AI realtime reference pack should warn about missing snapshots');
+}
+
+async function testAiMessageBuilderHelpers() {
+  const searchInfo = [
+    '来源：CS API / 单场详情 / 拉取 2026/6/8 18:20:00 / 链接 CS API: https://api.csapi.de/',
+    '缓存: match:2390002 fresh，age=12s ttl=300s source=cs-api',
+  ].join('\n');
+  const history = [
+    { role: 'user', content: '上一句' },
+    { role: 'assistant', content: '上一条回复' },
+  ];
+  const messages = aiMessageBuilders.buildApiMessages({
+    systemPrompt: 'system-base',
+    summary: '旧摘要',
+    history,
+    currentMessage: { role: 'user', content: '2390002这场谁C了' },
+    searchInfo,
+    knowledgeInfo: '本地背景',
+    similarMemories: '历史相似片段',
+    styleSceneInfo: '场景=事实追问',
+    userProfileInfo: '偏好=短一点',
+  });
+  assert.deepStrictEqual(
+    messages.slice(0, 6).map((message) => `${message.role}:${String(message.content).split('\n')[0]}`),
+    [
+      'system:system-base',
+      'system:[临场笔记-本地语态与背景]',
+      'system:[用户画像-自填偏好]',
+      'system:[本条风格场景-不要外显]',
+      'system:[历史摘要]',
+      'system:[相关历史片段，仅供参考，不要直接复述]',
+    ],
+    'AI message builder should keep stable runtime system message order',
+  );
+  assert.strictEqual(messages[6], history[0], 'AI message builder should append history after system context');
+  const current = messages.at(-1);
+  assert.strictEqual(current.role, 'user', 'AI message builder should keep current turn as user');
+  assert.ok(current.content.startsWith('[实时事实参考]'), 'AI message builder should prepend realtime pack to text current message');
+  assert.ok(current.content.includes('[当前消息]\n2390002这场谁C了'), 'AI message builder should preserve current user text after realtime pack');
+
+  const multimodal = aiMessageBuilders.buildApiMessages({
+    systemPrompt: 'system-base',
+    history: [],
+    currentMessage: {
+      role: 'user',
+      content: [
+        { type: 'text', text: '看图说这比分对不对' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,AAA=' } },
+      ],
+    },
+    searchInfo,
+  });
+  const multimodalContent = multimodal.at(-1).content;
+  assert.ok(Array.isArray(multimodalContent), 'AI message builder should keep multimodal content as parts');
+  assert.strictEqual(multimodalContent[0].type, 'text', 'AI message builder should prepend realtime pack as first multimodal part');
+  assert.ok(multimodalContent[0].text.includes('[实时事实参考]'), 'AI message builder should include realtime pack in first multimodal part');
+  assert.strictEqual(multimodalContent[1].text, '看图说这比分对不对', 'AI message builder should keep original text part after realtime pack');
+  assert.ok(multimodalContent[2].image_url, 'AI message builder should keep original image part');
+}
+
+async function testAiKnowledgeRouteHelpers() {
+  const keys = aiKnowledgeRoute.detectKnowledgeRouteLaneKeys('donk 今天 HLTV rating 和 Spirit 阵容怎么看');
+  assert.ok(keys.includes('cs_fact'), 'knowledge route should detect CS/current fact lane');
+  assert.ok(keys.includes('person_team'), 'knowledge route should detect player/team lane');
+
+  const freshnessIssue = {
+    level: 'risk',
+    title: 'Spirit 当前阵容旧快照',
+    triggers: ['阵容', '转会'],
+    missing: ['抓取时间', '证据链接'],
+    excerpt: '这里写的是旧阵容线索。',
+    advice: '补实时来源',
+    remediation: ['/cs verify team Spirit'],
+  };
+  const boundary = aiKnowledgeRoute.buildKnowledgeFreshnessRuntimeBoundary([freshnessIssue], 'Spirit 最新阵容', true);
+  assert.ok(boundary.includes('历史线索/背景摘要'), 'knowledge route should downgrade stale knowledge to historical context');
+  assert.ok(boundary.includes('最新实时参考'), 'knowledge route should require fresh realtime evidence for current facts');
+  assert.ok(
+    aiKnowledgeRoute.formatKnowledgeFreshnessIssueList([freshnessIssue]).includes('缺抓取时间/证据链接'),
+    'knowledge route should compact missing freshness evidence',
+  );
+
+  const route = {
+    query: 'Spirit 最新阵容',
+    styleQuery: '直播语态',
+    topicQuery: 'Spirit 最新阵容',
+    hasKnowledgeTopic: true,
+    budget: 1800,
+    styleBudget: 630,
+    topicBudget: 1170,
+    styleKnowledge: '【直播语态】\n短一点，别装。',
+    topicKnowledge: '【Spirit 当前阵容旧快照】\n这里只能当旧线索。',
+    knowledgeInfo: 'x'.repeat(1760),
+    titles: ['直播语态', 'Spirit 当前阵容旧快照'],
+    lanes: [
+      { key: 'cs_fact', label: 'CS/事实', query: 'CS2 比赛', budget: 585, chars: 220, titles: ['Spirit 当前阵容旧快照'], hit: true },
+      { key: 'voice', label: '语音', query: '语音', budget: 585, chars: 0, titles: [], hit: false },
+    ],
+    signature: 'sig-smoke-knowledge',
+    freshnessIssues: [freshnessIssue],
+    freshnessBoundary: boundary,
+  };
+  const config = readConfig().ai;
+  const diagnostic = aiKnowledgeRoute.buildKnowledgeRouteDiagnostics(config, route);
+  assert.ok(diagnostic.diagnostics.some((line) => line.includes('时效风险')), 'knowledge diagnostics should surface freshness risk');
+  assert.ok(diagnostic.advice.some((line) => line.includes('/kb stale')), 'knowledge diagnostics should suggest stale/freshness checks');
+  const panel = aiKnowledgeRoute.formatKnowledgeRoutePreviewPanel('Spirit 最新阵容', route, diagnostic);
+  assert.ok(panel.includes('知识路由预检'), 'knowledge route should render preview panel');
+  assert.ok(panel.includes('CS/事实'), 'knowledge route panel should include lane summary');
+  assert.ok(panel.includes('公开事实仍要看来源和实时证据'), 'knowledge route panel should keep public-fact boundary');
+}
+
+async function testAiKnowledgeDiagnosticsHelpers() {
+  const resultsPanel = aiKnowledgeDiagnostics.formatKnowledgeResults([
+    { title: 'T', score: 1, excerpt: 'E' },
+  ]);
+  assert.ok(resultsPanel.includes('1. T (1)'), 'knowledge diagnostics should render search result rank');
+  assert.ok(resultsPanel.includes('E'), 'knowledge diagnostics should render search result excerpt');
+  const quotePreflight = aiKnowledgeDiagnostics.formatQuoteKnowledgePreflight('老板');
+  assert.ok(quotePreflight.includes('语录/口癖预检'), 'knowledge diagnostics should render quote preflight title');
+  assert.ok(quotePreflight.includes('边界:'), 'knowledge diagnostics should render quote boundary');
+  assert.ok(
+    aiKnowledgeDiagnostics.isOriginalQuoteRequest('来句玩机器本人原话'),
+    'knowledge diagnostics should detect original quote requests',
+  );
+  const quoteBoundary = aiKnowledgeDiagnostics.formatQuoteReply('来句玩机器原话', '老板大气');
+  assert.ok(quoteBoundary.includes('口癖锚点'), 'knowledge diagnostics should label quote anchors');
+  assert.ok(quoteBoundary.includes('不能当场景口吻参考') || quoteBoundary.includes('只能当场景口吻参考'), 'knowledge diagnostics should render quote boundary wording');
+  assert.strictEqual(
+    aiKnowledgeDiagnostics.formatQuoteReply('来句口癖', '老板大气'),
+    '老板大气',
+    'knowledge diagnostics should keep normal quote anchors terse',
+  );
+  assert.strictEqual(
+    aiKnowledgeDiagnostics.parseKnowledgeSourceInspectLimit('all', 80),
+    40,
+    'knowledge diagnostics should cap all source inspections',
+  );
+  assert.strictEqual(
+    aiKnowledgeDiagnostics.parseKnowledgeSourceInspectLimit('--limit 7', 80),
+    7,
+    'knowledge diagnostics should parse source inspection limits',
+  );
+
+  const trustPanel = aiKnowledgeDiagnostics.formatKnowledgeSourceTrustPreview('https://www.hltv.org/matches');
+  assert.ok(trustPanel.includes('知识来源评级预检'), 'knowledge diagnostics should render source trust title');
+  assert.ok(trustPanel.includes('评级:'), 'knowledge diagnostics should render source trust grade');
+  assert.ok(trustPanel.includes('边界:'), 'knowledge diagnostics should render source trust policy boundary');
+
+  const sourcePanel = aiKnowledgeDiagnostics.formatKnowledgeSourcesReport(readConfig().ai, '1');
+  assert.ok(sourcePanel.includes('知识来源体检'), 'knowledge diagnostics should render source report title');
+  assert.ok(sourcePanel.includes('模式: 只读'), 'knowledge diagnostics should keep source report read-only boundary');
+  assert.ok(sourcePanel.includes('写库前置:'), 'knowledge diagnostics should render source write-gate stats');
+
+  const stalePanel = aiKnowledgeDiagnostics.formatKnowledgeFreshnessReport('2');
+  assert.ok(stalePanel.includes('知识库时效事实体检'), 'knowledge diagnostics should render freshness report title');
+  assert.ok(stalePanel.includes('模式: 只读'), 'knowledge diagnostics should keep freshness report read-only boundary');
+  assert.ok(stalePanel.includes('边界:'), 'knowledge diagnostics should render freshness boundary');
+
+  const inboxPanel = aiKnowledgeDiagnostics.formatKnowledgeInboxReport('2');
+  assert.ok(inboxPanel.includes('知识库 inbox 素材体检'), 'knowledge diagnostics should render inbox report title');
+  assert.ok(inboxPanel.includes('模式: 只读'), 'knowledge diagnostics should keep inbox report read-only boundary');
+  assert.ok(inboxPanel.includes('边界: inbox 是素材候选区'), 'knowledge diagnostics should render inbox material boundary');
+
+  const candidateAdvice = aiKnowledgeDiagnostics.formatKnowledgeCandidateAdvice({
+    id: 'cand_smoke',
+    title: '未知来源候选',
+    query: 'donk stats',
+    source: 'smoke',
+    markdown: '## 未知来源候选\n\n- 一条待核验摘要',
+    createdAt: Date.now(),
+    sourceType: 'public_summary',
+    confidence: 'medium',
+    evidenceUrls: [],
+    sourceTrust: 'unknown',
+    sourceHosts: [],
+    autoCommitEligible: false,
+    risk: 'review',
+    status: 'pending',
+  }, 80);
+  assert.ok(candidateAdvice.includes('建议:'), 'knowledge diagnostics should render candidate action advice');
+  assert.ok(candidateAdvice.length <= 80, 'knowledge diagnostics should truncate long candidate advice');
+}
+
+async function testAiStyleSceneHelpers() {
+  const baseInput = {
+    rawText: '',
+    effectiveText: '',
+    hasImages: false,
+    imageInputCount: 0,
+    imageUrls: [],
+    hasRecords: false,
+    recordUrls: [],
+  };
+  const styleFix = aiStyleScene.buildStyleSceneDecision({
+    ...baseInput,
+    rawText: '你这回复太AI味了',
+    effectiveText: '你这回复太AI味了',
+  }, '', false, false);
+  assert.strictEqual(styleFix.scene, '风格纠偏', 'style scene helper should classify AI-flavor feedback');
+  assert.ok(styleFix.signals.includes('风格反馈'), 'style scene helper should expose scene signals');
+  const prompt = aiStyleScene.formatStyleScenePrompt(styleFix, false, { isAtBot: true });
+  assert.ok(prompt.includes('不要外显'), 'style scene prompt should forbid leaking scene labels');
+  assert.ok(prompt.includes('点名规则'), 'style scene prompt should add @ mention guidance');
+
+  const vision = aiStyleScene.buildStyleSceneDecision({
+    ...baseInput,
+    rawText: '看图',
+    effectiveText: '看图',
+    hasImages: true,
+    imageInputCount: 2,
+    imageUrls: ['a', 'b'],
+  }, '', false, false);
+  assert.strictEqual(vision.scene, '识图接话', 'style scene helper should classify image input');
+  assert.ok(vision.signals.includes('图片2'), 'style scene helper should count image signals');
+
+  const config = readConfig().ai;
+  const identityPolicy = aiStyleScene.buildReplyCachePolicy(config, {
+    forced: false,
+    effectiveText: '你是不是本人',
+    hasImages: false,
+    hasRecords: false,
+  }, aiStyleScene.buildStyleSceneDecision({
+    ...baseInput,
+    rawText: '你是不是本人',
+    effectiveText: '你是不是本人',
+  }, '', false, false), '', false, false);
+  assert.strictEqual(identityPolicy.enabled, false, 'identity boundary scene should bypass reply cache');
+  assert.ok(identityPolicy.reason.includes('身份边界'), 'identity cache bypass should explain scene risk');
+
+  const tacticScene = aiStyleScene.buildStyleSceneDecision({
+    ...baseInput,
+    rawText: '这个残局怎么打',
+    effectiveText: '这个残局怎么打',
+  }, '', false, false);
+  const tacticPolicy = aiStyleScene.buildReplyCachePolicy(config, {
+    forced: false,
+    effectiveText: '这个残局怎么打',
+    hasImages: false,
+    hasRecords: false,
+  }, tacticScene, '', false, false);
+  assert.strictEqual(tacticPolicy.enabled, true, 'stable tactical scene should be cacheable');
+  assert.ok(aiStyleScene.formatReplyCachePolicy(tacticPolicy).includes('on 残局处理'), 'cache policy formatter should expose tactical scene');
+  assert.strictEqual(aiStyleScene.selectFewShotScenarios('seed', 5).length, 5, 'few-shot selector should return requested scenario count');
+}
+
+async function testAiStylePreflightHelpers() {
+  const parsed = aiStylePreflight.parseStyleCheckArgs([
+    'check',
+    '--voice',
+    '我刚查了最新数据，donk这场Rating 2.01。',
+    '||',
+    '缓存: match:2390003 stale age=20s expired=1s source=test',
+  ]);
+  assert.strictEqual(parsed.forceVoice, true, 'style preflight parser should detect voice flag');
+  assert.ok(parsed.text.includes('donk'), 'style preflight parser should preserve text');
+  assert.ok(parsed.evidenceText.includes('match:2390003'), 'style preflight parser should preserve evidence text');
+
+  const stale = aiStylePreflight.analyzeStyleEvidence('缓存: match:2390003 stale age=20s expired=1s source=test', false);
+  assert.strictEqual(stale.hasCurrentRealtimeData, false, 'stale-only style evidence should not count as current');
+  assert.strictEqual(stale.staleOnly, true, 'style evidence should mark stale-only input');
+
+  const config = readConfig().ai;
+  const panel = aiStylePreflight.formatStyleQualityPreflight(
+    '来源显示 Vitality 当前排名第一，当前阵容是apEX ZywOo flameZ mezii ropz。',
+    {
+      evidenceText: '缓存: ranking fresh age=3s ttl=60s source=test-ranking',
+      guardReplyFacts: (text, hasCurrentRealtimeData, realtimeFreshness, realtimeStaleEvidence) => {
+        void hasCurrentRealtimeData;
+        void realtimeFreshness;
+        void realtimeStaleEvidence;
+        return {
+          text: '这条最新证据没覆盖当前阵容/转会；我只能按资料覆盖到的部分说，没覆盖的别报死。',
+          reason: 'evidence ledger uncovered fact kind softened: roster',
+        };
+      },
+      uncoveredFactKinds: () => ['roster'],
+      localizeFactKind: (kind) => kind === 'roster' ? '当前阵容/转会' : kind,
+    },
+  );
+  assert.ok(panel.includes('风格/真实性预检'), 'style preflight helper should render panel');
+  assert.ok(panel.includes('事实类型覆盖: 未覆盖 当前阵容/转会'), 'style preflight helper should expose typed fact coverage');
+  assert.ok(panel.includes('/cs evidence ranking'), 'style preflight helper should suggest evidence card for fresh cache');
+  assert.ok(panel.includes('事实修正: evidence ledger uncovered fact kind softened: roster'), 'style preflight helper should include fact guard reason');
+
+  const voicePanel = aiStylePreflight.formatStyleQualityPreflight('这段话稍微长一点但有实时证据支撑', {
+    hasRealtimeData: true,
+    forceVoice: true,
+    config,
+    apiReady: true,
+    buildVoicePreflightAnalysis: () => ({
+      cleaned: '这段话稍微长一点但有实时证据支撑',
+      maxChars: 60,
+      parts: ['这段话稍微长一点但有实时证据支撑'],
+      likelyTruncated: false,
+      risks: [],
+      stats: { provider: 'local', localReady: true, sendMode: 'record' },
+    }),
+  });
+  assert.ok(voicePanel.includes('语音分段:'), 'style preflight helper should render voice segmentation when requested');
+  assert.ok(voicePanel.includes('语音预览:'), 'style preflight helper should render voice preview when requested');
+}
+
+async function testAiReplyCacheDiagnosticsHelpers() {
+  const baseScene = {
+    scene: '残局处理',
+    action: '短评战术点',
+    boundary: '稳定战术讨论',
+    signals: ['CS话题'],
+    needsRealtime: false,
+  };
+  const enabledPolicy = {
+    enabled: true,
+    ttlSeconds: 120,
+    scope: 'stable-cs',
+    reason: 'stable-scene',
+  };
+  const disabledPolicy = {
+    enabled: false,
+    ttlSeconds: 0,
+    scope: '',
+    reason: 'realtime',
+  };
+  const panel = aiReplyCacheDiagnostics.formatReplyCachePreflightPanel('这个残局怎么打 || 这个残局咋打', [
+    {
+      input: '这个残局怎么打',
+      normalized: '这个残局怎么打',
+      scene: baseScene,
+      policy: enabledPolicy,
+      key: 'reply-cache-key-a',
+      keyState: 'hit ttl90s',
+      searchWouldRun: false,
+      stableTactical: true,
+      timeSensitive: false,
+      knowledgeTitles: ['CS风格'],
+      knowledgeSignature: 'sig-smoke-a',
+      advice: ['适合短 TTL 缓存'],
+    },
+    {
+      input: '这个残局咋打',
+      normalized: '这个残局怎么打',
+      scene: baseScene,
+      policy: enabledPolicy,
+      key: 'reply-cache-key-a',
+      keyState: 'hit ttl90s',
+      searchWouldRun: false,
+      stableTactical: true,
+      timeSensitive: false,
+      knowledgeTitles: ['CS风格'],
+      knowledgeSignature: 'sig-smoke-a',
+      advice: ['适合短 TTL 缓存'],
+    },
+  ]);
+  assert.ok(panel.includes('回复缓存预检'), 'reply cache diagnostics should render preflight panel');
+  assert.ok(panel.includes('key相同'), 'reply cache diagnostics should compare equivalent natural variants');
+  assert.ok(panel.includes('会合流到同一缓存'), 'reply cache diagnostics should explain safe cache merge');
+
+  const bypassPanel = aiReplyCacheDiagnostics.formatReplyCachePreflightPanel('今天比分多少', [{
+    input: '今天比分多少',
+    normalized: '今天比分多少',
+    scene: { ...baseScene, scene: '实时事实', needsRealtime: true, signals: ['实时'] },
+    policy: disabledPolicy,
+    key: '',
+    keyState: 'bypass',
+    searchWouldRun: true,
+    stableTactical: false,
+    timeSensitive: true,
+    knowledgeTitles: [],
+    knowledgeSignature: '',
+    advice: ['事实类问题不缓存'],
+  }]);
+  assert.ok(bypassPanel.includes('状态=bypass') || bypassPanel.includes('状态=bypass'), 'reply cache diagnostics should expose bypass state');
+  assert.ok(bypassPanel.includes('需实时'), 'reply cache diagnostics should expose realtime scene risk');
+
+  const pool = aiReplyCacheDiagnostics.formatReplyCachePoolStatusPanel({
+    configuredTtl: 180,
+    maxEntries: 10,
+    entries: 9,
+    fresh: 8,
+    expired: 1,
+    inFlight: 1,
+    hits: 2,
+    misses: 20,
+    bypasses: 40,
+    policyTop: ['off 实时事实x20', 'on 残局处理x2'],
+    ttlSeconds: [12, 60, 120],
+  });
+  assert.ok(pool.includes('回复缓存池状态'), 'reply cache diagnostics should render pool panel');
+  assert.ok(pool.includes('has-expired') || pool.includes('near-capacity'), 'reply cache pool should expose cache health status');
+  assert.ok(pool.includes('旁路很多'), 'reply cache pool should explain high bypass count as truth-preserving');
+  assert.ok(pool.includes('回复缓存只给普通主动接话用'), 'reply cache pool should include cache boundary');
+}
+
+async function testAiReplyCacheRuntimeHelpers() {
+  aiReplyCacheRuntime.resetReplyCacheRuntime();
+  try {
+    const config = readConfig().ai;
+    config.model = 'smoke-model';
+    config.active_preset = 'default';
+    config.persona_mode = 'machine';
+    config.aggression_level = 'normal';
+
+    const normalizedA = aiReplyCacheRuntime.normalizeCacheText('@机器人　CS2这把残局怎么打稳一点？？');
+    const normalizedB = aiReplyCacheRuntime.normalizeCacheText('CS2这把残局怎么打稳一点?');
+    assert.strictEqual(normalizedA, normalizedB, 'reply cache runtime should normalize address and full-width punctuation');
+
+    const signature = aiReplyCacheRuntime.makeStableKnowledgeSignature(
+      '【语态】\n这把先等道具。',
+      '【残局】\n别急着补枪。',
+      ['语态', '残局'],
+    );
+    assert.ok(signature.includes('语态|残局'), 'reply cache runtime should include knowledge titles in stable signature');
+    const keyA = aiReplyCacheRuntime.makeReplyCacheKey(config, '@机器人 CS2这把残局怎么打稳一点？？', signature, 'stable-cs');
+    const keyB = aiReplyCacheRuntime.makeReplyCacheKey(config, 'CS2这把残局怎么打稳一点?', signature, 'stable-cs');
+    assert.strictEqual(keyA, keyB, 'reply cache runtime should merge safe natural variants into same key');
+    assert.strictEqual(keyA.length, 24, 'reply cache key should stay compact for trace output');
+
+    assert.strictEqual(aiReplyCacheRuntime.configureReplyCache(5), 20, 'reply cache runtime should clamp tiny max entries to floor');
+    aiReplyCacheRuntime.setReplyCacheEntryForTests('expired-key', 'old reply', -1000);
+    assert.strictEqual(aiReplyCacheRuntime.inspectReplyCacheKey('expired-key').state, 'expired', 'reply cache runtime should inspect expired entries');
+    assert.strictEqual(aiReplyCacheRuntime.getCachedReply('expired-key'), null, 'reply cache runtime should not return expired replies');
+    assert.strictEqual(aiReplyCacheRuntime.inspectReplyCacheKey('expired-key').state, 'miss', 'reply cache runtime should delete expired replies after read');
+
+    aiReplyCacheRuntime.setCachedReply(keyA, '这把别急着补枪 先等道具落完', 60, 20);
+    assert.ok(aiReplyCacheRuntime.inspectReplyCacheKey(keyA).keyState.startsWith('hit ttl'), 'reply cache runtime should expose hit ttl state');
+    assert.strictEqual(aiReplyCacheRuntime.getCachedReply(keyA), '这把别急着补枪 先等道具落完', 'reply cache runtime should return fresh cached reply');
+    assert.ok(aiReplyCacheRuntime.getReplyCacheStats().hits >= 1, 'reply cache runtime should count cache hits');
+
+    const reusableJob = { senderName: '小王', groupId: 6657, userId: 42, messageId: 99 };
+    assert.strictEqual(
+      aiReplyCacheRuntime.isReplyReusableForCache('这把别急着补枪，先等道具落完', reusableJob),
+      true,
+      'reply cache runtime should allow stable non-personal replies',
+    );
+    assert.strictEqual(
+      aiReplyCacheRuntime.isReplyReusableForCache('小王你上一句说得对', reusableJob),
+      false,
+      'reply cache runtime should reject context-bound/personalized replies',
+    );
+    assert.strictEqual(
+      aiReplyCacheRuntime.isReplyReusableForCache('6657这群刚才那条别缓存', reusableJob),
+      false,
+      'reply cache runtime should reject group/id-bound replies',
+    );
+
+    const pending = Promise.resolve({ value: 'single flight reply', reusable: true });
+    aiReplyCacheRuntime.setInFlightReply('pending-key', pending);
+    assert.strictEqual(aiReplyCacheRuntime.inspectReplyCacheKey('pending-key').state, 'in-flight', 'reply cache runtime should expose in-flight state');
+    const pendingResult = await aiReplyCacheRuntime.getInFlightReply('pending-key');
+    assert.deepStrictEqual(pendingResult, { value: 'single flight reply', reusable: true }, 'reply cache runtime should return tracked in-flight promise');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(aiReplyCacheRuntime.inspectReplyCacheKey('pending-key').state, 'miss', 'reply cache runtime should clear in-flight entry after settle');
+
+    aiReplyCacheRuntime.recordReplyCacheMiss();
+    aiReplyCacheRuntime.recordReplyCachePolicy(101, 'off 身份边界 scene:身份边界');
+    aiReplyCacheRuntime.recordReplyCachePolicy(101, 'off 身份边界 scene:身份边界');
+    const stats = aiReplyCacheRuntime.getReplyCacheStats();
+    assert.ok(stats.misses >= 1, 'reply cache runtime should count explicit misses');
+    assert.strictEqual(stats.bypasses, 1, 'reply cache runtime should count one bypass per message');
+    assert.ok(stats.policyTop.some((item) => item.includes('off 身份边界')), 'reply cache runtime should expose cache policy distribution');
+
+    aiReplyCacheRuntime.setReplyCacheEntryForTests('old-prune', 'old', -1000);
+    const prune = aiReplyCacheRuntime.pruneExpiredReplyCache();
+    assert.ok(prune.expired >= 1 && prune.removed >= 1, 'reply cache runtime should prune expired entries');
+    const pool = aiReplyCacheRuntime.getReplyCachePoolSnapshot(60);
+    assert.ok(pool.entries <= pool.maxEntries, 'reply cache runtime pool snapshot should expose bounded cache size');
+  } finally {
+    aiReplyCacheRuntime.resetReplyCacheRuntime();
+  }
+}
+
+async function testAiReplyFallbackHelpers() {
+  const baseJob = {
+    hasRecords: false,
+    hasImages: false,
+    effectiveText: '你这把怎么看',
+    rawText: '你这把怎么看',
+    messageId: 42,
+    userId: 6657,
+  };
+  const fallbackA = aiReplyFallback.buildForcedFallbackReply(baseJob);
+  const fallbackB = aiReplyFallback.buildForcedFallbackReply(baseJob);
+  assert.strictEqual(fallbackA, fallbackB, 'reply fallback should be stable for the same failed message');
+  assertNoTechnicalChatFallback(fallbackA, 'stable forced fallback helper');
+  assert.ok(/没接|没跟上|卡|断|糊|补|重发|再问|再来|掉|再丢|重说/.test(fallbackA), 'forced fallback should sound like a short human recovery line');
+
+  const transcriptFallback = aiReplyFallback.buildForcedFallbackReply(
+    { ...baseJob, hasRecords: true, effectiveText: '' },
+    ['NAVI 这把怎么打'],
+  );
+  assert.ok(transcriptFallback.includes('NAVI 这把怎么打'), 'voice fallback should preserve transcript context');
+  assert.ok(transcriptFallback.includes('没接稳'), 'voice fallback should admit uncertainty instead of pretending full understanding');
+  assertNoTechnicalChatFallback(transcriptFallback, 'voice transcript fallback helper');
+
+  const recordFallback = aiReplyFallback.buildForcedFallbackReply({ ...baseJob, hasRecords: true, effectiveText: '' });
+  assert.ok(recordFallback.includes('语音收到了'), 'record fallback should acknowledge audio input');
+  assert.ok(recordFallback.includes('补句文字'), 'record fallback should ask for text clarification');
+  const imageFallback = aiReplyFallback.buildForcedFallbackReply({ ...baseJob, hasImages: true, effectiveText: '' });
+  assert.ok(imageFallback.includes('图收到了'), 'image fallback should acknowledge image input');
+  assert.ok(imageFallback.includes('看哪块'), 'image fallback should ask for image focus instead of fabricating vision');
+
+  const direct = aiReplyFallback.buildApiNotReadyChatReply({ command: 'ai' });
+  const reply = aiReplyFallback.buildApiNotReadyChatReply({ isReplyToBot: true });
+  const privateLine = aiReplyFallback.buildApiNotReadyChatReply({ isPrivate: true });
+  for (const line of [direct, reply, privateLine]) {
+    assertNoTechnicalChatFallback(line, 'api-not-ready fallback helper');
+    assert.ok(line.length <= 40, 'api-not-ready fallback should stay short and chat-like');
+  }
+  assert.strictEqual(
+    aiReplyFallback.buildForcedApiFailureReply(baseJob, 'HTTP 503 upstream timeout'),
+    fallbackA,
+    'API failure fallback should hide technical error from user-facing text',
+  );
+
+  assert.strictEqual(aiReplyFallback.looksLikeInactiveActivationReply('未激活回答'), true, 'fallback helper should detect inactive activation output');
+  assert.strictEqual(aiReplyFallback.looksLikeInactiveActivationReply('这条已经正常接住了'), false, 'fallback helper should not flag normal replies');
+  assert.strictEqual(
+    aiReplyFallback.looksLikeInactiveActivationReply('正常内容'.repeat(80)),
+    false,
+    'long normal output should not be misclassified as inactive activation',
+  );
+  const retryMessages = aiReplyFallback.buildInactiveActivationRetryMessages(
+    [{ role: 'user', content: '当前消息' }],
+    '未激活回答',
+  );
+  assert.strictEqual(retryMessages.length, 3, 'inactive activation retry should append assistant bad reply and correction');
+  assert.ok(retryMessages.at(-1).content.includes('必须正常接话'), 'inactive activation retry should force a normal reply');
+  assert.ok(retryMessages.at(-1).content.includes('不要再说'), 'inactive activation retry should ban inactive wording');
+}
+
+async function testAiTriggerPolicyHelpers() {
+  const config = readConfig().ai;
+  config.trigger_mode = 'smart';
+  config.trigger_probability = 0;
+  config.related_reply_probability = 1;
+  config.passive_random_min_chars = 4;
+  config.passive_random_allow_numeric = false;
+  config.enable_search = true;
+  config.search_keywords = ['查资料'];
+  config.search_on_style_query = false;
+  config.active_preset = '玩机器';
+
+  assert.strictEqual(aiTriggerPolicy.includesAnyKeyword('帮我查资料', ['查资料']), true, 'trigger policy should detect keywords');
+  assert.strictEqual(aiTriggerPolicy.extractCsMatchDetailId('2390002这场谁C了'), '2390002', 'trigger policy should detect implicit match id questions');
+  assert.strictEqual(aiTriggerPolicy.extractCsMatchDetailId('match id: 2390002'), '2390002', 'trigger policy should detect explicit match id questions');
+  assert.strictEqual(aiTriggerPolicy.isLowInformationPassiveText('666', config), true, 'trigger policy should reject numeric low-information passive text');
+  assert.strictEqual(aiTriggerPolicy.isLowInformationPassiveText('这把怎么打', config), false, 'trigger policy should keep useful passive text');
+  assert.strictEqual(aiTriggerPolicy.isCsDiscussionHint('这把残局怎么打'), true, 'trigger policy should detect soft CS tactical discussion');
+  assert.strictEqual(aiTriggerPolicy.isDirectChatCue('你怎么看'), true, 'trigger policy should detect direct chat cue');
+  assert.strictEqual(aiTriggerPolicy.isStableCsTacticalQuery('CS2这把残局怎么打稳一点'), true, 'trigger policy should classify stable tactical CS chat');
+  assert.strictEqual(aiTriggerPolicy.isStableCsTacticalQuery('NAVI现在排名多少'), false, 'trigger policy should not classify realtime ranking as stable tactics');
+  assert.strictEqual(aiTriggerPolicy.isPassiveCsRealtimeQuestion('2390002这场谁C了'), true, 'trigger policy should block passive match-id realtime questions');
+  assert.strictEqual(aiTriggerPolicy.isPassiveCsRealtimeQuestion('donk最近状态怎么样'), true, 'trigger policy should block passive player realtime questions');
+  assert.strictEqual(aiTriggerPolicy.isPassiveCsRealtimeQuestion('这把残局怎么打稳一点'), false, 'trigger policy should allow stable tactical passive discussion');
+
+  assert.strictEqual(aiTriggerPolicy.shouldSearch(config, '这把残局怎么打稳一点'), false, 'trigger policy should not search stable tactical CS talk');
+  assert.strictEqual(aiTriggerPolicy.shouldSearch(config, '今天NAVI比分多少'), true, 'trigger policy should search current factual questions');
+  assert.strictEqual(aiTriggerPolicy.shouldSearch(config, '帮我查资料 ropz'), true, 'trigger policy should honor configured search keywords');
+
+  assert.deepStrictEqual(
+    aiTriggerPolicy.shouldReply(config, '你好', 'ai', false, false, false),
+    { reply: true, forced: true },
+    'trigger policy should force direct AI commands',
+  );
+  assert.deepStrictEqual(
+    aiTriggerPolicy.shouldReply(config, '你好', 'search', false, false, false),
+    { reply: false, forced: false },
+    'trigger policy should ignore non-AI commands',
+  );
+  assert.deepStrictEqual(
+    aiTriggerPolicy.shouldReply(config, '2390002这场谁C了', null, false, false, false),
+    { reply: false, forced: false },
+    'trigger policy should suppress passive realtime fact questions',
+  );
+  assert.deepStrictEqual(
+    aiTriggerPolicy.shouldReply(config, '你怎么看', null, false, false, false),
+    { reply: true, forced: false },
+    'trigger policy should answer direct chat cues even when passive probability is zero',
+  );
+  assert.deepStrictEqual(
+    aiTriggerPolicy.shouldReply({ ...config, trigger_mode: 'all' }, '666', null, false, false, false),
+    { reply: false, forced: false },
+    'trigger policy should keep low-information text quiet in all mode',
+  );
+}
+
+async function testAiVoiceDiagnosticsHelpers() {
+  const config = readConfig().ai;
+  config.enable_tts = true;
+  config.enable_stt = true;
+  config.tts_provider = 'auto';
+  config.stt_provider = 'auto';
+  config.tts_local_command = '';
+  config.stt_local_command = '';
+  config.tts_max_chars = 48;
+  config.stt_max_records = 1;
+
+  const riskyText = `用玩机器本人声音读一下 smoke ${Date.now()}，官方授权语音复刻。`;
+  const analysis = aiVoiceDiagnostics.buildVoicePreflightAnalysis(config, riskyText, false);
+  assert.ok(
+    analysis.risks.includes('疑似现实本人/授权语音话术'),
+    'voice diagnostics should flag real-person/authorization voice claims',
+  );
+  assert.strictEqual(
+    aiVoiceDiagnostics.hasVoiceIdentityBoundaryRisk(riskyText),
+    true,
+    'voice boundary helper should detect identity voice claims',
+  );
+
+  const preflight = aiVoiceDiagnostics.formatVoicePreflight(config, riskyText, false);
+  assert.ok(preflight.includes('语音预检'), 'voice diagnostics should render voice preflight panel');
+  assert.ok(preflight.includes('不调用AI'), 'voice preflight should disclose no AI call');
+  assert.ok(preflight.includes('边界:'), 'voice preflight should include impersonation boundary');
+
+  const cachePanel = aiVoiceDiagnostics.formatVoiceCachePreflight(config, `语音缓存预检 smoke ${Date.now()}`, false);
+  assert.ok(cachePanel.includes('语音缓存预检'), 'voice diagnostics should render TTS cache preflight panel');
+  assert.ok(cachePanel.includes('缓存状态:'), 'voice cache preflight should include cache summary');
+  assert.ok(cachePanel.includes('边界:'), 'voice cache preflight should include voice truth boundary');
+
+  const sttPanel = aiVoiceDiagnostics.formatSttCachePreflight(config, [
+    `https://example.com/smoke-${Date.now()}.mp3`,
+    `https://example.com/smoke-${Date.now()}.wav`,
+  ], false);
+  assert.ok(sttPanel.includes('听写缓存预检'), 'voice diagnostics should render STT cache preflight panel');
+  assert.ok(sttPanel.includes('真实最多听写1/2'), 'STT cache preflight should expose record truncation');
+  assert.ok(sttPanel.includes('边界:'), 'STT cache preflight should include STT truth boundary');
+
+  const statusPanel = aiVoiceDiagnostics.formatVoiceStatusPanel(config, false, {
+    recentVoiceCount: 0,
+    maxVoiceTraces: 20,
+    sttStatusLastTrace: '最近听写: 暂无回复 trace',
+  });
+  assert.ok(statusPanel.includes('语音状态'), 'voice diagnostics should render status panel');
+  assert.ok(statusPanel.includes('TTS诊断:'), 'voice status should include TTS diagnosis');
+  assert.ok(statusPanel.includes('STT诊断:'), 'voice status should include STT diagnosis');
+  assert.ok(statusPanel.includes('边界:'), 'voice status should include voice identity boundary');
+}
+
+async function testAiVoiceCacheWarmHelpers() {
+  const summary = aiVoiceCacheWarm.voiceCacheStatusSummary([
+    { status: 'hit' },
+    { status: 'miss' },
+    { status: 'miss' },
+    { status: 'disabled' },
+  ]);
+  assert.ok(summary.includes('hit 1'), 'voice cache warm summary should count hits');
+  assert.ok(summary.includes('miss 2'), 'voice cache warm summary should count misses');
+  assert.ok(summary.includes('disabled 1'), 'voice cache warm summary should count disabled parts');
+
+  const line = aiVoiceCacheWarm.formatVoiceCachePartLine('预热前 ', {
+    index: 1,
+    status: 'hit',
+    ttlSeconds: 60,
+    ageSeconds: 0,
+    ext: 'mp3',
+    sizeKB: 12,
+    clone: true,
+    cacheKey: 'abc123',
+    mode: 'api-clone',
+    chars: 8,
+  });
+  assert.ok(line.includes('状态=hit ttl=60s'), 'voice cache warm part line should include hit ttl');
+  assert.ok(line.includes('api-clone clone mp3/12KB'), 'voice cache warm part line should include mode and file summary');
+
+  const config = readConfig().ai;
+  config.enable_tts = true;
+  config.tts_provider = 'api';
+  config.tts_max_chars = 48;
+  let generated = false;
+  const empty = await aiVoiceCacheWarm.formatVoiceCacheWarm(config, '', false, async () => {
+    generated = true;
+    return 'should-not-run.mp3';
+  });
+  assert.strictEqual(empty, '/voice warm <要预热的文本>', 'voice cache warm should guide empty input');
+  const panel = await aiVoiceCacheWarm.formatVoiceCacheWarm(config, `语音缓存预热 smoke ${Date.now()}`, false, async () => {
+    generated = true;
+    return 'should-not-run.mp3';
+  });
+  assert.strictEqual(generated, false, 'voice cache warm should not generate API parts when apiReady is false');
+  assert.ok(panel.includes('语音缓存预热'), 'voice cache warm helper should render warm panel');
+  assert.ok(panel.includes('不调用AI，不发送record'), 'voice cache warm helper should disclose warmup boundary');
+  assert.ok(panel.includes('skipped/api-not-ready'), 'voice cache warm helper should explain skipped API generation');
+  assert.ok(panel.includes('边界:'), 'voice cache warm helper should include truth/identity boundary');
+}
+
+async function testAiSttEndToEndHelpers() {
+  assert.strictEqual(
+    aiSttEndToEnd.formatSttCacheInspectLine('缓存前', undefined),
+    '缓存前: 无',
+    'STT test formatter should handle missing cache inspect item',
+  );
+  assert.ok(
+    aiSttEndToEnd.formatSttCacheInspectLine('缓存后', {
+      status: 'hit',
+      ttlSeconds: 60,
+      chars: 4,
+      cacheKey: 'stt-key',
+      reason: '命中缓存',
+    }).includes('hit ttl=60s chars=4 key=stt-key'),
+    'STT test formatter should render hit cache detail',
+  );
+  assert.strictEqual(
+    aiSttEndToEnd.formatSttBackendDelta(
+      { localRuns: 1, apiRuns: 2, hits: 3, misses: 4, inFlightHits: 5 },
+      { localRuns: 3, apiRuns: 2, hits: 6, misses: 5, inFlightHits: 9 },
+    ),
+    '后端动作: local+2 api+0 cacheHit+3 cacheMiss+1 inFlightHit+4',
+    'STT test formatter should render non-negative backend deltas',
+  );
+
+  const config = readConfig().ai;
+  config.enable_stt = true;
+  config.stt_provider = 'api';
+  const okPanel = await aiSttEndToEnd.formatSttEndToEndTest(config, 'https://example.com/voice.mp3', async () => ['听到了']);
+  assert.ok(okPanel.includes('听写链路测试'), 'STT test formatter should render success panel');
+  assert.ok(okPanel.includes('听写: OK'), 'STT test formatter should mark successful transcript');
+  assert.ok(okPanel.includes('转写: 听到了'), 'STT test formatter should include transcript preview');
+  assert.ok(okPanel.includes('边界:'), 'STT test formatter should keep cache truth boundary');
+
+  const failPanel = await aiSttEndToEnd.formatSttEndToEndTest(config, 'https://example.com/voice.mp3', async () => {
+    throw new Error('backend unavailable');
+  });
+  assert.ok(failPanel.includes('听写链路测试失败'), 'STT test formatter should render failure panel');
+  assert.ok(failPanel.includes('听写: FAIL'), 'STT test formatter should mark failed transcript');
+  assert.ok(failPanel.includes('不能假装听到语音'), 'STT test formatter should forbid fabricated audio content');
+}
+
+async function testAiMediaTraceHelpers() {
+  const trace = {
+    timestamp: Date.now(),
+    chatType: 'group',
+    chatId: 6657,
+    userId: 42,
+    messageId: 9001,
+    senderName: 'smoke',
+    rawTextPreview: '看这个截图',
+    hasImages: true,
+    imageInputCount: 3,
+    imageSourceKinds: aiMediaTrace.summarizeImageSourceKinds(['base64://a', 'base64://b', 'https://example.test/a.png']),
+    hasRecords: true,
+    recordInputCount: 2,
+    recordSourceKinds: aiMediaTrace.summarizeAudioSourceKinds(['https://example.test/a.mp3']),
+    recordTranscripts: 1,
+    sttLimit: 1,
+    sttTruncated: true,
+    visionPayload: true,
+    visionImages: 2,
+    visionLimit: 2,
+    visionTruncated: true,
+    visionDataInfo: ['image/png 0.01MB'],
+    visionCacheBefore: ['1:miss key=a'],
+    visionCacheAfter: ['1:hit key=a 8KB'],
+  };
+
+  assert.strictEqual(
+    aiMediaTrace.formatRecordTrace(trace),
+    '有(2) audio-http-url 听写1/2 max1 已截断',
+    'media trace should format STT count and truncation',
+  );
+  assert.ok(
+    aiMediaTrace.formatVisionTrace(trace).includes('已传图 2/3 max2 已截断'),
+    'media trace should format passed/total vision images',
+  );
+  const lastPanel = aiMediaTrace.formatVisionStatusLastTrace(trace, () => '刚刚');
+  assert.ok(lastPanel.includes('缓存前 1:miss'), 'vision status trace should keep compact cache boundary');
+  const recentPanel = aiMediaTrace.formatVisionRecentList([trace], 1, 20, 3);
+  assert.ok(recentPanel.includes('识图最近记录 1/1'), 'vision recent formatter should render list header');
+  assert.ok(recentPanel.includes('图片=有(3) base64x2 / http-url'), 'vision recent formatter should summarize source kinds');
+  const fullPanel = aiMediaTrace.formatVisionOnlyTrace(trace, () => '刚刚');
+  assert.ok(fullPanel.includes('缓存边界'), 'vision only formatter should explain cache versus model perception');
+  assert.strictEqual(
+    aiMediaTrace.describeDataUrl('data:image/png;base64,AAAA'),
+    'image/png 0.00MB',
+    'data URL descriptor should report mime and approximate size',
+  );
+  assert.strictEqual(
+    aiMediaTrace.looksLikeVisibleVisionDescription('图里能看到地图和武器界面'),
+    true,
+    'vision description detector should accept visible image wording',
+  );
+  assert.strictEqual(
+    aiMediaTrace.looksLikeVisibleVisionDescription('我看不到图片'),
+    false,
+    'vision description detector should reject non-vision fallback wording',
+  );
+}
+
+async function testAiMediaSourceHelpers() {
+  const candidates = aiMediaSources.extractMediaSourceCandidates([
+    '![img](https://example.com/a.jpg),',
+    '<file:///tmp/b.webp>;',
+    '"C:\\Temp\\voice note.wav"',
+    'https://example.com/clip.mp3?download=1',
+    'data:image/png;base64,AAA=',
+    'data:audio/wav;base64,BBB=',
+    'base64://CCCC',
+  ].join(' '));
+  assert.ok(candidates.includes('https://example.com/a.jpg'), 'media source parser should clean markdown image URLs');
+  assert.ok(candidates.includes('file:///tmp/b.webp'), 'media source parser should clean angle-wrapped file URLs');
+  assert.ok(candidates.includes('C:\\Temp\\voice note.wav'), 'media source parser should keep quoted local paths with spaces');
+  assert.ok(candidates.includes('https://example.com/clip.mp3?download=1'), 'media source parser should keep audio URLs with query strings');
+
+  assert.strictEqual(aiMediaSources.looksLikeAudioSource('https://example.com/a.mp3?x=1'), true, 'media source classifier should detect audio extension before query');
+  assert.strictEqual(aiMediaSources.looksLikeAudioSource('https://example.com/download?voice=abc'), true, 'media source classifier should detect voice query parameter');
+  assert.strictEqual(aiMediaSources.looksLikeImageSource('https://example.com/a.mp3'), false, 'media source classifier should not treat audio as image');
+  assert.strictEqual(aiMediaSources.looksLikeImageSource('https://example.com/no-ext-token'), true, 'media source classifier should keep opaque http media as image-compatible');
+
+  const visionSources = aiMediaSources.extractVisionCheckSources([
+    'https://example.com/a.jpg',
+    'https://example.com/a.mp3',
+    'data:image/png;base64,AAA=',
+    'data:audio/wav;base64,BBB=',
+  ].join(' '));
+  assert.deepStrictEqual(
+    visionSources,
+    ['https://example.com/a.jpg', 'data:image/png;base64,AAA='],
+    'vision source parser should keep images and drop audio sources',
+  );
+
+  const mediaSources = aiMediaSources.extractMediaCheckSources([
+    'https://example.com/a.jpg',
+    'https://example.com/a.mp3',
+    '"C:\\Temp\\voice note.wav"',
+    '<file:///tmp/b.webp>',
+    'https://example.com/a.jpg',
+  ].join(' '));
+  assert.deepStrictEqual(
+    mediaSources.images,
+    ['https://example.com/a.jpg', 'file:///tmp/b.webp'],
+    'media source parser should dedupe and classify image sources',
+  );
+  assert.deepStrictEqual(
+    mediaSources.records,
+    ['https://example.com/a.mp3', 'C:\\Temp\\voice note.wav'],
+    'media source parser should classify audio sources including quoted local paths',
+  );
+
+  assert.strictEqual(aiMediaSources.isWarmupCommandSource('data:image/png;base64,AAA='), false, 'warmup source filter should reject data URLs');
+  assert.strictEqual(aiMediaSources.isWarmupCommandSource('https://example.com/a.jpg'), true, 'warmup source filter should allow URL sources');
+  assert.deepStrictEqual(
+    aiMediaSources.traceWarmupSources([
+      'data:image/png;base64,AAA=',
+      'https://example.com/a.jpg',
+      'https://example.com/a.jpg',
+      'https://example.com/b.jpg',
+    ], 2),
+    ['https://example.com/a.jpg', 'https://example.com/b.jpg'],
+    'warmup trace source helper should dedupe, reject inline blobs, and cap output',
+  );
+}
+
+async function testAiMediaWarmupHelpers() {
+  const config = readConfig().ai;
+  const longVoiceText = `  先别急\n${'补枪 '.repeat(80)}`;
+  assert.strictEqual(
+    aiMediaWarmup.commandTextCandidate('  先别急\n补枪  '),
+    '先别急 补枪',
+    'media warmup should normalize command text whitespace',
+  );
+  assert.ok(
+    aiMediaWarmup.commandTextCandidate(longVoiceText).length <= 220,
+    'media warmup should cap voice command text length',
+  );
+  assert.deepStrictEqual(
+    aiMediaWarmup.uniqueWarmupCandidates([
+      { value: 'HTTPS://EXAMPLE.COM/A.JPG' },
+      { value: 'https://example.com/a.jpg' },
+      { value: 'https://example.com/b.jpg' },
+    ], 5).map((item) => item.value),
+    ['HTTPS://EXAMPLE.COM/A.JPG', 'https://example.com/b.jpg'],
+    'media warmup should dedupe candidates case-insensitively',
+  );
+  assert.strictEqual(
+    aiMediaWarmup.warmupTraceLabel(1_000, 42, 'group', 6657, 61_000),
+    'mid=42 group=6657 age=60s',
+    'media warmup should render deterministic trace age when nowMs is provided',
+  );
+
+  const snapshot = aiMediaWarmup.buildMediaWarmupCandidates(config, {
+    nowMs: 61_000,
+    visionTraces: [{
+      timestamp: 1_000,
+      messageId: 42,
+      chatType: 'group',
+      chatId: 6657,
+      imageSources: ['https://example.com/a.jpg', 'https://example.com/a.jpg'],
+    }],
+    replyTraces: [{
+      timestamp: 2_000,
+      messageId: 43,
+      chatType: 'group',
+      chatId: 6657,
+      recordSources: ['https://example.com/a.mp3'],
+    }, {
+      timestamp: 3_000,
+      messageId: 44,
+      chatType: 'group',
+      chatId: 6657,
+      recordSources: [],
+    }],
+    voiceTraces: [{
+      timestamp: 4_000,
+      messageId: 45,
+      chatType: 'private',
+      chatId: 7788,
+      spokenTextPreview: '  这把先等道具\n别急  ',
+      parts: 1,
+      sentParts: 1,
+      mode: 'ai-voice',
+      userId: 100,
+      requestedTextPreview: '语音说一句',
+      provider: 'smoke',
+      sendMode: 'record',
+    }, {
+      timestamp: 5_000,
+      messageId: 46,
+      chatType: 'private',
+      chatId: 7788,
+      spokenTextPreview: 'x',
+      parts: 1,
+      sentParts: 1,
+      mode: 'ai-voice',
+      userId: 100,
+      requestedTextPreview: '短空',
+      provider: 'smoke',
+      sendMode: 'record',
+    }],
+  }, 5);
+  assert.strictEqual(snapshot.images.length, 1, 'media warmup should dedupe image candidates');
+  assert.strictEqual(snapshot.images[0].command, '/maint warm vision https://example.com/a.jpg', 'media warmup should build image warm command');
+  assert.ok(snapshot.images[0].trace.includes('age=60s'), 'media warmup image candidate should keep trace label');
+  assert.strictEqual(snapshot.records.length, 1, 'media warmup should build record candidates from reply traces');
+  assert.strictEqual(snapshot.records[0].command, '/voice stt https://example.com/a.mp3', 'media warmup should build STT command');
+  assert.strictEqual(snapshot.voiceTexts.length, 1, 'media warmup should drop too-short voice text candidates');
+  assert.strictEqual(snapshot.voiceTexts[0].value, '这把先等道具 别急', 'media warmup should normalize voice text candidates');
+  assert.deepStrictEqual(
+    snapshot.traceCounts,
+    { vision: 1, records: 1, voice: 2 },
+    'media warmup should report source trace counts',
+  );
+}
+
+async function testAiMediaPreflightHelpers() {
+  const config = readConfig().ai;
+  config.enable_vision = true;
+  config.enable_stt = true;
+  config.vision_max_images = 2;
+  config.stt_max_records = 1;
+  config.vision_model = 'smoke-vision-model';
+  config.stt_provider = 'auto';
+  config.stt_local_command = '';
+
+  const visionPanel = aiMediaPreflight.formatVisionPreflight(config, [
+    `https://example.com/smoke-${Date.now()}.jpg`,
+    `https://example.com/smoke-${Date.now()}.png`,
+    `https://example.com/smoke-${Date.now()}.webp`,
+  ], true);
+  assert.ok(visionPanel.includes('识图预检'), 'media preflight helper should render vision preflight panel');
+  assert.ok(visionPanel.includes('不下载图片，不调用模型'), 'vision preflight should be non-mutating');
+  assert.ok(visionPanel.includes('输入3张 / 将传2/3'), 'vision preflight should expose image truncation');
+  assert.ok(visionPanel.includes('缓存预检:'), 'vision preflight should inspect cache without download');
+  assert.ok(visionPanel.includes('miss'), 'vision preflight should expose cache misses');
+
+  const mediaPanel = aiMediaPreflight.formatMediaPreflight(config, [
+    `https://example.com/smoke-${Date.now()}.jpg`,
+    `https://example.com/smoke-${Date.now()}.png`,
+    `https://example.com/smoke-${Date.now()}.webp`,
+  ], [
+    `https://example.com/smoke-${Date.now()}.mp3`,
+    `https://example.com/smoke-${Date.now()}.wav`,
+  ], true);
+  assert.ok(mediaPanel.includes('多模态预检'), 'media preflight helper should render aggregate panel');
+  assert.ok(mediaPanel.includes('不下载图片、不听写语音、不调用模型'), 'media preflight should be non-mutating');
+  assert.ok(mediaPanel.includes('图片: 输入3张 / 将传2/3'), 'media preflight should expose image pass count');
+  assert.ok(mediaPanel.includes('语音: 输入2条 / 将听写1/2'), 'media preflight should expose STT pass count');
+  assert.ok(mediaPanel.includes('回复边界:'), 'media preflight should include truth boundary');
+  assert.ok(mediaPanel.includes('只能描述实际传入模型的前2张图片'), 'media preflight should forbid describing truncated images');
+  assert.ok(mediaPanel.includes('语音无法可靠听写') || mediaPanel.includes('只能接听写成功的前1条语音'), 'media preflight should constrain voice perception');
+
+  const warmPanel = await aiMediaPreflight.formatVisionCacheWarm(config, ['base64://AAAA'], async () => {
+    throw new Error('inline source should not be downloaded');
+  });
+  assert.ok(warmPanel.includes('图片缓存预热'), 'media preflight helper should render image cache warm panel');
+  assert.ok(warmPanel.includes('不调用视觉模型'), 'vision cache warm should disclose no model call');
+  assert.ok(warmPanel.includes('skipped'), 'vision cache warm should skip non-remote inline sources');
+  assert.ok(warmPanel.includes('边界:'), 'vision cache warm should explain cache versus model perception');
+
+  const aggregateWarm = await aiMediaPreflight.formatMediaCacheWarm(config, [], [
+    `https://example.com/smoke-${Date.now()}.mp3`,
+  ], false, async () => {
+    throw new Error('no image source should be warmed');
+  });
+  assert.ok(aggregateWarm.includes('多模态缓存预热'), 'media preflight helper should render aggregate warm panel');
+  assert.ok(aggregateWarm.includes('听写缓存预检'), 'aggregate warm should include STT cache preflight');
+  assert.ok(aggregateWarm.includes('总边界:'), 'aggregate warm should preserve multimodal cache boundary');
+}
+
+async function testAiMediaStatusHelpers() {
+  const config = readConfig().ai;
+  config.enable_vision = true;
+  config.enable_stt = true;
+  config.enable_tts = true;
+  config.vision_model = 'smoke-vision-model';
+  config.tts_provider = 'auto';
+  config.stt_provider = 'auto';
+
+  const parts = aiMediaStatus.getShanghaiDayParts(new Date());
+  const timestamp = Date.now();
+  const visionTrace = {
+    timestamp,
+    hasImages: true,
+    visionPayload: true,
+    visionImages: 1,
+    visionError: '',
+  };
+  const replyTrace = {
+    timestamp,
+    hasRecords: true,
+    recordInputCount: 1,
+    recordTranscripts: 1,
+    sttError: '',
+  };
+  const voiceTrace = {
+    timestamp,
+    mode: 'ai-voice',
+    messageId: 9901,
+    parts: 1,
+    sentParts: 1,
+    provider: 'local',
+    sendMode: 'base64',
+  };
+  const runs = aiMediaStatus.countMediaRunsForDay(parts.dateKey, [visionTrace], [replyTrace], [voiceTrace]);
+  assert.deepStrictEqual(
+    runs,
+    { visionAttempts: 1, visionPassed: 1, sttAttempts: 1, sttPassed: 1, voiceAttempts: 1, voicePassed: 1 },
+    'media status helper should count same-day real multimodal runs',
+  );
+  assert.strictEqual(aiMediaStatus.formatTodayMediaRuns(runs), '识图1/1；听写1/1；发语音1/1');
+  assert.ok(aiMediaStatus.formatMediaLatestVoiceTrace(voiceTrace).includes('最近语音:'), 'media status helper should format latest voice trace');
+
+  const imageStats = {
+    count: 2,
+    maxFiles: 3000,
+    sizeMB: 1,
+    maxSizeMB: 384,
+    hits: 3,
+    misses: 1,
+    downloadFailures: 0,
+    inFlight: 0,
+  };
+  const voiceStats = {
+    provider: 'local',
+    localReady: true,
+    sendMode: 'base64',
+    cloneEnabled: true,
+    cloneReady: true,
+    sampleSizeMB: 1.2,
+    cacheFiles: 2,
+    maxCacheFiles: 1500,
+    sizeMB: 1,
+    maxCacheMB: 256,
+    hits: 4,
+    misses: 1,
+    inFlight: 0,
+    inFlightHits: 0,
+  };
+  const sttStats = {
+    provider: 'local',
+    localReady: true,
+    cacheFiles: 2,
+    maxCacheFiles: 1500,
+    sizeMB: 1,
+    maxCacheMB: 96,
+    hits: 2,
+    misses: 1,
+    inFlight: 0,
+    transcriptMisses: 0,
+  };
+  const giftStats = {
+    recentTraces: 1,
+    totalGiftNotices: 2,
+    sentThanks: 1,
+    throttledThanks: 1,
+    ignoredThanks: 0,
+    giftVoiceAttempts: 1,
+    giftVoiceSent: 1,
+    lastGiftTrace: {
+      groupId: 6657,
+      senderId: 42,
+      gift: '测试礼物',
+      count: 2,
+      action: 'sent',
+      reason: 'ok',
+      voiceAction: 'sent',
+      voiceReason: 'ok',
+    },
+  };
+  const dailyPanel = aiMediaStatus.formatMediaDailyPanel({
+    config,
+    apiReady: true,
+    parts,
+    imageStats,
+    voiceStats,
+    sttStats,
+    latestVisionLine: '最近识图: 已传图 1/1',
+    latestRecordSummary: '有(1) audio-http-url 听写1/1',
+    latestVoiceLine: '最近语音: ai-voice mid=9901 parts=1/1',
+    todayRuns: runs,
+  });
+  assert.ok(dailyPanel.includes('多模态每日牌'), 'media status helper should render daily panel');
+  assert.ok(dailyPanel.includes('今日三件套:'), 'media daily panel should include checklist');
+  assert.ok(dailyPanel.includes('缓存 hit 不等于模型已看图或重新听音频'), 'media daily panel should keep cache truth boundary');
+
+  const statusPanel = aiMediaStatus.formatMediaStatusPanel({
+    config,
+    apiReady: true,
+    imageStats,
+    voiceStats,
+    sttStats,
+    giftStats,
+    latestVisionLine: '最近识图: 已传图 1/1',
+    latestRecordSummary: '有(1) audio-http-url 听写1/1',
+    latestVoiceLine: '最近语音: ai-voice mid=9901 parts=1/1',
+    traceCounts: {
+      vision: 1,
+      maxVision: 20,
+      voice: 1,
+      maxVoice: 20,
+      reply: 1,
+      maxReply: 20,
+    },
+  });
+  assert.ok(statusPanel.includes('多模态状态'), 'media status helper should render aggregate panel');
+  assert.ok(statusPanel.includes('礼物:'), 'media status panel should include gift stats');
+  assert.ok(statusPanel.includes('回复边界:'), 'media status panel should include multimodal truth boundary');
+}
+
+async function testAiTraceFormatHelpers() {
+  const trace = {
+    timestamp: Date.now(),
+    chatType: 'group',
+    chatId: 6657,
+    userId: 42,
+    messageId: 7788,
+    senderName: 'smoke',
+    triggerReason: 'mention',
+    forced: true,
+    command: null,
+    rawTextPreview: '看这把NAVI怎么打',
+    effectiveTextPreview: '看这把NAVI怎么打',
+    hasImages: true,
+    imageInputCount: 2,
+    imageSourceKinds: ['http-urlx2'],
+    imageSources: ['https://example.test/a.png'],
+    hasRecords: true,
+    recordInputCount: 1,
+    recordSourceKinds: ['audio-http-url'],
+    recordSources: ['https://example.test/a.mp3'],
+    recordTranscripts: 1,
+    sttLimit: 1,
+    sttTruncated: false,
+    queueAgeMs: 1200,
+    contextMessagesSent: 4,
+    contextFocused: true,
+    memoryHits: 2,
+    memoryFiltered: 1,
+    memoryFilterReasons: ['旧事实'],
+    memoryPreview: ['RAG: old roster filtered'],
+    searchUsed: true,
+    searchChars: 180,
+    searchEvidence: ['CS API'],
+    knowledgeInjected: true,
+    knowledgeChars: 320,
+    knowledgeTopic: true,
+    knowledgeTitles: ['CS风格'],
+    knowledgeLanes: ['style', 'cs'],
+    knowledgeFreshnessIssues: ['阵容旧事实'],
+    userProfileInjected: true,
+    userProfileChars: 18,
+    styleScene: '识图接话',
+    styleSceneAction: '只说实际可见内容',
+    styleSceneSignals: ['图片2'],
+    styleSceneNeedsRealtime: true,
+    qualityIssues: ['source/template leak'],
+    qualityFinalOk: true,
+    evidenceSummary: ['来源：CS API'],
+    realtimeFreshness: ['match:7788 fresh age=3s', 'ranking stale expired=60s'],
+    realtimeStaleEvidence: true,
+    realtimeIntent: true,
+    realtimeDataAvailable: true,
+    factGuard: 'typed evidence scoped',
+    openerBefore: '结论：',
+    openerAfter: '',
+    openerDeduped: true,
+    humanDelayMs: 800,
+    visionPayload: true,
+    visionImages: 1,
+    visionLimit: 1,
+    visionTruncated: true,
+    visionDataInfo: ['image/png 0.01MB'],
+    visionCacheBefore: ['1:miss key=a'],
+    visionCacheAfter: ['1:hit key=a 8KB'],
+    voiceRequested: true,
+    voiceMode: 'ai-voice',
+    voiceParts: 1,
+    sent: 'voice',
+    cacheHit: false,
+    cachePolicy: 'off 识图接话 multimodal',
+    cacheDecision: 'bypass multimodal key=abc',
+    cacheKeyPrefix: 'abc',
+    cacheTtlSeconds: 0,
+    replyLength: 42,
+    outputRepair: 'postprocess',
+    freshnessRepair: 'freshness guard',
+  };
+
+  const ledger = aiTraceFormat.buildEvidenceLedger(trace);
+  assert.ok(ledger.some((line) => line.includes('当前事实=fresh优先')), 'trace ledger should mark current fact evidence');
+  assert.ok(ledger.some((line) => line.includes('识图=已传图1/2/截断')), 'trace ledger should include vision pass count');
+  assert.ok(ledger.some((line) => line.includes('听写=1/1')), 'trace ledger should include transcript count');
+
+  const full = aiTraceFormat.formatReplyTrace(trace);
+  assert.ok(full.includes('最近回复 trace'), 'reply trace formatter should render full panel');
+  assert.ok(full.includes('证据账本:'), 'reply trace formatter should show evidence ledger');
+  assert.ok(full.includes('识图缓存:'), 'reply trace formatter should show vision cache evidence');
+  assert.ok(full.includes('质量风险:'), 'reply trace formatter should show quality issues');
+
+  const recent = aiTraceFormat.formatReplyRecentList([trace], 1, 20, 5);
+  assert.ok(recent.includes('回复最近 trace 1/1'), 'reply recent formatter should render compact list');
+  assert.ok(recent.includes('guard=typed evidence scoped'), 'reply recent formatter should keep fact guard summary');
+
+  const cloned = aiTraceFormat.cloneReplyTrace(trace);
+  trace.knowledgeTitles.push('mutated');
+  assert.ok(!cloned.knowledgeTitles.includes('mutated'), 'trace clone should not share nested arrays');
+
+  const voiceTrace = {
+    timestamp: Date.now(),
+    mode: 'ai-voice',
+    chatType: 'group',
+    chatId: 6657,
+    userId: 42,
+    messageId: 7789,
+    requestedTextPreview: '念这句',
+    spokenTextPreview: '这句念出来',
+    parts: 2,
+    sentParts: 1,
+    provider: 'local',
+    sendMode: 'record',
+    lastTtsMode: 'local',
+    error: 'fallback text sent',
+  };
+  assert.ok(aiTraceFormat.formatVoiceTrace(voiceTrace).includes('最近语音 trace'), 'voice trace formatter should render full panel');
+  assert.ok(aiTraceFormat.formatVoiceRecentList([voiceTrace], 1, 20, 3).includes('语音最近记录 1/1'), 'voice recent formatter should render compact list');
+}
+
+async function testAiReplyDedupeHelpers() {
+  aiReplyDedupe.clearReplyDedupeState();
+  try {
+    const first = aiReplyDedupe.dedupeSessionOpener('dedupe-smoke', '可以的，这波先看默认。');
+    assert.strictEqual(first.deduped, false, 'reply dedupe should keep first opener in a session');
+    const second = aiReplyDedupe.dedupeSessionOpener('dedupe-smoke', '可以的，别急先看道具。');
+    assert.strictEqual(second.deduped, true, 'reply dedupe should strip repeated formulaic opener');
+    assert.ok(!second.text.startsWith('可以的'), 'reply dedupe should remove repeated opener text');
+
+    const pauseFirst = aiReplyDedupe.dedupeSessionOpener('dedupe-pause-smoke', '先别急，等闪落完。');
+    const pauseSecond = aiReplyDedupe.dedupeSessionOpener('dedupe-pause-smoke', '等等，这波先别peek。');
+    assert.strictEqual(pauseFirst.deduped, false, 'reply dedupe should keep first pause opener');
+    assert.strictEqual(pauseSecond.deduped, true, 'reply dedupe should strip repeated opener family');
+
+    const normalized = aiReplyDedupe.normalizeForReplyDedup('这把先别急着补枪，[face:14] 先等道具落完！');
+    assert.ok(!normalized.includes('face'), 'reply dedupe normalization should strip face markers');
+    aiReplyDedupe.recordRecentReply('dedupe-full-smoke', '这把先别急着补枪 先等道具落完');
+    assert.ok(
+      aiReplyDedupe.isRecentReplyDuplicate('dedupe-full-smoke', '这把先别急着补枪，先等道具落完！'),
+      'reply dedupe should detect punctuation-only duplicate replies',
+    );
+    aiReplyDedupe.clearReplyDedupeSession('dedupe-full-smoke');
+    assert.ok(
+      !aiReplyDedupe.isRecentReplyDuplicate('dedupe-full-smoke', '这把先别急着补枪，先等道具落完！'),
+      'reply dedupe session clear should remove duplicate history',
+    );
+  } finally {
+    aiReplyDedupe.clearReplyDedupeState();
+  }
+}
+
+async function testAiPromptBuilderHelpers() {
+  const config = readConfig().ai;
+  const systemPrompt = aiPromptBuilders.buildSystemPrompt(config);
+  const now = new Date();
+  const cst = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const year = cst.getUTCFullYear();
+  assert.ok(systemPrompt.includes('[现实时间锚点 - 这是当前真实时间]'), 'prompt builder should include real-time anchor');
+  assert.ok(systemPrompt.includes(`年份就是 ${year} 年`), 'prompt builder should pin current Beijing year');
+  assert.ok(systemPrompt.includes('[实时数据铁律 - 极其重要]'), 'prompt builder should include realtime truth rules');
+  assert.ok(systemPrompt.includes('不像AI排条目'), 'prompt builder should preserve de-AI persona rule');
+  assert.ok(systemPrompt.includes('[玩机器真实语态 - 学这个语气]'), 'prompt builder should include persona few-shot section');
+
+  const job = {
+    chatType: 'group',
+    chatId: 6657,
+    groupId: 6657,
+    userId: 42,
+    messageId: 12345,
+    senderName: 'smoke',
+    rawText: '你代表本人授权吗',
+    effectiveText: '你代表本人授权吗',
+    imageUrls: ['https://example.test/a.jpg'],
+    imageInputCount: 1,
+    recordUrls: ['https://example.test/a.amr'],
+    hasImages: true,
+    hasRecords: true,
+    forceVoice: true,
+    repliedMessageId: 777,
+    isAtBot: true,
+    isReplyToBot: false,
+    triggerReason: 'mention',
+    contextMessages: [
+      { role: 'user', content: '[mid=100 uid=88] 老王: 这条别替我回答' },
+      { role: 'assistant', content: '结论：这把先别急。' },
+      { role: 'assistant', content: '不是哥们，经济不对。' },
+      { role: 'user', content: '[mid=101 uid=42] smoke: 我刚问过授权' },
+      { role: 'user', content: '[mid=12345 uid=42] smoke: 你代表本人授权吗' },
+    ],
+  };
+
+  const stripped = aiPromptBuilders.scrubKnowledgeForRuntime([
+    '【知识库管理】',
+    '- 知识来源类型：public_fact',
+    '- 这句是可用话术',
+    '- 不代表现实本人',
+  ].join('\n'), false);
+  assert.ok(stripped.includes('这句是可用话术'), 'runtime knowledge scrub should keep useful lines');
+  assert.ok(!stripped.includes('知识来源类型'), 'runtime knowledge scrub should drop metadata labels');
+  assert.ok(!stripped.includes('不代表现实本人'), 'runtime knowledge scrub should hide identity boundary when not needed');
+  const keptIdentity = aiPromptBuilders.scrubKnowledgeForRuntime('- 不代表现实本人', true);
+  assert.ok(keptIdentity.includes('不代表现实本人'), 'runtime knowledge scrub should keep identity boundary when identity is asked');
+
+  const runtimeInfo = aiPromptBuilders.buildRuntimeKnowledgeInfo(
+    '【语态素材】\n- 知识来源类型：style_template\n- 这把先看经济。',
+    '【NAVI 当前阵容】\n- 现在阵容不能靠旧素材报死。',
+    job,
+    true,
+    2000,
+    '排名/阵容必须看 fresh 实时证据。',
+  );
+  assert.ok(runtimeInfo.includes('事实优先级'), 'runtime knowledge prompt should include truth priority');
+  assert.ok(runtimeInfo.includes('[本地知识时效风险]'), 'runtime knowledge prompt should include freshness boundary');
+  assert.ok(runtimeInfo.includes('[最近回复开头，别复读]'), 'runtime knowledge prompt should include opener anti-repeat hints');
+  assert.ok(runtimeInfo.includes('[当前发送者最近发言]'), 'runtime knowledge prompt should include current speaker hints');
+  assert.ok(!runtimeInfo.includes('知识来源类型'), 'runtime knowledge prompt should not leak metadata');
+
+  const targetText = aiPromptBuilders.buildTargetText(job, ['语音里说看一下NAVI']);
+  assert.ok(targetText.includes('===当前消息定位==='), 'target prompt should include message locator');
+  assert.ok(targetText.includes('消息含1张图片'), 'target prompt should expose image count');
+  assert.ok(targetText.includes('1条语音；按听写内容接话'), 'target prompt should expose transcript-backed audio hint');
+  assert.ok(targetText.includes('对方要求语音回复'), 'target prompt should expose voice reply requirement');
+  assert.ok(targetText.includes('这条是对方明确@你'), 'target prompt should include @ mention direct-answer rule');
+  assert.ok(targetText.includes('别把回复写成'), 'target prompt should forbid fallback-only current fact replies for direct mentions');
+}
+
+async function testAiHumanDelayHelpers() {
+  const baseConfig = {
+    ...readConfig().ai,
+    human_reply_delay_enabled: true,
+    human_reply_delay_min_ms: 250,
+    human_reply_delay_max_ms: 1400,
+    human_reply_delay_forced_min_ms: 120,
+    human_reply_delay_forced_max_ms: 650,
+  };
+  const createdAt = 1700000000000;
+  const baseJob = {
+    sessionId: 'delay-smoke',
+    messageId: 707,
+    userId: 42,
+    createdAt,
+    forced: false,
+    hasImages: false,
+    hasRecords: false,
+    forceVoice: false,
+  };
+
+  const normal = aiHumanDelay.decideHumanReplyDelay(baseConfig, baseJob, '这把先等对面道具交完再说', { nowMs: createdAt + 1000 });
+  assert.ok(normal.ms >= 250 && normal.ms <= 1400, 'human delay should stay inside passive range');
+  assert.strictEqual(normal.reason, undefined, 'human delay should not bypass ordinary fresh text replies');
+  assert.strictEqual(
+    aiHumanDelay.calculateHumanReplyDelayMs(baseConfig, baseJob, '这把先等对面道具交完再说', { nowMs: createdAt + 1000 }),
+    normal.ms,
+    'human delay calculator should mirror decision ms',
+  );
+  assert.strictEqual(
+    aiHumanDelay.decideHumanReplyDelay(baseConfig, baseJob, '这把先等对面道具交完再说', { nowMs: createdAt + 1000 }).ms,
+    normal.ms,
+    'human delay should be deterministic for the same job and text',
+  );
+
+  const longText = '这段稍微长一点，用来模拟正常聊天里多说两句的时候，停顿应该能带一点长度偏移，而不是每次都像机器抢答一样';
+  const longDecision = aiHumanDelay.decideHumanReplyDelay(baseConfig, baseJob, longText, { nowMs: createdAt + 1000 });
+  assert.ok(longDecision.lengthBias > 0, 'human delay should add a small length bias for longer replies');
+
+  const forced = aiHumanDelay.decideHumanReplyDelay(
+    baseConfig,
+    { ...baseJob, forced: true },
+    '收到，我直接回这条',
+    { nowMs: createdAt + 1000 },
+  );
+  assert.ok(forced.ms >= 120 && forced.ms <= 650, 'human delay should use tighter forced-trigger range');
+
+  assert.deepStrictEqual(
+    aiHumanDelay.getHumanReplyDelayRange({ ...baseConfig, human_reply_delay_min_ms: 900, human_reply_delay_max_ms: 100 }, false),
+    { min: 100, max: 900 },
+    'human delay range should tolerate swapped config values',
+  );
+  assert.strictEqual(
+    aiHumanDelay.decideHumanReplyDelay({ ...baseConfig, human_reply_delay_enabled: false }, baseJob, '禁用时不等', { nowMs: createdAt + 1000 }).reason,
+    'disabled',
+    'human delay should expose disabled bypass reason',
+  );
+  assert.strictEqual(
+    aiHumanDelay.decideHumanReplyDelay(baseConfig, baseJob, '   ', { nowMs: createdAt + 1000 }).reason,
+    'blank',
+    'human delay should skip blank text',
+  );
+  assert.strictEqual(
+    aiHumanDelay.decideHumanReplyDelay(baseConfig, baseJob, '这条已经太旧了', { nowMs: createdAt + 2600 }).reason,
+    'stale',
+    'human delay should skip stale jobs',
+  );
+  assert.strictEqual(
+    aiHumanDelay.decideHumanReplyDelay(baseConfig, { ...baseJob, hasImages: true }, '图片消息走识图节奏', { nowMs: createdAt + 1000 }).reason,
+    'media',
+    'human delay should skip media-backed replies',
+  );
+  assert.strictEqual(
+    aiHumanDelay.decideHumanReplyDelay(baseConfig, { ...baseJob, hasRecords: true }, '语音消息走听写节奏', { nowMs: createdAt + 1000 }).reason,
+    'media',
+    'human delay should skip record-backed replies',
+  );
+  assert.strictEqual(
+    aiHumanDelay.decideHumanReplyDelay(baseConfig, { ...baseJob, forceVoice: true }, '明确语音回复交给TTS链路', { nowMs: createdAt + 1000 }).reason,
+    'voice',
+    'human delay should skip explicit voice replies',
+  );
+  assert.strictEqual(
+    aiHumanDelay.decideHumanReplyDelay(
+      { ...baseConfig, human_reply_delay_min_ms: 0, human_reply_delay_max_ms: 0 },
+      baseJob,
+      '零区间不等待',
+      { nowMs: createdAt + 1000 },
+    ).reason,
+    'zero-range',
+    'human delay should expose zero-range bypass reason',
+  );
+  assert.strictEqual(
+    aiHumanDelay.hashHumanDelaySeed(baseJob, '稳定种子'),
+    aiHumanDelay.hashHumanDelaySeed(baseJob, '稳定种子'),
+    'human delay hash seed should be stable',
+  );
+}
+
+async function testAiMemoryUtilsHelpers() {
+  const stored = { role: 'user', content: '[mid=101 uid=42] 小王: NAVI 现在排名多少' };
+  const meta = aiMemoryUtils.parseStoredMessageMeta(stored);
+  assert.deepStrictEqual(meta, {
+    mid: 101,
+    uid: 42,
+    name: '小王',
+    text: 'NAVI 现在排名多少',
+  }, 'memory utils should parse stored message metadata');
+  assert.deepStrictEqual(
+    aiMemoryUtils.cleanHistoryMessage(stored),
+    { role: 'user', content: '小王: NAVI 现在排名多少' },
+    'memory utils should clean stored metadata before sending history to model',
+  );
+  assert.strictEqual(
+    aiMemoryUtils.normalizeMemoryDuplicateText('[mid=101 uid=42] 小王:  这把先看A点  '),
+    '这把先看A点',
+    'memory duplicate normalization should remove storage prefix and speaker label',
+  );
+  assert.strictEqual(
+    aiMemoryUtils.normalizeMemoryRiskText('[mid=101 uid=42] 小王: NAVI 最新排名'),
+    '小王: navi 最新排名',
+    'memory risk normalization should keep searchable text while lowercasing latin tokens',
+  );
+
+  assert.strictEqual(
+    aiMemoryUtils.isRealtimeMemoryQuery('NAVI 现在排名多少'),
+    true,
+    'memory utils should detect CS realtime memory queries',
+  );
+  assert.strictEqual(
+    aiMemoryUtils.isRealtimeMemoryQuery('这把残局怎么打'),
+    false,
+    'memory utils should not treat stable tactic chat as realtime memory query',
+  );
+  assert.strictEqual(
+    aiMemoryUtils.classifyMemoryTruthRisk('NAVI 现在排名多少', 'NAVI 昨天排名第一，刚赢了某队'),
+    '旧CS实时事实',
+    'memory utils should mark old CS realtime memories as truth risk',
+  );
+  assert.strictEqual(
+    aiMemoryUtils.classifyMemoryTruthRisk('NAVI 现在排名多少', 'NAVI mirage 默认控图可以先看中路'),
+    null,
+    'memory utils should keep stable tactical memories for realtime-adjacent queries',
+  );
+  const filtered = aiMemoryUtils.filterMemoryTruthRisk('donk 最近 rating 怎么样', [
+    { text: 'donk 昨天 rating 2.01 赢了比赛', id: 'old-fact' },
+    { text: 'donk 对枪风格很凶，可以当语态素材', id: 'style' },
+  ]);
+  assert.deepStrictEqual(filtered.filtered.map((item) => item.id), ['old-fact'], 'memory filter should remove stale realtime facts');
+  assert.deepStrictEqual(filtered.kept.map((item) => item.id), ['style'], 'memory filter should keep non-fact style/tactic memories');
+  assert.deepStrictEqual(filtered.reasons, ['旧CS实时事实'], 'memory filter should compact risk reasons');
+  assert.strictEqual(aiMemoryUtils.formatMemoryAge(59), '59s', 'memory age should format seconds');
+  assert.strictEqual(aiMemoryUtils.formatMemoryAge(120), '2m', 'memory age should format minutes');
+  assert.strictEqual(aiMemoryUtils.formatMemoryAge(7200), '2h', 'memory age should format hours');
+  assert.strictEqual(aiMemoryUtils.formatMemoryAge(172800), '2d', 'memory age should format days');
+  assert.strictEqual(
+    aiMemoryUtils.hasTokenOverlap('NAVI 经济怎么处理', '小王说NAVI这把经济要保枪'),
+    true,
+    'focused history should detect useful token overlap',
+  );
+
+  const contextMessages = [
+    { role: 'user', content: '[mid=1 uid=77] 老王: 被回复的旧问题，问NAVI经济' },
+    { role: 'assistant', content: '先别急着补枪。' },
+    { role: 'user', content: '[mid=2 uid=11] A: 跑题1' },
+    { role: 'user', content: '[mid=3 uid=12] B: 跑题2' },
+    { role: 'user', content: '[mid=4 uid=13] C: 跑题3' },
+    { role: 'assistant', content: '最近一条bot回复' },
+    { role: 'user', content: '[mid=5 uid=42] 小王: 我刚才也问过经济' },
+    { role: 'user', content: '[mid=6 uid=42] 小王: 当前消息' },
+  ];
+  const focused = aiMemoryUtils.buildFocusedHistory({
+    userId: 42,
+    repliedMessageId: 1,
+    effectiveText: 'NAVI经济怎么处理',
+    hasImages: false,
+    hasRecords: false,
+    contextMessages,
+  }, 4);
+  assert.strictEqual(focused.focused, true, 'focused history should mark truncated context as focused');
+  assert.strictEqual(focused.history.length, 4, 'focused history should keep configured amount');
+  assert.ok(
+    focused.history.some((message) => message.content.includes('老王: 被回复的旧问题')),
+    'focused history should keep explicitly replied old message',
+  );
+  assert.ok(
+    focused.history.every((message) => typeof message.content !== 'string' || !message.content.startsWith('[mid=')),
+    'focused history should clean storage prefixes in selected messages',
+  );
+}
+
+async function testLocalCommandParser() {
+  assert.deepStrictEqual(
+    parseLocalCommand(`"${process.execPath}" "scripts/smoke.js" --flag`),
+    { file: process.execPath, args: ['scripts/smoke.js', '--flag'] },
+    'local command parser should preserve quoted executable and args',
+  );
+  assert.deepStrictEqual(
+    parseLocalCommand(`node -e "console.log('ok')"`)?.args,
+    ['-e', "console.log('ok')"],
+    'local command parser should keep quoted inline script as one arg',
   );
 }
 
@@ -80,6 +1768,9 @@ async function testOutgoingSanitize() {
   const softenedCatchphrase = sanitize.sanitizeOutgoingText('有点东西 这句需要去开头');
   assert.ok(!softenedCatchphrase.startsWith('有点东西'), 'catchphrase opener should be softened at send boundary');
   assert.ok(softenedCatchphrase.includes('这句需要去开头'), 'catchphrase opener softening should keep useful content');
+  const softenedService = sanitize.sanitizeOutgoingText('当然可以 这句需要去客服腔');
+  assert.ok(!softenedService.startsWith('当然可以'), 'customer-service opener should be softened at send boundary');
+  assert.ok(softenedService.includes('这句需要去客服腔'), 'customer-service opener softening should keep useful content');
   const message = sanitize.sanitizeOutgoingMessage([
     { type: 'text', data: { text: '别发😂笑哭' } },
     { type: 'image', data: { file: 'https://example.com/a.jpg' } },
@@ -216,14 +1907,16 @@ async function withPreservedFile(filepath, fn) {
 async function testConfig() {
   const config = readConfig();
   assert.strictEqual(config.config_version, 20260609);
+  assert.strictEqual(config.web_admin_port, undefined);
+  assert.strictEqual(normalizeConfig({ ...JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'config.example.json'), 'utf-8')), web_admin_port: 6099 }).web_admin_port, 6099);
   assert.strictEqual(config.login_check_interval_seconds, 30);
   assert.strictEqual(config.login_check_api_timeout_ms, 8000);
-  assert.strictEqual(config.ai.trigger_probability, 0.08);
+  assert.strictEqual(config.ai.trigger_probability, 0.12);
   assert.strictEqual(config.ai.passive_random_min_chars, 4);
   assert.strictEqual(config.ai.passive_random_allow_numeric, false);
   assert.strictEqual(config.ai.knowledge_max_chars, 2600);
   assert.strictEqual(config.ai.knowledge_force_style, true);
-  assert.strictEqual(config.ai.related_reply_probability, 0.65);
+  assert.strictEqual(config.ai.related_reply_probability, 0.72);
   assert.strictEqual(config.ai.api_timeout_ms, 120000);
   assert.strictEqual(config.ai.aggression_level, 'medium');
   assert.strictEqual(config.ai.poke_reply_probability, 1);
@@ -258,6 +1951,7 @@ async function testConfig() {
   assert.strictEqual(config.ai.tts_model, 'mimo-v2.5-tts');
   assert.strictEqual(config.ai.tts_provider, 'auto');
   assert.strictEqual(config.ai.tts_local_command, '');
+  assert.strictEqual(config.ai.tts_local_command_shell, true);
   assert.strictEqual(config.ai.tts_local_output_dir, 'voice_cache/local');
   assert.strictEqual(config.ai.tts_local_timeout_ms, 15000);
   assert.strictEqual(config.ai.tts_clone_model, 'mimo-v2.5-tts-voiceclone');
@@ -276,6 +1970,7 @@ async function testConfig() {
   assert.strictEqual(config.ai.stt_payload_mode, 'auto');
   assert.strictEqual(config.ai.stt_record_format, 'mp3');
   assert.strictEqual(config.ai.stt_local_command, '');
+  assert.strictEqual(config.ai.stt_local_command_shell, true);
   assert.strictEqual(config.ai.stt_local_timeout_ms, 15000);
   assert.strictEqual(config.ai.stt_max_records, 1);
   assert.strictEqual(config.ai.stt_max_file_mb, 4);
@@ -284,9 +1979,9 @@ async function testConfig() {
   assert.strictEqual(config.ai.stt_cache_max_mb, 96);
   assert.strictEqual(config.ai.stt_cache_max_files, 1500);
   assert.strictEqual(config.ai.enable_memory_retrieval, true);
-  assert.strictEqual(config.ai.memory_top_k, 4);
+  assert.strictEqual(config.ai.memory_top_k, 5);
   assert.strictEqual(config.ai.memory_min_similarity, 0.18);
-  assert.strictEqual(config.ai.memory_inject_max_chars, 700);
+  assert.strictEqual(config.ai.memory_inject_max_chars, 900);
   assert.strictEqual(config.ai.memory_max_messages_per_session, 700);
   assert.strictEqual(config.ai.memory_max_sessions_in_memory, 80);
   assert.strictEqual(config.ai.search_negative_cache_seconds, 60);
@@ -304,6 +1999,58 @@ async function testConfig() {
   assert.strictEqual(hasUsableApiKey('sk-live-test-key-1234567890'), true, 'real-looking key should be treated as usable');
 }
 
+async function testWebAdminSecurity() {
+  const oldToken = process.env.WANJIER_ADMIN_TOKEN;
+  const oldHost = process.env.WANJIER_WEB_ADMIN_HOST;
+  const oldPublic = process.env.WANJIER_WEB_ADMIN_READONLY_PUBLIC;
+  const port = await getFreePort();
+  const bot = new Bot(readConfig());
+  try {
+    delete process.env.WANJIER_ADMIN_TOKEN;
+    process.env.WANJIER_WEB_ADMIN_HOST = '127.0.0.1';
+    delete process.env.WANJIER_WEB_ADMIN_READONLY_PUBLIC;
+    startWebServer(bot, port);
+    await waitFor(async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+        return res.status === 200;
+      } catch {
+        return false;
+      }
+    }, 'web admin health');
+
+    let res = await fetch(`http://127.0.0.1:${port}/api/status`);
+    assert.strictEqual(res.status, 401, 'web admin status should require a token by default');
+
+    process.env.WANJIER_ADMIN_TOKEN = 'smoke-admin-token-123456';
+    res = await fetch(`http://127.0.0.1:${port}/api/status`);
+    assert.strictEqual(res.status, 401, 'web admin status should reject missing token when token is configured');
+
+    res = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { 'X-Admin-Token': 'smoke-admin-token-123456' },
+    });
+    assert.strictEqual(res.status, 200, 'web admin status should allow the configured token');
+    const status = await res.json();
+    assert.ok(status.runtime, 'web admin status should return runtime data after auth');
+
+    res = await fetch(`http://127.0.0.1:${port}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': 'smoke-admin-token-123456' },
+      body: JSON.stringify({ ai: {} }),
+    });
+    assert.strictEqual(res.status, 400, 'web admin config save should validate before writing invalid config');
+  } finally {
+    try { bot.close(); } catch { /* noop */ }
+    stopWebServer();
+    if (typeof oldToken === 'string') process.env.WANJIER_ADMIN_TOKEN = oldToken;
+    else delete process.env.WANJIER_ADMIN_TOKEN;
+    if (typeof oldHost === 'string') process.env.WANJIER_WEB_ADMIN_HOST = oldHost;
+    else delete process.env.WANJIER_WEB_ADMIN_HOST;
+    if (typeof oldPublic === 'string') process.env.WANJIER_WEB_ADMIN_READONLY_PUBLIC = oldPublic;
+    else delete process.env.WANJIER_WEB_ADMIN_READONLY_PUBLIC;
+  }
+}
+
 async function testDoctorScript() {
   const result = spawnSync(process.execPath, [path.resolve(__dirname, 'doctor.js')], {
     cwd: path.resolve(__dirname, '..'),
@@ -314,8 +2061,53 @@ async function testDoctorScript() {
   assert.ok(result.stdout.includes('硬伤:'), 'doctor should print hard issue count');
   assert.ok(result.stdout.includes('运行数据目录可写: data'), 'doctor should check data/ write access');
   assert.ok(result.stdout.includes('CS实时缓存=data/cs-realtime-cache.json'), 'doctor should document CS realtime cache store parent');
+  assert.ok(result.stdout.includes('src JSON/状态写盘已统一走 runtime-storage'), 'doctor should enforce centralized atomic JSON/state writes');
   assert.ok(result.stdout.includes('本地TTS输出目录可写: voice_cache/local'), 'doctor should check local TTS output directory');
   assert.ok(result.stdout.includes('素材收件箱目录可写: knowledge/inbox'), 'doctor should check knowledge inbox directory');
+}
+
+async function testVpsCheckScript() {
+  const rootDir = path.resolve(__dirname, '..');
+  const textResult = spawnSync(process.execPath, [path.resolve(__dirname, 'vps-check.js')], {
+    cwd: rootDir,
+    encoding: 'utf-8',
+  });
+  assert.strictEqual(textResult.status, 0, `vps-check should run read-only: ${textResult.stdout}\n${textResult.stderr}`);
+  assert.ok(textResult.stdout.includes('vps check report'), 'vps-check should print report header');
+  assert.ok(textResult.stdout.includes('npm run update'), 'vps-check should show the standard update command');
+  assert.ok(textResult.stdout.includes('pm2 logs wanjier'), 'vps-check should show the PM2 log command');
+
+  const jsonResult = spawnSync(process.execPath, [path.resolve(__dirname, 'vps-check.js'), '--json'], {
+    cwd: rootDir,
+    encoding: 'utf-8',
+  });
+  assert.strictEqual(jsonResult.status, 0, `vps-check --json should run: ${jsonResult.stdout}\n${jsonResult.stderr}`);
+  const parsed = JSON.parse(jsonResult.stdout);
+  assert.ok(Array.isArray(parsed.rows), 'vps-check json should include rows');
+  assert.ok(parsed.commands.some((item) => item[1].includes('npm run update')), 'vps-check json should include update command');
+}
+
+async function testMaintainabilityReportScript() {
+  const rootDir = path.resolve(__dirname, '..');
+  const textResult = spawnSync(process.execPath, [path.resolve(__dirname, 'maintainability-report.js')], {
+    cwd: rootDir,
+    encoding: 'utf-8',
+  });
+  assert.strictEqual(textResult.status, 0, `maintainability report should run read-only: ${textResult.stdout}\n${textResult.stderr}`);
+  assert.ok(textResult.stdout.includes('maintainability report'), 'maintainability report should print a header');
+  assert.ok(textResult.stdout.includes('large runtime modules'), 'maintainability report should list large runtime modules');
+  assert.ok(textResult.stdout.includes('next upgrade candidates'), 'maintainability report should list next upgrade candidates');
+  assert.ok(textResult.stdout.includes('npm run maintainability'), 'maintainability report should show npm command');
+
+  const jsonResult = spawnSync(process.execPath, [path.resolve(__dirname, 'maintainability-report.js'), '--json'], {
+    cwd: rootDir,
+    encoding: 'utf-8',
+  });
+  assert.strictEqual(jsonResult.status, 0, `maintainability report --json should run: ${jsonResult.stdout}\n${jsonResult.stderr}`);
+  const parsed = JSON.parse(jsonResult.stdout);
+  assert.ok(parsed.totals.files > 0, 'maintainability json should include file totals');
+  assert.ok(Array.isArray(parsed.topFiles), 'maintainability json should include top files');
+  assert.ok(parsed.recommendations.some((item) => item.file === 'src/plugins/ai-chat.ts'), 'maintainability json should keep ai-chat visible as a split candidate');
 }
 
 async function testApiTestScript() {
@@ -460,8 +2252,8 @@ async function testConfigSyncScript() {
     const synced = JSON.parse(fs.readFileSync(tmpConfig, 'utf-8'));
     assert.strictEqual(synced.config_version, 20260609);
     assert.strictEqual(synced.ai.api_key, 'sk-real-user-key-should-stay', 'sync must not overwrite user api key');
-    assert.strictEqual(synced.ai.trigger_probability, 0.08, 'sync should migrate old too-quiet passive trigger probability');
-    assert.strictEqual(synced.ai.related_reply_probability, 0.65, 'sync should migrate old too-quiet related reply probability');
+    assert.strictEqual(synced.ai.trigger_probability, 0.12, 'sync should migrate old too-quiet passive trigger probability');
+    assert.strictEqual(synced.ai.related_reply_probability, 0.72, 'sync should migrate old too-quiet related reply probability');
     assert.strictEqual(synced.ai.passive_random_min_chars, 4, 'sync should migrate old passive min chars');
     assert.strictEqual(synced.ai.api_timeout_ms, 120000, 'sync should migrate old too-short API timeout');
     assert.strictEqual(synced.ai.ai_reply_cache_max_entries, 300, 'sync should add reply cache max entries');
@@ -471,7 +2263,7 @@ async function testConfigSyncScript() {
     assert.strictEqual(synced.ai.human_reply_delay_forced_min_ms, 120, 'sync should add forced human delay min');
     assert.strictEqual(synced.ai.human_reply_delay_forced_max_ms, 650, 'sync should add forced human delay max');
     assert.strictEqual(synced.ai.enable_memory_retrieval, true);
-    assert.strictEqual(synced.ai.memory_top_k, 4);
+    assert.strictEqual(synced.ai.memory_top_k, 5);
     assert.notStrictEqual(synced.ai.presets.wanjier.system_prompt, 'old prompt', 'old built-in preset prompt should refresh on version lag');
     assert.ok(synced.ai.presets.wanjier.system_prompt.includes('上下文使用'), 'synced preset should contain current prompt rules');
     assert.ok(fs.existsSync(path.join(tmpDir, 'backups')), 'sync should create a local backup');
@@ -1050,6 +2842,7 @@ setTimeout(() => {
   config.ai.enable_tts = true;
   config.ai.tts_provider = 'local';
   config.ai.tts_local_command = `"${process.execPath}" "${scriptPath}"`;
+  config.ai.tts_local_command_shell = false;
   config.ai.tts_local_output_dir = path.join(tempDir, 'cache');
   config.ai.tts_max_chars = 120;
   config.ai.tts_cache_hours = 1;
@@ -1539,7 +3332,7 @@ async function testAdminMaintenanceCommands() {
   await waitFor(() => sent.length === 1, 'maint status');
   assert.ok(firstText(sent[0].message).includes('维护状态'), 'maint status should render maintenance panel');
   assert.ok(firstText(sent[0].message).includes('config_version'), 'maint status should show config version');
-  assert.ok(firstText(sent[0].message).includes('AI回复缓存'), 'maint status should expose AI reply cache and in-flight stats');
+  assert.ok(firstText(sent[0].message).includes('回复缓存'), 'maint status should expose reply cache and in-flight stats');
   assert.ok(firstText(sent[0].message).includes('真人停顿'), 'maint status should expose human reply delay stats');
   assert.ok(firstText(sent[0].message).includes('风格场景'), 'maint status should expose style scene stats');
   assert.ok(firstText(sent[0].message).includes('CS实时缓存'), 'maint status should expose CS realtime cache stats');
@@ -1572,7 +3365,7 @@ async function testAdminMaintenanceCommands() {
   await waitFor(() => sent.length === 6, 'mem status');
   assert.ok(firstText(sent[5].message).includes('RAG记忆'), 'mem should show RAG memory status');
   assert.ok(firstText(sent[5].message).includes('用户画像缓存'), 'mem should show user profile cache stats');
-  assert.ok(firstText(sent[5].message).includes('AI回复缓存'), 'mem should show AI reply cache stats');
+  assert.ok(firstText(sent[5].message).includes('回复缓存'), 'mem should show reply cache stats');
   assert.ok(firstText(sent[5].message).includes('/mem search'), 'mem should show search usage');
 
   handler.handleEvent(makePlainEvent(807, 2, '/mem recent'));
@@ -1717,7 +3510,7 @@ async function testAdminMaintenanceCommands() {
   handler.handleEvent(makePlainEvent(816, 2, '/mem cache CS2这把残局怎么打稳一点？？ || @机器人 CS2这把残局怎么打稳一点?'));
   await waitFor(() => sent.length === 17, 'mem reply cache preflight');
   const cacheCheckText = firstText(sent[16].message);
-  assert.ok(cacheCheckText.includes('AI回复缓存预检'), '/mem cache should render reply cache preflight panel');
+  assert.ok(cacheCheckText.includes('回复缓存预检'), '/mem cache should render reply cache preflight panel');
   assert.ok(cacheCheckText.includes('稳定战术'), '/mem cache should identify stable CS tactical queries');
   assert.ok(cacheCheckText.includes('策略: on 残局处理'), '/mem cache should expose cacheable tactical policy');
   assert.ok(cacheCheckText.includes('状态=miss'), '/mem cache should expose current key miss state');
@@ -1730,8 +3523,8 @@ async function testAdminMaintenanceCommands() {
   assert.ok(healthText.includes('缓存健康'), 'mem health should render cache health panel');
   assert.ok(healthText.includes('内存压力:'), 'mem health should expose memory pressure level');
   assert.ok(healthText.includes('上下文:'), 'mem health should expose context memory pressure');
-  assert.ok(healthText.includes('AI回复缓存'), 'mem health should include AI reply cache');
-  assert.ok(healthText.includes('AI缓存策略Top'), 'mem health should include reply cache policy distribution');
+  assert.ok(healthText.includes('回复缓存'), 'mem health should include reply cache');
+  assert.ok(healthText.includes('缓存策略Top'), 'mem health should include reply cache policy distribution');
   assert.ok(healthText.includes('用户画像缓存'), 'mem health should include user profile cache diagnostics');
   assert.ok(healthText.includes('搜索缓存'), 'mem health should include search cache');
   assert.ok(healthText.includes('CS实时缓存'), 'mem health should include CS realtime cache');
@@ -1812,7 +3605,7 @@ async function testAdminMaintenanceCommands() {
   handler.handleEvent(makePlainEvent(825, 2, '/mem cache status'));
   await waitFor(() => sent.length === 24, 'mem reply cache pool status');
   const cachePoolText = firstText(sent[23].message);
-  assert.ok(cachePoolText.includes('AI回复缓存池状态'), '/mem cache status should render reply cache pool status');
+  assert.ok(cachePoolText.includes('回复缓存池状态'), '/mem cache status should render reply cache pool status');
   assert.ok(cachePoolText.includes('模式: 只读'), '/mem cache status should clarify read-only behavior');
   assert.ok(cachePoolText.includes('配置: ttl='), '/mem cache status should expose configured ttl and capacity');
   assert.ok(cachePoolText.includes('条目: fresh'), '/mem cache status should expose fresh/expired entry counts');
@@ -1830,7 +3623,7 @@ async function testAdminMaintenanceCommands() {
   handler.handleEvent(makePlainEvent(827, 1, '/mem cache prune'));
   await waitFor(() => sent.length === 26, 'mem reply cache prune admin report');
   const cachePruneText = firstText(sent[25].message);
-  assert.ok(cachePruneText.includes('AI回复缓存过期清理'), '/mem cache prune should render prune report');
+  assert.ok(cachePruneText.includes('回复缓存过期清理'), '/mem cache prune should render prune report');
   assert.ok(cachePruneText.includes('expired 1'), '/mem cache prune should count expired entries');
   assert.ok(cachePruneText.includes('removed 1'), '/mem cache prune should remove expired entries');
   assert.ok(cachePruneText.includes('after 1'), '/mem cache prune should keep fresh entries');
@@ -2013,7 +3806,7 @@ async function testStatusCommandObservability() {
   await waitFor(() => sent.length === 1, 'status command observability');
   const text = firstText(sent[0].message);
   assert.ok(text.includes('运行状态'), 'status should render runtime panel');
-  assert.ok(text.includes('AI回复缓存'), 'status should expose AI reply cache stats');
+  assert.ok(text.includes('回复缓存'), 'status should expose reply cache stats');
   assert.ok(text.includes('用户画像'), 'status should expose user profile cache stats');
   assert.ok(text.includes('回复真实性'), 'status should expose reply authenticity counters');
   assert.ok(text.includes('真人停顿'), 'status should expose human reply delay stats');
@@ -2323,7 +4116,17 @@ async function testVoiceSttEndToEndDiagnostics() {
   const config = makeConfigForHandler();
   config.ai.enable_stt = true;
   config.ai.stt_provider = 'local';
-  config.ai.stt_local_command = `"${process.execPath}" -e "const fs=require('fs');const text='听写真链路 smoke';fs.writeFileSync(process.env.QQBOT_STT_OUTPUT,text,'utf-8');console.log(text);"`;
+  const sttScriptPath = path.resolve(__dirname, '..', 'stt_cache', `smoke-stt-local-${Date.now()}.js`);
+  fs.mkdirSync(path.dirname(sttScriptPath), { recursive: true });
+  fs.writeFileSync(sttScriptPath, [
+    "const fs = require('fs');",
+    "const text = '听写真链路 smoke';",
+    "fs.writeFileSync(process.env.QQBOT_STT_OUTPUT, text, 'utf-8');",
+    "console.log(text);",
+    '',
+  ].join('\n'), 'utf-8');
+  config.ai.stt_local_command = `"${process.execPath}" "${sttScriptPath}"`;
+  config.ai.stt_local_command_shell = false;
   config.ai.stt_max_records = 1;
   const sent = [];
   const bot = {
@@ -2372,6 +4175,7 @@ async function testVoiceSttEndToEndDiagnostics() {
     const cacheAfter = stt.inspectSttCacheSources(config.ai, [audioPath], 1)[0];
     if (cacheAfter.filepath && fs.existsSync(cacheAfter.filepath)) fs.unlinkSync(cacheAfter.filepath);
     if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+    if (fs.existsSync(sttScriptPath)) fs.unlinkSync(sttScriptPath);
     aiChat.shutdownAiChat();
   }
 }
@@ -2446,7 +4250,7 @@ async function testDataCommandObservability() {
     assert.ok(text.includes('识图'), '/data should expose vision status');
     assert.ok(text.includes('语音'), '/data should expose TTS status');
     assert.ok(text.includes('听写'), '/data should expose STT status');
-    assert.ok(text.includes('AI回复缓存'), '/data should expose AI reply cache stats');
+    assert.ok(text.includes('回复缓存'), '/data should expose reply cache stats');
     assert.ok(text.includes('用户画像缓存'), '/data should expose user profile cache stats');
     assert.ok(text.includes('回复真实性'), '/data should expose reply authenticity counters');
     assert.ok(text.includes('风格场景'), '/data should expose style scene stats');
@@ -2489,7 +4293,7 @@ async function testDiagStorageDiagnostics() {
 async function waitFor(condition, label, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (condition()) return;
+    if (await condition()) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`timeout waiting for ${label}`);
@@ -2911,6 +4715,148 @@ async function testOpaqueOneBotImageResolution() {
   }
 }
 
+async function testMultimodalPerceptionGuard() {
+  const directVision = aiReplyGuard.guardMultimodalPerceptionClaims('我看到了，图里左边有个人。', {
+    hasImages: true,
+    imageInputCount: 1,
+    visionPayload: false,
+    visionImages: 0,
+    hasRecords: false,
+    recordInputCount: 0,
+    recordTranscripts: 0,
+  });
+  assert.ok(directVision.reason.includes('unsupported vision perception claim'), 'perception guard should detect unsupported vision claims');
+  assert.ok(directVision.text.includes('实际没看进模型'), 'perception guard should expose a natural vision boundary');
+
+  const directAudio = aiReplyGuard.guardMultimodalPerceptionClaims('我听到了，语音里说要看NAVI。', {
+    hasImages: false,
+    imageInputCount: 0,
+    visionPayload: false,
+    visionImages: 0,
+    hasRecords: true,
+    recordInputCount: 1,
+    recordTranscripts: 0,
+  });
+  assert.ok(directAudio.reason.includes('unsupported audio perception claim'), 'perception guard should detect unsupported audio claims');
+  assert.ok(directAudio.text.includes('没听写出来'), 'perception guard should expose a natural audio boundary');
+
+  const directNoSourceFact = aiReplyGuard.guardReplyFacts(
+    '我刚查了HLTV，现在NAVI排名第一。',
+    false,
+    [],
+    [],
+    [],
+  );
+  assert.ok(directNoSourceFact.reason.includes('unverified realtime claim softened'), 'fact guard should soften fake realtime lookup claims');
+  assert.ok(directNoSourceFact.text.includes('没实时来源'), 'fact guard should expose no-source boundary');
+
+  const directCoveredFact = aiReplyGuard.guardReplyFacts(
+    'NAVI现在排名第一。',
+    true,
+    [],
+    ['排名'],
+    ['ranking fresh age=2s'],
+  );
+  assert.strictEqual(directCoveredFact.reason, '', 'fact guard should keep covered fresh realtime claims');
+  assert.ok(directCoveredFact.text.includes('NAVI现在排名第一'), 'fact guard should preserve covered fresh fact text');
+
+  const freshnessIssue = {
+    level: 'risk',
+    title: 'NAVI 当前排名旧快照',
+    triggers: ['排名'],
+    missing: ['抓取时间', '证据链接'],
+    excerpt: '旧排名线索。',
+    advice: '补最新排名证据',
+    remediation: ['/cs verify ranking'],
+  };
+  const directStaleKnowledge = aiReplyGuard.guardReplyFacts(
+    'NAVI现在排名第一。',
+    true,
+    [freshnessIssue],
+    ['单场2390002'],
+    ['match:2390002 fresh age=2s'],
+  );
+  assert.ok(directStaleKnowledge.reason.includes('knowledge freshness risk softened'), 'fact guard should soften uncovered stale-knowledge facts');
+  assert.ok(directStaleKnowledge.text.includes('当前排名'), 'fact guard should name uncovered fact kind');
+
+  const mixedCurrent = aiReplyGuard.guardReplyFacts(
+    'HLTV显示现在NAVI排名第一，可以直接报死。',
+    true,
+    [],
+    ['排名'],
+    ['ranking fresh age=2s', 'matches miss'],
+  );
+  assert.ok(mixedCurrent.reason.includes('mixed-current'), 'fact guard should catch overclaims with mixed evidence');
+  assert.ok(mixedCurrent.text.includes('证据账本'), 'fact guard should mention evidence ledger for mixed evidence');
+
+  const uncovered = aiReplyGuard.uncoveredReplyFactKinds(
+    'NAVI现在排名第一，donk这场Rating 2.0。',
+    [],
+    ['match:2390002 fresh age=2s'],
+  );
+  assert.ok(uncovered.includes('ranking'), 'fact guard should expose uncovered ranking facts for style preflight');
+  assert.ok(!uncovered.includes('player'), 'fact guard should treat fresh match evidence as covering player stats');
+
+  const config = makeConfigForHandler();
+  config.ai.enable_vision = false;
+  config.ai.enable_stt = false;
+  config.ai.enable_knowledge = false;
+  config.ai.enable_search = false;
+  const sent = [];
+  const bot = {
+    getConfig: () => config,
+    sendGroupMessage: async (groupId, message, onMessageId) => {
+      sent.push({ groupId, message });
+      if (onMessageId) onMessageId(94_000 + sent.length);
+      return true;
+    },
+    callApiAsync: async () => ({ retcode: 0, data: {} }),
+  };
+  const handler = new MessageHandler(bot);
+  handler.use(aiChat.aiChatPlugin);
+
+  let calls = 0;
+  aiChat.__setLLMCallerForTests(async () => {
+    calls++;
+    return calls === 1
+      ? '我看到了，图里写着NAVI赢了。'
+      : '我听到了，语音里说donk要离队。';
+  });
+
+  try {
+    handler.handleEvent(makeEvent(907, 93, ' 看下这张图', [
+      { type: 'image', data: { file: 'opaque-image-token-guard.jpg' } },
+    ]));
+    await waitFor(() => sent.length === 1, 'vision perception guard reply');
+    const imageText = firstText(sent[0].message);
+    assert.ok(imageText.includes('实际没看进模型'), 'AI reply path should guard unsupported image perception');
+    assert.ok(!/图里写着|我看到了/.test(imageText), 'AI reply path should not send fabricated image details');
+
+    handler.handleEvent(makePlainEvent(908, 93, '/trace last'));
+    await waitFor(() => sent.length === 2, 'trace after vision perception guard');
+    const imageTrace = firstText(sent[1].message);
+    assert.ok(imageTrace.includes('multimodal perception guard'), 'trace should expose multimodal perception guard reason');
+    assert.ok(imageTrace.includes('unsupported vision perception claim'), 'trace should expose unsupported vision issue');
+
+    handler.handleEvent(makeEvent(909, 93, ' 听下这个语音', [
+      { type: 'record', data: { file: 'opaque-record-guard.amr' } },
+    ]));
+    await waitFor(() => sent.length === 3, 'audio perception guard reply');
+    const audioText = firstText(sent[2].message);
+    assert.ok(audioText.includes('没听写出来'), 'AI reply path should guard unsupported audio perception');
+    assert.ok(!/语音里说|我听到了/.test(audioText), 'AI reply path should not send fabricated audio details');
+
+    handler.handleEvent(makePlainEvent(910, 93, '/trace last'));
+    await waitFor(() => sent.length === 4, 'trace after audio perception guard');
+    const audioTrace = firstText(sent[3].message);
+    assert.ok(audioTrace.includes('multimodal perception guard'), 'trace should expose audio perception guard reason');
+    assert.ok(audioTrace.includes('unsupported audio perception claim'), 'trace should expose unsupported audio issue');
+  } finally {
+    aiChat.__setLLMCallerForTests();
+    aiChat.shutdownAiChat();
+  }
+}
+
 async function testKnowledgeInjectionAndHumanizedPostprocess() {
   const config = makeConfigForHandler();
   config.ai.enable_knowledge = true;
@@ -2975,6 +4921,8 @@ async function testKnowledgeInjectionAndHumanizedPostprocess() {
     assert.ok(text.includes('这个回答太规整了'), 'reply should keep the useful humanized content');
     assert.ok(!/^不是哥们/.test(text), 'postprocess should soften formulaic opener');
     assert.ok(!/结论：|根据知识库|根据临场笔记|作为AI|我将用|玩机器风格回复/.test(text), 'postprocess should strip assistant/template boilerplate');
+    const clicheCleaned = replyPostprocess.postProcessReply('当然可以，下面是我来为你整理的回复：这个说法太客服了。希望能帮到你。');
+    assert.strictEqual(clicheCleaned, '这个说法太客服了', 'postprocess should strip assistant/customer-service cliches');
 
     handler.handleEvent(makePlainEvent(908, 98, '/trace last'));
     await waitFor(() => sent.length === 5, 'trace last after AI reply');
@@ -3218,14 +5166,28 @@ async function testTraceEvidenceAndFactGuard() {
 
   aiChat.__setLLMCallerForTests(async () => 'Vitality 当前排名第一。');
   try {
-    handler.handleEvent(makeEvent(912, 92, ' 随便接一句'));
-    await waitFor(() => sent.length === 1, 'fact guard reply');
-    const text = firstText(sent[0].message);
+    handler.handleEvent(makeEvent(912, 92, ' Vitality现在第几'));
+    await waitFor(() => sent.length === 1, 'at mention realtime claim reply');
+    const atText = firstText(sent[0].message);
+    assert.ok(atText.includes('Vitality 当前排名第一'), '@ mention should preserve the direct model answer');
+    assert.ok(!/没实时来源|以最新为准|得查最新|不能拍死|没可靠来源/.test(atText), '@ mention should not be replaced with realtime fallback wording');
+
+    aiChat.__setLLMCallerForTests(async () => '我刚查了HLTV，现在NAVI排名第一。');
+    handler.handleEvent(makeEvent(913, 93, ' NAVI现在第几'));
+    await waitFor(() => sent.length === 2, 'at mention fake realtime source reply');
+    const atFakeSourceText = firstText(sent[1].message);
+    assert.ok(atFakeSourceText.includes('NAVI排名第一'), '@ mention should still answer the concrete data question');
+    assert.ok(!/没实时来源|以最新为准|得查最新|不能拍死|没可靠来源/.test(atFakeSourceText), '@ mention should not add source fallback wording');
+
+    aiChat.__setLLMCallerForTests(async () => 'Vitality 当前排名第一。');
+    handler.handleEvent(makePlainEvent(914, 94, '/ai 随便接一句'));
+    await waitFor(() => sent.length === 3, 'fact guard reply');
+    const text = firstText(sent[2].message);
     assert.ok(text.includes('以最新为准'), 'AI reply path should soften unsupported realtime claim');
 
     handler.handleEvent(makePlainEvent(916, 96, '/trace last'));
-    await waitFor(() => sent.length === 2, 'trace after fact guard');
-    const traceText = firstText(sent[1].message);
+    await waitFor(() => sent.length === 4, 'trace after fact guard');
+    const traceText = firstText(sent[3].message);
     assert.ok(traceText.includes('证据:'), 'trace should expose evidence summary line');
     assert.ok(traceText.includes('实时意图无'), 'trace should show no realtime intent for non-CS prompt');
     assert.ok(traceText.includes('事实边界:'), 'trace should expose factual guard action');
@@ -3236,28 +5198,28 @@ async function testTraceEvidenceAndFactGuard() {
     assert.ok(stats.lastFactGuard.includes('unverified realtime claim softened'), 'stats should keep last fact guard reason');
 
     aiChat.__setLLMCallerForTests(async () => '我刚查了HLTV，现在NAVI排名第一。');
-    handler.handleEvent(makeEvent(917, 97, ' 随便接一句假的来源'));
-    await waitFor(() => sent.length === 3, 'fake realtime source guarded reply');
-    const guarded = firstText(sent[2].message);
+    handler.handleEvent(makePlainEvent(917, 97, '/ai 随便接一句假的来源'));
+    await waitFor(() => sent.length === 5, 'fake realtime source guarded reply');
+    const guarded = firstText(sent[4].message);
     assert.ok(guarded.includes('没实时来源'), 'AI reply path should expose a no-source boundary for fake lookup claims');
     assert.ok(!/刚查|HLTV显示|实时数据说|资料显示/i.test(guarded), 'AI reply path should strip fake realtime source claims');
 
     handler.handleEvent(makePlainEvent(918, 98, '/trace last'));
-    await waitFor(() => sent.length === 4, 'trace after fake source fact guard');
-    const sourceTraceText = firstText(sent[3].message);
+    await waitFor(() => sent.length === 6, 'trace after fake source fact guard');
+    const sourceTraceText = firstText(sent[5].message);
     assert.ok(sourceTraceText.includes('事实边界:'), 'trace should expose fake source factual guard action');
     assert.ok(sourceTraceText.includes('unverified realtime claim softened'), 'trace should explain fake source repair');
 
     aiChat.__setLLMCallerForTests(async () => '朋友说donk最近要离队，Spirit要换人。');
-    handler.handleEvent(makeEvent(919, 99, ' 随便接一句传闻'));
-    await waitFor(() => sent.length === 5, 'unsupported rumor guarded reply');
-    const rumorGuarded = firstText(sent[4].message);
+    handler.handleEvent(makePlainEvent(919, 99, '/ai 随便接一句传闻'));
+    await waitFor(() => sent.length === 7, 'unsupported rumor guarded reply');
+    const rumorGuarded = firstText(sent[6].message);
     assert.ok(rumorGuarded.includes('没可靠来源'), 'AI reply path should expose a reliable-source boundary for rumor claims');
     assert.ok(!/朋友说|群里都说|听说|爆料/i.test(rumorGuarded), 'AI reply path should strip unsupported rumor source wording');
 
     handler.handleEvent(makePlainEvent(920, 100, '/trace last'));
-    await waitFor(() => sent.length === 6, 'trace after unsupported rumor fact guard');
-    const rumorTraceText = firstText(sent[5].message);
+    await waitFor(() => sent.length === 8, 'trace after unsupported rumor fact guard');
+    const rumorTraceText = firstText(sent[7].message);
     assert.ok(rumorTraceText.includes('事实边界:'), 'trace should expose rumor factual guard action');
     assert.ok(rumorTraceText.includes('unsupported rumor claim softened'), 'trace should explain rumor source repair');
   } finally {
@@ -3343,38 +5305,30 @@ async function testAiMatchIdRealtimeInjection() {
   aiChat.__setLLMCallerForTests(async (_config, messages) => {
     capturedMessages.push(messages);
     const realtimeMessage = messages.find((item) => typeof item.content === 'string' && item.content.includes('[实时事实参考]'));
-    assert.ok(realtimeMessage, 'match id AI question should inject realtime reference pack');
-    assert.ok(realtimeMessage.content.includes('单场2390002'), 'realtime pack should label match id detail data');
-    assert.ok(realtimeMessage.content.includes('Match ID: 2390002'), 'realtime pack should include match detail');
-    assert.ok(realtimeMessage.content.includes('HLTV比赛页候选: https://www.hltv.org/matches/2390002/match'), 'realtime pack should enrich old cached match detail with HLTV match page candidate');
-    assert.ok(realtimeMessage.content.includes('HLTV搜索入口: https://www.hltv.org/search?query=2390002'), 'realtime pack should expose HLTV search fallback for match id');
-    assert.ok(realtimeMessage.content.includes('HLTV比赛页候选只供人工交叉核验'), 'realtime pack should keep HLTV match page boundary for cached detail');
-    assert.ok(realtimeMessage.content.includes('真实 HLTV 页面可能需要 slug'), 'realtime pack should clarify HLTV match page slug boundary');
-    assert.ok(realtimeMessage.content.includes('地图池线索: Mirage / Nuke'), 'realtime pack should include match map pool hint');
-    assert.ok(realtimeMessage.content.includes('donk(Spirit) Rating 2.55'), 'realtime pack should include player highlights');
-    assert.ok(realtimeMessage.content.includes('缓存: match:2390002 fresh'), 'realtime pack should include cache freshness evidence');
-    assert.ok(realtimeMessage.content.includes('证据新鲜度:'), 'realtime pack should include structured freshness summary');
-    assert.ok(realtimeMessage.content.includes('match:2390002 fresh'), 'realtime freshness summary should include fresh match cache');
-    assert.ok(!realtimeMessage.content.includes('只有 stale/旧缓存'), 'fresh realtime pack should not use stale-only boundary');
-    return 'donk这场就是最亮的点 Rating 2.55 这个发挥太夸张了';
+    assert.ok(!realtimeMessage, 'match id AI question should not auto-inject realtime reference pack');
+    const flat = messages.map((item) => typeof item.content === 'string'
+      ? item.content
+      : item.content.map((part) => part.text || '').join('\n')).join('\n');
+    assert.ok(!flat.includes('Match ID: 2390002'), 'AI chat should not receive cached match detail unless a /cs command asks for it');
+    assert.ok(!flat.includes('donk(Spirit) Rating 2.55'), 'AI chat should not receive player highlights from automatic HLTV injection');
+    return '这场我不硬报，得查一下最新赛果。';
   });
 
   try {
     handler.handleEvent(makePlainEvent(918, 96, '/ai matchid=2390002 这场谁C了'));
-    await waitFor(() => sent.length === 1, 'AI match id realtime reply');
+    await waitFor(() => sent.length === 1, 'AI match id no-auto-realtime reply');
     const text = firstText(sent[0].message);
-    assert.ok(text.includes('donk'), 'AI match id reply should use injected match detail');
-    assert.ok(text.includes('2.55'), 'AI match id reply should retain factual player rating');
-    assert.ok(!text.includes('/cs verify match 2390002'), 'fresh AI match id reply should not append a stale/miss boundary');
-    assert.ok(!text.includes('旧快照线索'), 'fresh AI match id reply should not downgrade fresh evidence');
+    assert.ok(/不硬报|得查|没实时来源|以最新为准/.test(text), 'AI match id reply should stay natural and conservative without auto realtime data');
+    assert.ok(!text.includes('2.55'), 'AI match id reply should not leak cached player rating');
+    assert.ok(!text.includes('/cs verify match 2390002'), 'AI match id reply should not append machine-like verify command');
+    assert.ok(!text.includes('事实边界：'), 'AI match id reply should not append deterministic realtime boundary text');
 
     handler.handleEvent(makePlainEvent(919, 97, '/trace last'));
     await waitFor(() => sent.length === 2, 'trace after AI match id realtime reply');
     const traceText = firstText(sent[1].message);
-    assert.ok(traceText.includes('实时新鲜度:'), 'trace should expose realtime freshness summary');
-    assert.ok(traceText.includes('match:2390002 fresh'), 'trace should expose fresh match cache evidence');
-    const stats = aiChat.getAiChatStats();
-    assert.ok(stats.lastRealtimeFreshness.some((item) => item.includes('match:2390002 fresh')), 'AI stats should keep last realtime freshness lines');
+    assert.ok(traceText.includes('实时意图有 实时数据无'), 'trace should classify match id as realtime intent without auto data');
+    assert.ok(!traceText.includes('HLTV实时: 已注入'), 'trace should not report automatic HLTV injection');
+    assert.ok(!traceText.includes('实时新鲜度:'), 'trace should not expose freshness lines when no realtime pack is injected');
   } finally {
     aiChat.__setLLMCallerForTests();
     aiChat.shutdownAiChat();
@@ -3436,27 +5390,25 @@ async function testKnowledgeFreshnessRiskPostGuard() {
 
     aiChat.__setLLMCallerForTests(async (_config, messages) => {
       capturedMessages.push(messages);
-      const runtimePack = messages.find((item) => typeof item.content === 'string' && item.content.startsWith('[临场笔记-本地语态与背景]'));
-      assert.ok(runtimePack?.content.includes(riskTitle), 'runtime knowledge should include the selected stale-risk section');
-      assert.ok(runtimePack.content.includes('[本地知识时效风险]'), 'runtime knowledge should expose selected-section freshness risk');
-      const realtimeMessage = messages.find((item) => typeof item.content === 'string' && item.content.includes('[实时事实参考]'));
-      assert.ok(realtimeMessage?.content.includes('match:2390002 fresh'), 'test should provide fresh match evidence');
-      assert.ok(!realtimeMessage.content.includes('ranking fresh'), 'test should not provide fresh ranking evidence');
       return 'NAVI现在排名第一，这个不用看了。';
     });
 
     handler.handleEvent(makePlainEvent(924, 96, `/ai matchid=2390002 ${riskTitle}`));
     await waitFor(() => sent.length === 1, 'knowledge freshness risk guarded reply');
     const text = firstText(sent[0].message);
-    assert.ok(/当前排名|fresh 来源|以最新为准/.test(text), 'reply should downgrade uncovered stale-risk ranking claims');
+    assert.ok(/当前排名|最新来源|以最新为准/.test(text), 'reply should downgrade uncovered stale-risk ranking claims');
+    assert.ok(!/fresh 来源|fresh 证据/.test(text), 'reply should not expose freshness jargon to chat');
     assert.ok(!/NAVI现在排名第一|不用看了/.test(text), 'reply should not keep stale knowledge ranking as current fact');
+    const firstCallMessages = capturedMessages[0] || [];
+    const realtimeMessage = firstCallMessages.find((item) => typeof item.content === 'string' && item.content.includes('[实时事实参考]'));
+    assert.ok(!realtimeMessage, 'AI chat should not auto-inject match evidence while checking stale knowledge risk');
 
     handler.handleEvent(makePlainEvent(925, 97, '/trace last'));
     await waitFor(() => sent.length === 2, 'trace after knowledge freshness guard');
     const traceText = firstText(sent[1].message);
-    assert.ok(traceText.includes('知识时效风险:'), 'trace should expose selected knowledge freshness risk');
-    assert.ok(traceText.includes('knowledge freshness risk softened'), 'trace should explain freshness-risk fact guard repair');
-    assert.strictEqual(capturedMessages.length, 1);
+    assert.ok(traceText.includes('事实边界:'), 'trace should expose factual guard repair');
+    assert.ok(/unverified realtime claim softened|knowledge freshness risk softened/.test(traceText), 'trace should explain freshness-risk or realtime fact guard repair');
+    assert.ok(capturedMessages.length >= 1, 'AI should be called at least once for knowledge freshness guard');
   } finally {
     aiChat.__setLLMCallerForTests();
     fs.writeFileSync(runtimePaths.mainFile, originalKnowledge, 'utf-8');
@@ -3503,14 +5455,7 @@ async function testAiStaleRealtimeEvidenceBoundary() {
   aiChat.__setLLMCallerForTests(async (_config, messages) => {
     capturedMessages.push(messages);
     const realtimeMessage = messages.find((item) => typeof item.content === 'string' && item.content.includes('[实时事实参考]'));
-    assert.ok(realtimeMessage, 'stale match id AI question should still inject realtime reference pack');
-    assert.ok(realtimeMessage.content.includes('单场2390003'), 'stale realtime pack should label match id detail data');
-    assert.ok(realtimeMessage.content.includes('Match ID: 2390003'), 'stale realtime pack should include cached match detail');
-    assert.ok(realtimeMessage.content.includes('缓存: match:2390003 stale'), 'stale realtime pack should include stale cache evidence');
-    assert.ok(realtimeMessage.content.includes('不能当实时结论'), 'stale realtime pack should warn against realtime conclusions');
-    assert.ok(realtimeMessage.content.includes('资料里含 stale/旧缓存'), 'stale realtime pack should add explicit stale usage rule');
-    assert.ok(realtimeMessage.content.includes('证据新鲜度:'), 'stale realtime pack should include structured freshness summary');
-    assert.ok(realtimeMessage.content.includes('关键边界：本条实时资料只有 stale/旧缓存，没有 fresh'), 'stale realtime pack should make stale-only boundary model-visible');
+    assert.ok(!realtimeMessage, 'stale match id AI question should not auto-inject realtime reference pack');
     return '我刚查了最新数据，donk这场就是实时最C Rating 2.01。';
   });
 
@@ -3519,34 +5464,32 @@ async function testAiStaleRealtimeEvidenceBoundary() {
     await waitFor(() => sent.length === 1, 'AI stale match id guarded reply');
     const text = firstText(sent[0].message);
     assert.ok(/没实时来源|以最新为准|得查最新/.test(text), 'stale-only AI reply should expose realtime boundary');
-    assert.ok(text.includes('事实边界：单场 2390003 目前只有旧快照线索'), 'stale-only AI reply should append a deterministic stale snapshot boundary');
-    assert.ok(text.includes('/cs verify match 2390003'), 'stale-only AI reply should point to the exact verify command');
-    assert.ok(text.includes('/cs warm plan match 2390003'), 'stale-only AI reply should point to the exact warm-plan command');
+    assert.ok(!text.includes('事实边界：'), 'stale-only AI reply should not append deterministic boundary prose');
+    assert.ok(!text.includes('/cs verify match 2390003'), 'stale-only AI reply should not append verify command');
+    assert.ok(!text.includes('/cs warm plan match 2390003'), 'stale-only AI reply should not append warm-plan command');
     assert.ok(!/刚查|实时最C|2\.01/.test(text), 'stale-only AI reply should not keep latest certainty from the model');
 
     handler.handleEvent(makePlainEvent(922, 97, '/trace last'));
     await waitFor(() => sent.length === 2, 'trace after stale AI match id realtime reply');
     const traceText = firstText(sent[1].message);
     assert.ok(traceText.includes('证据账本:'), 'trace should expose unified evidence ledger');
-    assert.ok(traceText.includes('当前事实=仅stale线索'), 'evidence ledger should classify stale-only realtime facts');
-    assert.ok(traceText.includes('实时新鲜度:'), 'trace should expose stale realtime freshness summary');
+    assert.ok(traceText.includes('当前事实=缺fresh证据'), 'evidence ledger should classify realtime facts without auto evidence');
+    assert.ok(!traceText.includes('实时新鲜度:'), 'trace should not expose stale realtime freshness summary without auto pack');
     assert.ok(traceText.includes('实时意图有 实时数据无'), 'trace should not treat stale-only cache as current realtime data');
-    assert.ok(traceText.includes('match:2390003 stale'), 'trace should expose stale match cache evidence');
-    assert.ok(traceText.includes('含stale'), 'trace should mark stale realtime evidence');
+    assert.ok(!traceText.includes('match:2390003 stale'), 'trace should not expose stale cache evidence that was not injected');
+    assert.ok(!traceText.includes('含stale'), 'trace should not mark stale evidence when no realtime pack is injected');
     assert.ok(traceText.includes('事实边界:'), 'trace should expose stale-only fact guard');
     assert.ok(traceText.includes('unverified realtime claim softened'), 'trace should explain stale-only realtime claim repair');
-    assert.ok(traceText.includes('AI realtime boundary appendix added'), 'trace should expose deterministic realtime boundary appendix');
+    assert.ok(!traceText.includes('AI realtime boundary appendix added'), 'trace should not expose removed realtime boundary appendix');
 
     const stats = aiChat.getAiChatStats();
-    assert.ok(stats.realtimeStaleEvidenceCount >= 1, 'AI stats should count stale realtime evidence traces');
-    assert.ok(stats.lastRealtimeFreshness.some((item) => item.includes('match:2390003 stale')), 'AI stats should keep last stale realtime freshness lines');
+    assert.ok(stats.realtimeIntentWithoutDataCount >= 1, 'AI stats should count realtime intent without auto evidence');
 
     handler.handleEvent(makePlainEvent(923, 97, '/status'));
     await waitFor(() => sent.length === 3, 'status after stale AI match id realtime reply');
     const statusText = firstText(sent[2].message);
     assert.ok(statusText.includes('最近证据账本'), 'status should expose latest evidence ledger');
-    assert.ok(statusText.includes('最近实时证据'), 'status should expose last realtime freshness evidence');
-    assert.ok(statusText.includes('match:2390003 stale'), 'status should expose stale realtime freshness evidence');
+    assert.ok(!statusText.includes('match:2390003 stale'), 'status should not expose stale realtime evidence that was not injected');
   } finally {
     aiChat.__setLLMCallerForTests();
     hltv.__test.setCsApiJsonFetcherForTests();
@@ -3636,17 +5579,17 @@ async function testRagRealtimeMemoryTruthFilter() {
     const filteredReply = firstText(sent[1].message);
     assert.ok(!filteredReply.includes('Vitality现在排名第一'), 'AI reply should not leak filtered stale memory');
     assert.ok(!/刚查|HLTV|全部都是最新|apEX|ZywOo|flameZ|mezii|ropz|Rating也是第一/.test(filteredReply), 'typed evidence guard should remove uncovered ranking/roster/player overclaims');
-    assert.ok(filteredReply.includes('证据账本') && filteredReply.includes('当前阵容/转会') && filteredReply.includes('当前选手数据/状态'), 'typed evidence guard should expose uncovered fact kinds');
+    assert.ok(/没实时来源|以最新为准|得查最新/.test(filteredReply), 'AI reply should naturally refuse current CS facts without auto realtime evidence');
 
     handler.handleEvent(makePlainEvent(933, 97, '/trace last', [], groupId));
     await waitFor(() => sent.length === 3, 'trace after realtime RAG truth filter');
     const traceText = firstText(sent[2].message);
     assert.ok(traceText.includes('证据账本:'), 'trace should expose unified evidence ledger for RAG filtering');
-    assert.ok(traceText.includes('当前事实=fresh优先'), 'evidence ledger should classify fresh realtime support');
+    assert.ok(traceText.includes('当前事实=缺fresh证据'), 'evidence ledger should classify missing realtime support after auto injection is disabled');
     assert.ok(traceText.includes('RAG=注入1/过滤1'), 'evidence ledger should summarize injected and filtered RAG memories');
     assert.ok(traceText.includes('记忆过滤: 1条'), 'trace should expose stale realtime memory filter count');
     assert.ok(traceText.includes('旧CS实时事实'), 'trace should expose stale realtime memory filter reason');
-    assert.ok(traceText.includes('evidence ledger uncovered fact kind softened: roster/player'), 'trace should expose typed ledger-driven fact guard repair');
+    assert.ok(traceText.includes('unverified realtime claim softened'), 'trace should expose natural realtime fact guard repair');
   } finally {
     aiChat.__setLLMCallerForTests();
     hltv.__test.setCsApiJsonFetcherForTests();
@@ -3743,13 +5686,13 @@ async function testStyleQualityPreflightCommand() {
   assert.ok(statusText.includes('真人停顿'), '/style status should expose human delay stats');
   assert.ok(statusText.includes('/style check'), '/style status should point to style preflight');
 
-    handler.handleEvent(makePlainEvent(917, 96, '/style check 根据知识库，作为AI我刚查了HLTV，现在NAVI排名第一。'));
+    handler.handleEvent(makePlainEvent(917, 96, '/style check 当然可以，根据知识库，作为AI我刚查了HLTV，现在NAVI排名第一。希望能帮到你。'));
     await waitFor(() => sent.length === 2, 'style quality preflight command');
     const checkText = firstText(sent[1].message);
     assert.ok(checkText.includes('风格/真实性预检'), '/style check should render preflight panel');
     assert.ok(checkText.includes('风险等级:'), '/style check should expose a risk level');
     assert.ok(checkText.includes('原文风险:'), '/style check should expose raw quality issues');
-    assert.ok(/source\/template leak|false realtime source claim|unverified realtime claim/.test(checkText), '/style check should flag source and realtime risk');
+    assert.ok(/assistant-cliche|source\/template leak|false realtime source claim|unverified realtime claim/.test(checkText), '/style check should flag assistant cliche, source, and realtime risk');
     assert.ok(checkText.includes('修复动作:'), '/style check should expose concrete fix actions');
     assert.ok(checkText.includes('行动建议:'), '/style check should expose remediation advice');
     assert.ok(checkText.includes('/cs verify ranking'), '/style check should suggest ranking verification for current ranking claims');
@@ -3822,7 +5765,7 @@ async function testStyleQualityPreflightCommand() {
     const typedCoverageText = firstText(sent[7].message);
     assert.ok(typedCoverageText.includes('事实类型覆盖: 未覆盖 当前阵容/转会 / 当前选手数据/状态'), '/style check should expose uncovered roster/player facts when only ranking is fresh');
     assert.ok(typedCoverageText.includes('事实修正: evidence ledger uncovered fact kind softened: roster/player'), '/style check should reuse typed ledger fact guard reason');
-    assert.ok(typedCoverageText.includes('修复预览: 证据账本显示这条 fresh 证据没覆盖当前阵容/转会/当前选手数据/状态'), '/style check should preview typed evidence-boundary repair');
+    assert.ok(typedCoverageText.includes('修复预览: 这条最新证据没覆盖当前阵容/转会/当前选手数据/状态'), '/style check should preview typed evidence-boundary repair');
     assert.ok(!typedCoverageText.includes('全部最新'), '/style check typed coverage should not preserve overbroad freshness wording');
 
     handler.handleEvent(makePlainEvent(923, 96, '/style check 群里都说NAVI最近要换人，应该是已经确认了。'));
@@ -3905,7 +5848,7 @@ async function testReplyCacheStableKeyAndSingleFlight() {
     adminHandler.handleEvent(makePlainEvent(921, 100, '/mem cache @机器人 CS2这把残局怎么打稳一点?', [], 7103));
     await waitFor(() => sent.length === 4, 'reply cache preflight sees cached hit', 5000);
     const cachePreview = firstText(sent[3].message);
-    assert.ok(cachePreview.includes('AI回复缓存预检'), '/mem cache should render after cache fill');
+    assert.ok(cachePreview.includes('回复缓存预检'), '/mem cache should render after cache fill');
     assert.ok(cachePreview.includes('状态=hit ttl'), '/mem cache should expose current cached hit state');
     assert.strictEqual(calls, 1, '/mem cache should not call AI');
 
@@ -4658,7 +6601,7 @@ async function testDailyPulsePlugin() {
     assert.ok(dailyRecapMessage.includes('玩机器晚间复盘'), 'daily recap card should render title');
     assert.ok(dailyRecapMessage.includes('识图语音收尾:'), 'daily recap card should include multimodal closing status');
     assert.ok(dailyPulseTest.buildDailyChallengeMessage('group', 6657, 99, new Date('2026-06-09T12:00:00Z')).includes('玩机器今日挑战'), 'daily challenge card should render title');
-    assert.ok(dailyPulseTest.buildDailyChallengeMessage('group', 6657, 99, new Date('2026-06-09T12:00:00Z')).includes('边界'), 'daily challenge card should include truth boundary');
+    assert.ok(dailyPulseTest.buildDailyChallengeMessage('group', 6657, 99, new Date('2026-06-09T12:00:00Z')).includes('要我真看图或听语音'), 'daily challenge card should include humanized truth reminder');
     const emptyPersonalSummary = dailyPulseTest.formatDailyUserSummary('group', 6657, 101, new Date('2026-06-09T12:00:00Z'));
     assert.ok(emptyPersonalSummary.includes('我的每日状态'), 'daily personal summary should render title');
     assert.ok(emptyPersonalSummary.includes('今天未打'), 'daily personal summary should show missing checkin');
@@ -4672,10 +6615,10 @@ async function testDailyPulsePlugin() {
     assert.ok(personalizedDaily.includes('偏好队伍: Vitality'), 'daily personalized brief should include favorite teams');
     assert.ok(personalizedDaily.includes('聊天口吻:'), 'daily personalized brief should include tone guidance');
     assert.ok(personalizedDaily.includes('优先补:'), 'daily personalized brief should include multimodal priority');
-    assert.ok(personalizedDaily.includes('偏好不是实时赛事事实'), 'daily personalized brief should preserve profile fact boundary');
+    assert.ok(personalizedDaily.includes('偏好只是偏好'), 'daily personalized brief should preserve profile fact reminder');
     const evidenceLedger = dailyPulseTest.formatDailyEvidenceLedger('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(evidenceLedger.includes('今日证据账本'), 'daily evidence ledger should render title');
-    assert.ok(evidenceLedger.includes('只读证据卡'), 'daily evidence ledger should be non-mutating');
+    assert.ok(evidenceLedger.includes('只查今天留下了什么记录'), 'daily evidence ledger should be non-mutating');
     assert.ok(evidenceLedger.includes('已证明'), 'daily evidence ledger should summarize proven count');
     assert.ok(evidenceLedger.includes('挑战:'), 'daily evidence ledger should include challenge proof line');
     assert.ok(evidenceLedger.includes('打卡:'), 'daily evidence ledger should include checkin proof line');
@@ -4684,15 +6627,15 @@ async function testDailyPulsePlugin() {
     assert.ok(evidenceLedger.includes('识图:'), 'daily evidence ledger should include vision proof line');
     assert.ok(evidenceLedger.includes('听写:'), 'daily evidence ledger should include STT proof line');
     assert.ok(evidenceLedger.includes('发语音:'), 'daily evidence ledger should include voice proof line');
-    assert.ok(evidenceLedger.includes('不能证明:'), 'daily evidence ledger should list non-evidence boundaries');
+    assert.ok(evidenceLedger.includes('别混账:'), 'daily evidence ledger should list non-evidence reminders');
     assert.ok(evidenceLedger.includes('缓存 hit'), 'daily evidence ledger should reject cache-only proof');
-    assert.ok(evidenceLedger.includes('没出现在记录里的输入不能说成已完成'), 'daily evidence ledger should preserve completion boundary');
+    assert.ok(evidenceLedger.includes('没在记录里的别说成完成'), 'daily evidence ledger should preserve completion reminder');
     const emptyCompletionScore = dailyPulseTest.formatDailyCompletionScore('group', 6657, 101, new Date('2026-06-09T12:00:00Z'));
     assert.ok(emptyCompletionScore.includes('今日闭环分'), 'daily completion score should render title');
     assert.ok(emptyCompletionScore.includes('/100'), 'daily completion score should show numeric score');
     assert.ok(emptyCompletionScore.includes('缺口:'), 'daily completion score should show missing line');
     assert.ok(emptyCompletionScore.includes('一分钟补法:'), 'daily completion score should include rescue action');
-    assert.ok(emptyCompletionScore.includes('check/warm/cache hit 不加分'), 'daily completion score should preserve real-run boundary');
+    assert.ok(emptyCompletionScore.includes('check、warm、缓存不加分'), 'daily completion score should preserve real-run reminder');
     const wrapUpFirst = dailyPulseTest.recordDailyWrapUp('group', 6657, 102, new Date('2026-06-09T12:00:00Z'));
     assert.ok(wrapUpFirst.includes('今日收工'), 'daily wrap-up should render title');
     assert.ok(wrapUpFirst.includes('挑战: 今日已完成'), 'daily wrap-up should record challenge completion');
@@ -4736,10 +6679,10 @@ async function testDailyPulsePlugin() {
     assert.ok(squadSummary.includes('识图语音:'), 'daily squad summary should include multimodal short status');
     assert.ok(squadSummary.includes('/daily guard'), 'daily squad summary should route to streak guard');
     assert.ok(squadSummary.includes('/daily media'), 'daily squad summary should route to media companion');
-    assert.ok(squadSummary.includes('不会替任何人写'), 'daily squad summary should stay read-only');
+    assert.ok(squadSummary.includes('要补记录'), 'daily squad summary should stay non-mutating');
     const icebreaker = dailyPulseTest.formatDailyIcebreaker('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(icebreaker.includes('每日破冰话题'), 'daily icebreaker should render title');
-    assert.ok(icebreaker.includes('只读话题卡'), 'daily icebreaker should be non-mutating');
+    assert.ok(icebreaker.includes('今天拿来破冰'), 'daily icebreaker should be non-mutating');
     assert.ok(icebreaker.includes('群话题:'), 'daily icebreaker should include group topic');
     assert.ok(icebreaker.includes('看图接力:'), 'daily icebreaker should include image relay');
     assert.ok(icebreaker.includes('语音接力:'), 'daily icebreaker should include voice relay');
@@ -4747,10 +6690,10 @@ async function testDailyPulsePlugin() {
     assert.ok(icebreaker.includes('/voice test'), 'daily icebreaker should include voice real test');
     assert.ok(icebreaker.includes('你的缺口:'), 'daily icebreaker should include personal progress gap');
     assert.ok(icebreaker.includes('识图语音:'), 'daily icebreaker should include multimodal short status');
-    assert.ok(icebreaker.includes('check/warm/cache hit 不算实跑'), 'daily icebreaker should preserve real-run boundary');
+    assert.ok(icebreaker.includes('check、warm 或缓存'), 'daily icebreaker should preserve real-run reminder');
     const mediaScript = dailyPulseTest.formatDailyMediaScript('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(mediaScript.includes('识图语音每日脚本包'), 'daily media script should render title');
-    assert.ok(mediaScript.includes('只读脚本'), 'daily media script should be non-mutating');
+    assert.ok(mediaScript.includes('照着跑脚本'), 'daily media script should be non-mutating');
     assert.ok(mediaScript.includes('1. 看图脚本:'), 'daily media script should include image script');
     assert.ok(mediaScript.includes('2. 听写脚本:'), 'daily media script should include STT script');
     assert.ok(mediaScript.includes('3. 发声脚本:'), 'daily media script should include TTS script');
@@ -4760,10 +6703,10 @@ async function testDailyPulsePlugin() {
     assert.ok(mediaScript.includes('/vision last'), 'daily media script should include vision trace command');
     assert.ok(mediaScript.includes('/voice recent 3'), 'daily media script should include voice trace command');
     assert.ok(mediaScript.includes('群里回执:'), 'daily media script should include group receipt');
-    assert.ok(mediaScript.includes('成功 trace 才算实跑'), 'daily media script should preserve real-run boundary');
+    assert.ok(mediaScript.includes('脚本不是完成记录'), 'daily media script should preserve real-run reminder');
     const commandCenter = dailyPulseTest.formatDailyCommandCenter('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(commandCenter.includes('今日指挥台'), 'daily command center should render title');
-    assert.ok(commandCenter.includes('只读一屏'), 'daily command center should be non-mutating');
+    assert.ok(commandCenter.includes('一屏够了'), 'daily command center should be non-mutating');
     assert.ok(commandCenter.includes('你:'), 'daily command center should include personal state');
     assert.ok(commandCenter.includes('当前群:'), 'daily command center should include group state');
     assert.ok(commandCenter.includes('现在先做:'), 'daily command center should include immediate next action');
@@ -4771,10 +6714,10 @@ async function testDailyPulsePlugin() {
     assert.ok(commandCenter.includes('识图语音:'), 'daily command center should include multimodal short status');
     assert.ok(commandCenter.includes('/daily script'), 'daily command center should route to media script');
     assert.ok(commandCenter.includes('好玩/有用:'), 'daily command center should include useful playful action');
-    assert.ok(commandCenter.includes('不会替你写记录'), 'daily command center should stay read-only');
+    assert.ok(commandCenter.includes('记录要自己补'), 'daily command center should stay non-mutating');
     const mediaGap = dailyPulseTest.formatDailyMediaGap('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(mediaGap.includes('识图语音今日补缺'), 'daily media gap should render title');
-    assert.ok(mediaGap.includes('只读补缺单'), 'daily media gap should be non-mutating');
+    assert.ok(mediaGap.includes('缺哪条补哪条'), 'daily media gap should be non-mutating');
     assert.ok(mediaGap.includes('今日实跑:'), 'daily media gap should include real run summary');
     assert.ok(mediaGap.includes('缺口:'), 'daily media gap should include missing media line');
     assert.ok(mediaGap.includes('优先补:'), 'daily media gap should include priority action');
@@ -4782,34 +6725,34 @@ async function testDailyPulsePlugin() {
     assert.ok(mediaGap.includes('最近听写:'), 'daily media gap should include latest STT trace summary');
     assert.ok(mediaGap.includes('最近发声:'), 'daily media gap should include latest voice trace summary');
     assert.ok(mediaGap.includes('/media recent 3'), 'daily media gap should route to media recent');
-    assert.ok(mediaGap.includes('check/warm/cache hit 都不算实跑'), 'daily media gap should preserve real-run boundary');
+    assert.ok(mediaGap.includes('check、warm、缓存别当战绩'), 'daily media gap should preserve real-run reminder');
     const voiceLineKit = dailyPulseTest.formatDailyVoiceLineKit('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(voiceLineKit.includes('每日语音台词'), 'daily voice line kit should render title');
-    assert.ok(voiceLineKit.includes('只读台词卡'), 'daily voice line kit should be non-mutating');
+    assert.ok(voiceLineKit.includes('这张只给台词'), 'daily voice line kit should be non-mutating');
     assert.ok(voiceLineKit.includes('主句:'), 'daily voice line kit should include main line');
     assert.ok(voiceLineKit.includes('短回声:'), 'daily voice line kit should include short echo');
     assert.ok(voiceLineKit.includes('/voice check'), 'daily voice line kit should include voice preflight');
     assert.ok(voiceLineKit.includes('/voice warm'), 'daily voice line kit should include voice warmup command');
     assert.ok(voiceLineKit.includes('/voice test'), 'daily voice line kit should include real voice test');
-    assert.ok(voiceLineKit.includes('只有 /voice test 成功 trace 才算'), 'daily voice line kit should preserve real-run boundary');
+    assert.ok(voiceLineKit.includes('/voice check 和 /voice warm 只是预检'), 'daily voice line kit should preserve real-run reminder');
     const mediaRelay = dailyPulseTest.formatDailyMediaRelay('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(mediaRelay.includes('识图语音每日接力'), 'daily media relay should render title');
-    assert.ok(mediaRelay.includes('只读接力卡'), 'daily media relay should be non-mutating');
+    assert.ok(mediaRelay.includes('这张只排接力'), 'daily media relay should be non-mutating');
     assert.ok(mediaRelay.includes('1. 看图位:'), 'daily media relay should include image role');
     assert.ok(mediaRelay.includes('2. 听写位:'), 'daily media relay should include STT role');
     assert.ok(mediaRelay.includes('3. 发声位:'), 'daily media relay should include voice role');
     assert.ok(mediaRelay.includes('4. 验收位:'), 'daily media relay should include verification role');
     assert.ok(mediaRelay.includes('/daily gap'), 'daily media relay should route to media gap');
-    assert.ok(mediaRelay.includes('成功 trace 才算'), 'daily media relay should preserve real-run boundary');
+    assert.ok(mediaRelay.includes('真测 /vision test'), 'daily media relay should preserve real-run reminder');
     const chatVibe = dailyPulseTest.formatDailyChatVibe('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(chatVibe.includes('每日聊天节奏'), 'daily chat vibe should render title');
-    assert.ok(chatVibe.includes('只读真人感卡'), 'daily chat vibe should be non-mutating');
+    assert.ok(chatVibe.includes('短一点'), 'daily chat vibe should be non-mutating');
     assert.ok(chatVibe.includes('开场一句:'), 'daily chat vibe should include opener');
     assert.ok(chatVibe.includes('接图:'), 'daily chat vibe should include image reply guidance');
     assert.ok(chatVibe.includes('接语音:'), 'daily chat vibe should include voice reply guidance');
     assert.ok(chatVibe.includes('贴纸分寸:'), 'daily chat vibe should include sticker restraint');
     assert.ok(chatVibe.includes('收住规则:'), 'daily chat vibe should include stop rule');
-    assert.ok(chatVibe.includes('多模态是否真跑以 trace 为准'), 'daily chat vibe should preserve truth boundary');
+    assert.ok(chatVibe.includes('该真测真测'), 'daily chat vibe should preserve truth reminder');
     const personalSummary = dailyPulseTest.formatDailyUserSummary('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(personalSummary.includes('我的每日状态'), 'daily personal summary should render after records');
     assert.ok(personalSummary.includes('今日已到'), 'daily personal summary should show current checkin state');
@@ -4827,12 +6770,12 @@ async function testDailyPulsePlugin() {
     assert.ok(actionPlan.includes('日常进度:'), 'daily action plan should summarize checkin and challenge state');
     assert.ok(actionPlan.includes('识图语音:'), 'daily action plan should route users to multimodal daily checklist');
     assert.ok(actionPlan.includes('/media daily'), 'daily action plan should expose media daily entry');
-    assert.ok(actionPlan.includes('trace 里的真实记录'), 'daily action plan should preserve real-trace boundary');
+    assert.ok(actionPlan.includes('看 /media daily 和 trace'), 'daily action plan should preserve real-trace reminder');
     const nudge = dailyPulseTest.formatDailyNudge('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(nudge.includes('玩机器今日催一下'), 'daily nudge should render title');
     assert.ok(nudge.includes('进度:'), 'daily nudge should summarize missing daily items');
     assert.ok(nudge.includes('现在就做:'), 'daily nudge should include an immediate action');
-    assert.ok(nudge.includes('不会替你写挑战或打卡'), 'daily nudge should stay read-only');
+    assert.ok(nudge.includes('要记账就明确说'), 'daily nudge should stay non-mutating');
     const guard = dailyPulseTest.formatDailyStreakGuard('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(guard.includes('每日保连续'), 'daily streak guard should render title');
     assert.ok(guard.includes('风险:'), 'daily streak guard should include risk line');
@@ -4846,7 +6789,7 @@ async function testDailyPulsePlugin() {
     assert.ok(mediaCompanion.includes('发语音短句:'), 'daily media companion should include a TTS-ready line');
     assert.ok(mediaCompanion.includes('/voice check'), 'daily media companion should include voice preflight command');
     assert.ok(mediaCompanion.includes('/voice test'), 'daily media companion should include voice real test command');
-    assert.ok(mediaCompanion.includes('check/warm/cache hit 不算'), 'daily media companion should preserve real-run boundary');
+    assert.ok(mediaCompanion.includes('check、warm、缓存都别当战绩'), 'daily media companion should preserve real-run reminder');
     const weekSummary = dailyPulseTest.formatDailyWeekSummary('group', 6657, 99, new Date('2026-06-09T12:00:00Z'));
     assert.ok(weekSummary.includes('我的每日周报'), 'daily weekly summary should render title');
     assert.ok(weekSummary.includes('最近7天'), 'daily weekly summary should expose seven-day window');
@@ -4861,7 +6804,7 @@ async function testDailyPulsePlugin() {
     await waitFor(() => sent.length === 1, 'daily now command');
     assert.ok(firstText(sent[0].message).includes('今日手感'), '/daily should render hand score');
     assert.ok(firstText(sent[0].message).includes('识图语音:'), '/daily should include multimodal short status');
-    assert.ok(firstText(sent[0].message).includes('边界'), '/daily should include truth boundary');
+    assert.ok(firstText(sent[0].message).includes('别靠印象报死'), '/daily should include truth reminder');
 
     handler.handleEvent(makePlainEvent(531, 58, '/daily recap'));
     await waitFor(() => sent.length === 2, 'daily subscribe command');
@@ -4910,7 +6853,7 @@ async function testDailyPulsePlugin() {
     const dueResult = await dailyPulseTest.runDueDailyPulses(bot, new Date('2026-06-09T01:00:00Z'));
     assert.deepStrictEqual(dueResult, { checked: 1, due: 1, sent: 1, errors: 0 }, 'due daily pulse should send once');
     assert.strictEqual(sent.length, 7, 'due runner should push a daily message');
-    assert.ok(sent[6].message.includes('好玩入口'), 'due daily message should include useful entry points');
+    assert.ok(sent[6].message.includes('顺手入口'), 'due daily message should include useful entry points');
     assert.ok(sent[6].message.includes('识图语音:'), 'due daily message should include multimodal short status');
     assert.ok(sent[6].message.includes('/daily plan'), 'due daily message should include action plan entry');
     assert.ok(sent[6].message.includes('/daily nudge'), 'due daily message should include nudge entry');
@@ -5152,12 +7095,12 @@ async function testDailyPulsePlugin() {
     handler.handleEvent(makePlainEvent(582, 99, '我的画像'));
     await waitFor(() => sent.length === 54, 'natural daily personalized profile card');
     assert.ok(firstText(sent[53].message).includes('每日偏好卡'), 'natural daily personalized profile card should render');
-    assert.ok(firstText(sent[53].message).includes('画像边界:'), 'natural daily personalized profile card should include profile boundary');
+    assert.ok(firstText(sent[53].message).includes('偏好只是偏好'), 'natural daily personalized profile card should include profile fact reminder');
 
     handler.handleEvent(makePlainEvent(583, 99, '/daily proof'));
     await waitFor(() => sent.length === 55, 'daily evidence ledger command');
     assert.ok(firstText(sent[54].message).includes('今日证据账本'), '/daily proof should render evidence ledger');
-    assert.ok(firstText(sent[54].message).includes('不能证明:'), '/daily proof should include non-evidence boundaries');
+    assert.ok(firstText(sent[54].message).includes('别混账:'), '/daily proof should include non-evidence reminders');
 
     handler.handleEvent(makePlainEvent(584, 99, '今天跑没跑'));
     await waitFor(() => sent.length === 56, 'natural daily evidence ledger');
@@ -5353,7 +7296,7 @@ async function testFunCsPlayer() {
     assert.ok(funTest.csWeapons.length >= 35, 'daily CS weapon pool should cover the full gun pool');
     assert.ok(funTest.csClutches.length >= 12, 'daily CS clutch pool should include richer scenarios');
     assert.strictEqual(funTest.csKnives.length, 20, 'daily knife pool should cover all CS2/CSGO knife families');
-    assert.ok(funTest.knifeSkins.length >= 40, 'daily knife skin pool should include vanilla, major finishes, and rare variants');
+    assert.ok(funTest.knifeSkins.length >= 55, 'daily knife skin pool should include vanilla, major finishes, and rare variants');
     assert.ok(funTest.loadDailyBeautyImages().length >= 1800, 'daily beauty manifest should support 200+-image pools per item');
     const compatibleKnifeSkinKeys = new Set();
     for (const knife of funTest.csKnives) {
@@ -5385,6 +7328,7 @@ async function testFunCsPlayer() {
       6657,
     );
     assert.ok(bestdoriCandidates.some((item) => item.source === 'bestdori-card'), 'daily mokoko should prefer local authorized Bestdori card manifest when present');
+    assert.strictEqual(bestdoriCandidates[0].source, 'bestdori-card', 'daily mokoko should put Bestdori game card art before generic beauty pools');
     assert.ok(bestdoriCandidates.filter((item) => item.source === 'bestdori-card').length >= 4, 'daily mokoko should expand url/urls/images from Bestdori manifest');
     const playerManifestCandidates = await funTest.buildCsPlayerImageCandidates(player, 61, 6657);
     assert.ok(playerManifestCandidates.some((item) => item.source === 'authorized-image'), 'daily CS player should prefer local authorized player image manifest when present');
@@ -5605,8 +7549,10 @@ async function testFunCsPlayer() {
     assert.ok(firstText(sent[1].message).includes('Bestdori本地卡面: 4张'), 'csplayer status should expose local Bestdori manifest size');
     assert.ok(firstText(sent[1].message).includes('原神角色池:'), 'csplayer status should expose genshin pool size');
     assert.ok(firstText(sent[1].message).includes(`通用每日美图: ${beautyCards.length}张`), 'csplayer status should expose generic daily beauty manifest size');
-    assert.ok(firstText(sent[1].message).includes('选手本地图片: 3张'), 'csplayer status should expose local player image manifest size');
-    assert.ok(firstText(sent[1].message).includes('原神本地图片: 3张'), 'csplayer status should expose local genshin image manifest size');
+    assert.ok(firstText(sent[1].message).includes('选手兼容图: 3张'), 'csplayer status should expose player compatibility image manifest size');
+    assert.ok(firstText(sent[1].message).includes('选手兼容图覆盖:'), 'csplayer status should expose player compatibility coverage');
+    assert.ok(firstText(sent[1].message).includes('原神兼容图: 3张'), 'csplayer status should expose genshin compatibility image manifest size');
+    assert.ok(firstText(sent[1].message).includes('木柜子 Bestdori卡面'), 'csplayer status should explain mokoko card-art priority');
     assert.ok(firstText(sent[1].message).includes('清单缓存:'), 'csplayer status should expose manifest cache stats');
     assert.ok(firstText(sent[1].message).includes('美图最低标准: 每个对象200张起'), 'csplayer status should expose the 200-image per-item minimum');
     assert.ok(firstText(sent[1].message).includes('图片隔离:'), 'csplayer status should explain that generic beauty images are not mixed across objects');
@@ -5960,7 +7906,7 @@ async function testCsPluginAndGiftThanks() {
   const intentRankingText = String(replies.at(-1));
   assert.ok(intentRankingText.includes('CS实时意图预检'), '/cs intent should render intent preflight');
   assert.ok(intentRankingText.includes('只读，不请求外站'), '/cs intent should clarify read-only behavior');
-  assert.ok(intentRankingText.includes('路由: 自然问法 -> ranking'), '/cs intent should show natural ranking route');
+  assert.ok(intentRankingText.includes('路由: 问法预检 -> ranking'), '/cs intent should show ranking route');
   assert.ok(intentRankingText.includes('预计命令: /cs ranking'), '/cs intent should show predicted command');
   assert.ok(intentRankingText.includes('战队排名 [ranking]: fresh'), '/cs intent should expose fresh ranking cache target');
 
@@ -5972,7 +7918,7 @@ async function testCsPluginAndGiftThanks() {
   });
   assert.strictEqual(intentPlayerHandled, true, '/cs intent player should be handled by cs plugin');
   const intentPlayerText = String(replies.at(-1));
-  assert.ok(intentPlayerText.includes('路由: 自然问法 -> player (donk)'), '/cs intent should show player route and subject');
+  assert.ok(intentPlayerText.includes('路由: 问法预检 -> player (donk)'), '/cs intent should show player route and subject');
   assert.ok(intentPlayerText.includes('选手统计 donk [player:donk]: miss'), '/cs intent should expose player cache miss without fetching');
   assert.ok(intentPlayerText.includes('/cs warm plan player donk'), '/cs intent player miss should suggest targeted player prewarm plan');
   assert.ok(intentPlayerText.includes('/cs warm player donk'), '/cs intent player miss should suggest targeted player prewarm');
@@ -5986,7 +7932,7 @@ async function testCsPluginAndGiftThanks() {
   });
   assert.strictEqual(intentMatchHandled, true, '/cs intent matchid question should be handled by cs plugin');
   const intentMatchText = String(replies.at(-1));
-  assert.ok(intentMatchText.includes('路由: 自然问法 -> match (2390997)'), '/cs intent matchid should show match route and id');
+  assert.ok(intentMatchText.includes('路由: 问法预检 -> match (2390997)'), '/cs intent matchid should show match route and id');
   assert.ok(intentMatchText.includes('单场详情 2390997 [match:2390997]: miss'), '/cs intent matchid should inspect match cache key');
   assert.ok(intentMatchText.includes('证据卡 /cs evidence match 2390997'), '/cs intent matchid should point to match evidence card');
   assert.ok(intentMatchText.includes('/cs warm plan match 2390997'), '/cs intent matchid miss should suggest match prewarm plan');
@@ -6577,19 +8523,19 @@ async function testCsPluginAndGiftThanks() {
   assert.strictEqual(sourceStatsAfter.misses, sourceStatsBefore.misses, '/cs sources should not increment CS cache misses');
 
   assert.deepStrictEqual(
-    csTest.routeNaturalCsQuery('donk最近状态怎么样'),
-    { sub: 'player', subject: 'donk', natural: true },
-    'natural CS parser should route known player status questions',
+    csTest.routeCsIntentQuery('donk最近状态怎么样'),
+    { sub: 'player', subject: 'donk' },
+    'CS intent parser should route known player status questions',
   );
   assert.deepStrictEqual(
-    csTest.routeNaturalCsQuery('Vitality现在阵容'),
-    { sub: 'team', subject: 'Vitality', natural: true },
-    'natural CS parser should route known team roster questions',
+    csTest.routeCsIntentQuery('Vitality现在阵容'),
+    { sub: 'team', subject: 'Vitality' },
+    'CS intent parser should route known team roster questions',
   );
   assert.deepStrictEqual(
-    csTest.routeNaturalCsQuery('2390002这场谁C了'),
-    { sub: 'match', subject: '2390002', natural: true },
-    'natural CS parser should route match id detail questions',
+    csTest.routeCsIntentQuery('2390002这场谁C了'),
+    { sub: 'match', subject: '2390002' },
+    'CS intent parser should route match id detail questions',
   );
   assert.strictEqual(csTest.extractMatchIdFromSubject('2390002 maps'), '2390002', 'match subject parser should accept optional detail words after match id');
   assert.deepStrictEqual(
@@ -6602,7 +8548,7 @@ async function testCsPluginAndGiftThanks() {
     { target: 'all', subject: '' },
     'CS evidence parser should route all to evidence overview',
   );
-  assert.strictEqual(csTest.routeNaturalCsQuery('现在排名')?.sub, 'ranking', 'natural CS parser should route ranking questions');
+  assert.strictEqual(csTest.routeCsIntentQuery('现在排名')?.sub, 'ranking', 'CS intent parser should route ranking questions');
 
   const statusWithCacheHandled = await csPlugin.handler({
     ...ctxBase,
@@ -6692,7 +8638,7 @@ async function testCsPluginAndGiftThanks() {
   let aiFallbackCalls = 0;
   aiChat.__setLLMCallerForTests(async () => {
     aiFallbackCalls++;
-    return 'AI fallback should not answer natural CS realtime questions';
+    return 'NAVI我先押第一，就这么说。';
   });
   csTest.setDataFetchersForTests({
     matches: async () => [
@@ -6723,34 +8669,19 @@ async function testCsPluginAndGiftThanks() {
   });
   try {
     naturalHandler.handleEvent(makePlainEvent(915, 28, '现在有CS比赛吗'));
-    await waitFor(() => naturalSent.length === 1, 'natural CS match question');
-    assert.ok(firstText(naturalSent[0].message).includes('CS实时问答'), 'natural match should be handled by cs plugin');
-    assert.ok(firstText(naturalSent[0].message).includes('当前/即将比赛'), 'natural match should render match data');
-    assert.ok(firstText(naturalSent[0].message).includes('事实预检'), 'natural match should append fact freshness preflight');
-    assert.ok(firstText(naturalSent[0].message).includes('当前/即将比赛=fresh'), 'natural match fact preflight should expose fresh match cache');
-    assert.ok(firstText(naturalSent[0].message).includes('/cs verify matches'), 'natural match fact preflight should suggest verify command');
-
     naturalHandler.handleEvent(makePlainEvent(916, 28, 'donk最近状态怎么样'));
-    await waitFor(() => naturalSent.length === 2, 'natural CS player question');
-    assert.ok(firstText(naturalSent[1].message).includes('选手数据'), 'natural player should render player data');
-    assert.ok(firstText(naturalSent[1].message).includes('Rating: 1.536'), 'natural player should include structured player stat');
-    assert.ok(firstText(naturalSent[1].message).includes('选手统计 donk=miss'), 'natural player fact preflight should expose missing player cache');
-    assert.ok(firstText(naturalSent[1].message).includes('不能包装成“现在/最新/刚查HLTV”'), 'natural player miss should forbid current/latest wording');
-    assert.ok(firstText(naturalSent[1].message).includes('/cs warm plan player donk'), 'natural player miss should suggest targeted warm plan');
+    naturalHandler.handleEvent(makePlainEvent(918, 28, '2390002这场谁C了'));
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.strictEqual(naturalSent.length, 0, 'plain natural CS realtime questions should not trigger cs plugin or passive AI');
+    assert.strictEqual(aiFallbackCalls, 0, 'plain natural CS realtime questions should not fall through to AI');
 
     naturalHandler.handleEvent(makeEvent(917, 28, ' 现在排名'));
-    await waitFor(() => naturalSent.length === 3, 'at natural CS ranking question');
-    assert.ok(firstText(naturalSent[2].message).includes('CS2战队排名'), 'at natural ranking should be handled by cs plugin');
-    assert.ok(firstText(naturalSent[2].message).includes('战队排名=fresh'), 'natural ranking fact preflight should expose fresh ranking cache');
-    assert.ok(firstText(naturalSent[2].message).includes('可当当前快照'), 'natural ranking fresh should allow current snapshot with boundaries');
-
-    naturalHandler.handleEvent(makePlainEvent(918, 28, '2390002这场谁C了'));
-    await waitFor(() => naturalSent.length === 4, 'natural CS match id detail question');
-    assert.ok(firstText(naturalSent[3].message).includes('CS单场详情'), 'natural match id should render match detail');
-    assert.ok(firstText(naturalSent[3].message).includes('donk(Spirit) Rating 2.55'), 'natural match id should include player highlights');
-    assert.ok(firstText(naturalSent[3].message).includes('单场详情 2390002=fresh'), 'natural match id fact preflight should inspect match cache');
-    assert.ok(firstText(naturalSent[3].message).includes('/cs verify match 2390002'), 'natural match id fact preflight should suggest match verify command');
-    assert.strictEqual(aiFallbackCalls, 0, 'natural CS plugin handling should not fall through to AI');
+    await waitFor(() => naturalSent.length === 1, 'at CS ranking question should go to AI');
+    const atNaturalText = firstText(naturalSent[0].message);
+    assert.ok(atNaturalText.includes('NAVI我先押第一'), '@ CS question should be answered by AI chat, not cs plugin');
+    assert.ok(!(new RegExp(['CS', '实时问答'].join(''))).test(atNaturalText), '@ CS question should not use removed realtime Q&A title');
+    assert.ok(!/事实预检[:：]/.test(atNaturalText), '@ CS question should not append removed fact preflight');
+    assert.strictEqual(aiFallbackCalls, 1, '@ CS question should call AI once');
   } finally {
     csTest.setDataFetchersForTests();
     aiChat.__setLLMCallerForTests();
@@ -7968,12 +9899,41 @@ async function testCrossGroupAiConcurrency() {
 }
 
 async function main() {
+  await testLoggerSerialization();
+  await testLlmApiDefaults();
+  await testAiEvidenceHelpers();
+  await testAiMessageBuilderHelpers();
+  await testAiKnowledgeRouteHelpers();
+  await testAiKnowledgeDiagnosticsHelpers();
+  await testAiStyleSceneHelpers();
+  await testAiStylePreflightHelpers();
+  await testAiReplyCacheDiagnosticsHelpers();
+  await testAiReplyCacheRuntimeHelpers();
+  await testAiReplyFallbackHelpers();
+  await testAiTriggerPolicyHelpers();
+  await testAiVoiceDiagnosticsHelpers();
+  await testAiVoiceCacheWarmHelpers();
+  await testAiSttEndToEndHelpers();
+  await testAiMediaTraceHelpers();
+  await testAiMediaSourceHelpers();
+  await testAiMediaWarmupHelpers();
+  await testAiMediaPreflightHelpers();
+  await testAiMediaStatusHelpers();
+  await testAiTraceFormatHelpers();
+  await testAiReplyDedupeHelpers();
+  await testAiPromptBuilderHelpers();
+  await testAiHumanDelayHelpers();
+  await testAiMemoryUtilsHelpers();
+  await testLocalCommandParser();
   await testOutgoingSanitize();
   await testBotMediaBatching();
   await testBotSendRetriesAndMediaFailureNotice();
   await testBotLoginStatusStrictness();
   await testConfig();
+  await testWebAdminSecurity();
   await testDoctorScript();
+  await testVpsCheckScript();
+  await testMaintainabilityReportScript();
   await testApiTestScript();
   await testConfigEnvApiKeyOverride();
   await testConfigSyncScript();
@@ -8000,6 +9960,7 @@ async function main() {
   await testExplicitVoiceReply();
   await testOpaqueOneBotRecordResolution();
   await testOpaqueOneBotImageResolution();
+  await testMultimodalPerceptionGuard();
   await testKnowledgeInjectionAndHumanizedPostprocess();
   await testOpenerFamilyDedupe();
   await testRealityBoundaryPostprocess();
@@ -8028,10 +9989,14 @@ async function main() {
   await testCsWatchPlugin();
   await testCsPredictPlugin();
   await testCrossGroupAiConcurrency();
-  console.log('smoke ok');
+  cleanupSmokeRuntime();
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  process.stderr.write('smoke ok\n');
+  process.exit(0);
 }
 
 main().catch((err) => {
+  cleanupSmokeRuntime();
   console.error(err);
   process.exit(1);
 });

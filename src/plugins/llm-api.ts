@@ -58,9 +58,6 @@ export function postLLMOnce(config: AIConfig, messages: ChatMessage[], useVision
       max_tokens: config.max_tokens,
       temperature: config.temperature,
       stream: false,
-      // 减少重复 + 增加多样性
-      frequency_penalty: 0.5,
-      presence_penalty: 0.3,
     };
 
     const body = JSON.stringify(requestBody);
@@ -209,7 +206,7 @@ function convertVisionPart(part: MessageContent, mode: NonNullable<AIConfig['vis
   if (mode === 'image_url_string') return { type: 'image_url', image_url: image.url };
   if (mode === 'input_image') return { type: 'input_image', image_url: image.url };
   if (mode === 'image_base64') return { type: 'image', image: image.url };
-  return { type: 'image_url', image_url: { url: image.url, detail: image.detail || 'high' } };
+  return { type: 'image_url', image_url: { url: image.url, detail: image.detail || 'low' } };
 }
 
 function extractImagePartUrl(part: MessageContent): { url: string; detail?: string } {

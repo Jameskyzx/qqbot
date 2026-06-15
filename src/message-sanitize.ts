@@ -13,15 +13,19 @@ export function sanitizeOutgoingText(text: string): string {
 function softenFormulaicOpening(text: string): string {
   const leading = text.match(/^\s*/)?.[0] || '';
   const body = text.slice(leading.length);
-  const match = body.match(/^(?:不是哥们|不是，哥们|不是 哥们|哥们|兄弟们?|家人们|可以(?:的)?|有点东西|这波(?:有说法)?|有一说一|讲道理|说实话|先说结论|我的判断是|我只能说|看了一眼|简单说两句)[，,。!！?\s]+(.+)/s);
+  const match = body.match(/^((?:不是哥们|不是，哥们|不是 哥们|哥们|兄弟们?|家人们|可以(?:的)?|当然(?:可以)?|好的|好嘞|没问题|有点东西|这波(?:有说法)?|有一说一|讲道理|说实话|先说结论|我的判断是|我只能说|看了一眼|简单说两句|简单来说))[，,。!！?\s]+(.+)/s);
   if (!match) return text;
 
-  const rest = match[1].trimStart();
+  const opener = match[1];
+  const rest = match[2].trimStart();
   if (!rest) return text;
   const usefulRest = rest.replace(/[，,。!！?？\s]/g, '');
   if (!usefulRest) return text;
   if (/^(?:你是不是|你是|我是|到底|bot|机器人|ai|AI)/.test(rest)) return text;
   if (/^(?:来了|收到|在|到|感谢|谢谢)/.test(rest)) return text;
+  if (/^(?:当然|好的|好嘞|没问题)/.test(opener)) {
+    return `${leading}${rest}`.trimStart();
+  }
 
   // 30%概率删除公式化开头让回复更自然
   const sum = Array.from(rest.slice(0, 16)).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);

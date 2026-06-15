@@ -1,0 +1,2369 @@
+{
+  "generatedAt": "2026-06-11T07:01:33.338Z",
+  "source": "https://bestdori.com/api/cards/all.5.json",
+  "cards": [
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "啊，那一滴雨珠 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036014_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "穿过小巷 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036011_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "观星的共鸣 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036012_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "命运之牌 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036008_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "抬头望见的风景 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036013_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "心灵的呐喊 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036004_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "一颗迷茫的星星 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036010_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "Relaxed Dialogue / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036007_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "啊，那一滴雨珠 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036014_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "穿过小巷 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036011_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "观星的共鸣 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036012_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "命运之牌 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036008_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "抬头望见的风景 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036013_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "心灵的呐喊 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036004_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "一颗迷茫的星星 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036010_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "Relaxed Dialogue / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036007_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "书写心意的一页 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-4",
+        "limited"
+      ],
+      "priority": 45,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036015_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "在小立希身旁 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-4",
+        "permanent"
+      ],
+      "priority": 45,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036005_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "Hopeful birthday！ / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-4",
+        "birthday"
+      ],
+      "priority": 45,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036009_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "书写心意的一页 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-4",
+        "limited"
+      ],
+      "priority": 40,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036015_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "在小立希身旁 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-4",
+        "permanent"
+      ],
+      "priority": 40,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036005_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "不可思议的小动物 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "不思議な小動物 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "Mysterious Little Animal / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "不可思议的小动物 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "不思議な小動物 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "Mysterious Little Animal / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "开始吧，一辈子的约定 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-2",
+        "permanent"
+      ],
+      "priority": 20,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036002_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "tomori",
+      "characterKey": "tomori",
+      "characterName": "高松 灯",
+      "title": "唱出心声的少女 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-1",
+        "initial"
+      ],
+      "priority": 10,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res036001_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "伴随着迷茫 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037004_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "干劲十足的酷洛！ / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037016_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "黄昏时分的密会 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037015_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "前方闪耀的光芒 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037013_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "赏花会的纪念！ / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037008_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "醒来时的哈欠时光 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037011_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "伴随着迷茫 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037004_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "干劲十足的酷洛！ / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037016_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "黄昏时分的密会 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037015_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "前方闪耀的光芒 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037013_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "赏花会的纪念！ / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037008_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "醒来时的哈欠时光 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037011_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "Hopeful birthday！ / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-4",
+        "birthday"
+      ],
+      "priority": 45,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037009_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "点单，还是老样子 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037010_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "队长推荐 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037005_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "连接之锚 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037014_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "要搞好关系的是…… / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "要去找吗？ / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037012_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "仲良くする相手は… / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "Someone Who Gets Along Well With... / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "点单，还是老样子 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037010_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "队长推荐 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037005_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "连接之锚 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037014_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "要搞好关系的是…… / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "要去找吗？ / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037012_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "仲良くする相手は… / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "Someone Who Gets Along Well With... / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "和楚楚动人的花一起 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-2",
+        "event"
+      ],
+      "priority": 20,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037007_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "开始吧，一辈子的约定 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-2",
+        "permanent"
+      ],
+      "priority": 20,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037002_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "anon",
+      "characterKey": "anon",
+      "characterName": "千早 爱音",
+      "title": "乐队的主心骨 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-1",
+        "initial"
+      ],
+      "priority": 10,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res037001_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "此刻的前方 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038011_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "某一天的和式走廊 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038009_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "投币式停车场的猫 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038005_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "与随性的流浪猫一起 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038013_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "在飘雪中踏上归途 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038008_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "此刻的前方 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038011_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "某一天的和式走廊 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038009_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "投币式停车场的猫 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038005_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "与随性的流浪猫一起 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038013_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "在飘雪中踏上归途 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038008_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "Hopeful birthday！ / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-4",
+        "birthday"
+      ],
+      "priority": 45,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038010_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "拨弄琴弦的猫 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "好闲。 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038007_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "猫咪今日如常 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038012_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "随心所欲 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038004_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "爪弾く猫 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "A Kitten Clawing at the Guitar / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "拨弄琴弦的猫 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "好闲。 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038007_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "猫咪今日如常 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038012_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "随心所欲 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038004_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "爪弾く猫 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "A Kitten Clawing at the Guitar / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "开始吧，一辈子的约定 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-2",
+        "permanent"
+      ],
+      "priority": 20,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038002_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "rana",
+      "characterKey": "rana",
+      "characterName": "要 乐奈",
+      "title": "像猫一样 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-1",
+        "initial"
+      ],
+      "priority": 10,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res038001_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "开幕前的片刻 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039011_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "时间长河的尽头 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039012_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "我来结束这一切 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039004_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "雨一直下 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039007_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "这种关系的名字是 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039009_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "只是过于耀眼 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039013_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "开幕前的片刻 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039011_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "时间长河的尽头 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039012_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "我来结束这一切 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039004_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "雨一直下 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039007_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "这种关系的名字是 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039009_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "只是过于耀眼 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039013_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "我们用我们的方法 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-4",
+        "limited"
+      ],
+      "priority": 45,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039010_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "Hopeful birthday！ / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-4",
+        "birthday"
+      ],
+      "priority": 45,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039008_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "我们用我们的方法 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-4",
+        "limited"
+      ],
+      "priority": 40,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039010_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "調停者は心静かに / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "冷静的调停者 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "崭新的萌芽 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039014_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "The Calm Mediator / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "調停者は心静かに / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "冷静的调停者 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "崭新的萌芽 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039014_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "The Calm Mediator / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "放松力气 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-2",
+        "event"
+      ],
+      "priority": 20,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039005_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "开始吧，一辈子的约定 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-2",
+        "permanent"
+      ],
+      "priority": 20,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039002_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "soyo",
+      "characterKey": "soyo",
+      "characterName": "长崎 爽世",
+      "title": "大家的『妈妈』 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-1",
+        "initial"
+      ],
+      "priority": 10,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res039001_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "出乎意料的关系 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040013_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "存在于前进方向上的答案 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040012_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "柜台对面的你 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040011_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "和我做个交易吧 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040005_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "让您久等了 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 55,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040009_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "出乎意料的关系 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040013_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "存在于前进方向上的答案 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "limited"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040012_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "柜台对面的你 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "dreamfes"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040011_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "和我做个交易吧 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040005_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "让您久等了 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-5",
+        "permanent"
+      ],
+      "priority": 50,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040009_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "比采购更感兴趣的事 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-4",
+        "permanent"
+      ],
+      "priority": 45,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040007_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "Hopeful birthday！ / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-4",
+        "birthday"
+      ],
+      "priority": 45,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040008_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "比采购更感兴趣的事 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-4",
+        "permanent"
+      ],
+      "priority": 40,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040007_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "守るのは、過去 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "无法抵达理想 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040004_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "要守护的是过去 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "意料之外的慰劳品 / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040014_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "Between Nerves and Thrill / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040017_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "Protector of the Past / card-trained",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-trained",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 35,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040003_rip/card_after_training.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "守るのは、過去 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "campaign"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "无法抵达理想 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040004_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "要守护的是过去 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "permanent"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "意料之外的慰劳品 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040014_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "Between Nerves and Thrill / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "event"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040017_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "Protector of the Past / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-3",
+        "others"
+      ],
+      "priority": 30,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040003_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "开始吧，一辈子的约定 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-2",
+        "permanent"
+      ],
+      "priority": 20,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040002_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "凛然而立 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-2",
+        "event"
+      ],
+      "priority": 20,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040010_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "星光茶会 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-2",
+        "campaign"
+      ],
+      "priority": 20,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040016_rip/card_normal.png"
+    },
+    {
+      "kind": "mokoko",
+      "key": "taki",
+      "characterKey": "taki",
+      "characterName": "椎名 立希",
+      "title": "重新开始的旋律 / card-normal",
+      "tags": [
+        "bestdori",
+        "card",
+        "artwork",
+        "card-normal",
+        "rarity-1",
+        "initial"
+      ],
+      "priority": 10,
+      "url": "https://bestdori.com/assets/jp/characters/resourceset/res040001_rip/card_normal.png"
+    }
+  ]
+}

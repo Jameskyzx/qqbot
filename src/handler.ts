@@ -1,5 +1,8 @@
 import { Bot } from './bot';
 import { BotConfig, GroupMessageEvent, MessageEvent, OneBotEvent, Plugin, PluginContext, MessageSegment } from './types';
+import { createLogger } from './logger';
+
+const log = createLogger('Handler');
 
 export class MessageHandler {
   private bot: Bot;
@@ -17,7 +20,7 @@ export class MessageHandler {
   /** 注册插件 */
   use(plugin: Plugin): void {
     this.plugins.push(plugin);
-    console.log(`[Handler] 已加载插件: ${plugin.name} - ${plugin.description}`);
+    log.info(`已加载插件: ${plugin.name} - ${plugin.description}`);
   }
 
   /** 记录bot发送的消息ID */
@@ -43,7 +46,7 @@ export class MessageHandler {
       !this.warnedSelfIdMismatch
     ) {
       this.warnedSelfIdMismatch = true;
-      console.warn(`[Handler] config.bot_qq=${config.bot_qq} 但 OneBot self_id=${messageEvent.self_id}，请确认是否已切换到目标QQ号。`);
+      log.warn(`config.bot_qq=${config.bot_qq} 但 OneBot self_id=${messageEvent.self_id}，请确认是否已切换到目标QQ号。`);
     }
     if (messageEvent.user_id === messageEvent.self_id) return;
 
@@ -69,7 +72,7 @@ export class MessageHandler {
     // 非阻塞处理：不await，让每条消息独立处理
     this.activeMessages++;
     this.processMessage(messageEvent, config, isReplyToBot, isAtBot).catch((err) => {
-      console.error('[Handler] 消息处理异常:', err);
+      log.error('消息处理异常:', err);
       if (isAtBot || isReplyToBot) {
         this.sendFallback(messageEvent, '我在 刚才没接住，你再说');
       }
@@ -96,7 +99,7 @@ export class MessageHandler {
 
     if (!this.warnedNonArrayMessage) {
       this.warnedNonArrayMessage = true;
-      console.warn('[Handler] OneBot message 不是array格式，已尝试兼容CQ码；建议在NapCat里设置 messagePostFormat=array。');
+      log.warn('OneBot message 不是array格式，已尝试兼容CQ码；建议在NapCat里设置 messagePostFormat=array。');
     }
 
     const raw = typeof runtimeEvent.message === 'string'
@@ -283,7 +286,7 @@ export class MessageHandler {
         }
         if (handled) break;
       } catch (err) {
-        console.error(`[Handler] 插件 ${plugin.name} 执行异常:`, err);
+        log.error(`插件 ${plugin.name} 执行异常:`, err);
       }
     }
 
@@ -301,7 +304,8 @@ export class MessageHandler {
   }
 
   private isDirectAiCommand(command: string | null): boolean {
-    return command === 'ai' || command === 'ask' || command === 'chat';
+    return command === 'ai' || command === 'ask' || command === 'chat'
+      || command === 'talk' || command === '问' || command === '聊' || command === '对话';
   }
 
   private runPlugin(plugin: Plugin, ctx: PluginContext, config: BotConfig): Promise<boolean> {
@@ -314,7 +318,7 @@ export class MessageHandler {
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        console.error(`[Handler] 插件 ${plugin.name} 执行超时`);
+        log.error(`插件 ${plugin.name} 执行超时`);
         resolve(false);
       }, timeoutMs);
       timer.unref();

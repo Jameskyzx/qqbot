@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { writeJsonFileAtomic } from './runtime-storage';
 
 export interface KnowledgeDbSection {
   title: string;
@@ -124,7 +125,7 @@ function syncFileIndex(sections: KnowledgeDbSection[], syncKey: string): void {
     updatedAt: Date.now(),
     sections,
   };
-  fs.writeFileSync(FILE_INDEX_PATH, `${JSON.stringify(payload)}\n`, 'utf-8');
+  writeJsonFileAtomic(FILE_INDEX_PATH, payload, { pretty: false });
 }
 
 function loadFileIndex(): KnowledgeDbSection[] {

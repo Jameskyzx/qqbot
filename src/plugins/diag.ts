@@ -136,8 +136,8 @@ export const diagPlugin: Plugin = {
       lines.push(`识图: ${ai.enable_vision ? 'on' : 'off'} model=${ai.vision_model || '-'} 并发${ai.vision_global_concurrency}`);
       lines.push(`语音: ${ai.enable_tts ? 'on' : 'off'} ${voiceStats.provider}${voiceStats.localReady ? '/local' : ''} send=${voiceStats.sendMode} 缓存${voiceStats.cacheFiles}/${voiceStats.maxCacheFiles} ${voiceStats.sizeMB}/${voiceStats.maxCacheMB}MB 命中${voiceStats.hits}/${voiceStats.misses} 飞行${voiceStats.inFlight} 合并${voiceStats.inFlightHits}`);
       lines.push(`听写: ${ai.enable_stt ? 'on' : 'off'} ${sttStats.provider}${sttStats.localReady ? '/local' : ''} payload=${sttStats.payloadMode}/${sttStats.lastPayloadMode || '-'} 缓存${sttStats.cacheFiles}/${sttStats.maxCacheFiles} ${sttStats.sizeMB}/${sttStats.maxCacheMB}MB 命中${sttStats.hits}/${sttStats.misses} 飞行${sttStats.inFlight} 合并${sttStats.inFlightHits}`);
-      lines.push(`AI回复缓存: ${aiStats.replyCacheEntries}条 飞行${aiStats.replyInFlight} 命中${aiStats.replyCacheHits}/${aiStats.replyCacheMisses} 旁路${aiStats.replyCacheBypasses}`);
-      lines.push(`AI缓存策略Top: ${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`);
+      lines.push(`回复缓存: ${aiStats.replyCacheEntries}条 飞行${aiStats.replyInFlight} 命中${aiStats.replyCacheHits}/${aiStats.replyCacheMisses} 旁路${aiStats.replyCacheBypasses}`);
+      lines.push(`缓存策略Top: ${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`);
       lines.push(`用户画像缓存: ${profileStats.cached ? 'warm' : 'cold'} 条目${profileStats.profiles} 命中${profileStats.cacheHits}/${profileStats.diskReads} 写入${profileStats.diskWrites} 解析错${profileStats.parseErrors}`);
       lines.push(`回复真实性: 证据${aiStats.evidenceTraceCount} 无实时${aiStats.realtimeIntentWithoutDataCount} 旧证据${aiStats.realtimeStaleEvidenceCount} 事实修正${aiStats.factGuardRepairCount} 质量修复${aiStats.qualityRepairCount} 输出修复${aiStats.outputRepairCount} 新鲜度${aiStats.freshnessRepairCount}`);
       if (aiStats.lastRealtimeFreshness.length > 0) lines.push(`最近实时证据: ${aiStats.lastRealtimeFreshness.join(' / ').slice(0, 160)}`);
@@ -181,8 +181,8 @@ export const diagPlugin: Plugin = {
 
     const ttsCanRunLocal = ai.enable_tts && (ai.tts_provider === 'local' || ai.tts_provider === 'auto') && !!(ai.tts_local_command || '').trim();
     const sttCanRunLocal = ai.enable_stt && (ai.stt_provider === 'local' || ai.stt_provider === 'auto') && !!(ai.stt_local_command || '').trim();
-    if (hasUsableApiKey(ai.api_key)) ok.push('AI接口已配置');
-    else hard.push(`AI接口未配置或仍是占位值，/ai和识图不可用${ttsCanRunLocal || sttCanRunLocal ? '；本地语音链路可单独工作' : '，远端TTS/STT不可用'}`);
+    if (hasUsableApiKey(ai.api_key)) ok.push('对话接口已配置');
+    else hard.push(`对话接口未配置或仍是占位值，/talk和识图不可用${ttsCanRunLocal || sttCanRunLocal ? '；本地语音链路可单独工作' : '，远端TTS/STT不可用'}`);
 
     if (ai.enable_search) ok.push('联网搜索已开启');
     else risk.push('联网搜索未开启，实时赛果/阵容/价格会不准');
@@ -327,9 +327,9 @@ export const diagPlugin: Plugin = {
       ...(runtime.lastConnectionHint ? [`连接提示: ${runtime.lastConnectionHint}`] : []),
       `QQ登录: ${runtime.lastLoginOk ? 'ok' : '异常/未确认'} self=${runtime.lastLoginUserId || '-'} 失败${runtime.loginCheckFailures} 成功${runtime.loginCheckSuccesses}${runtime.lastLoginError ? ` 错误=${runtime.lastLoginError}` : ''}`,
       `队列: ${aiStats.pendingJobs}待处理 / ${aiStats.forcedJobs}强触发`,
-      `并发: AI ${aiStats.gates.ai.active}/${aiStats.gates.ai.limit}+${aiStats.gates.ai.queued} 搜索 ${aiStats.gates.search.active}/${aiStats.gates.search.limit}+${aiStats.gates.search.queued} 图${aiStats.gates.vision.active}/${aiStats.gates.vision.limit}+${aiStats.gates.vision.queued} 听写${aiStats.gates.stt.active}/${aiStats.gates.stt.limit}+${aiStats.gates.stt.queued} TTS${aiStats.gates.tts.active}/${aiStats.gates.tts.limit}+${aiStats.gates.tts.queued}`,
-      `Gate背压: 普通拒绝AI${aiStats.gates.ai.rejectedPassive} 搜索${aiStats.gates.search.rejectedPassive} 图${aiStats.gates.vision.rejectedPassive} 听写${aiStats.gates.stt.rejectedPassive} TTS${aiStats.gates.tts.rejectedPassive}`,
-      `AI缓存: ${aiStats.replyCacheEntries}条 ${aiStats.replyCacheHits}/${aiStats.replyCacheMisses} 策略${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`,
+      `并发: 对话 ${aiStats.gates.ai.active}/${aiStats.gates.ai.limit}+${aiStats.gates.ai.queued} 搜索 ${aiStats.gates.search.active}/${aiStats.gates.search.limit}+${aiStats.gates.search.queued} 图${aiStats.gates.vision.active}/${aiStats.gates.vision.limit}+${aiStats.gates.vision.queued} 听写${aiStats.gates.stt.active}/${aiStats.gates.stt.limit}+${aiStats.gates.stt.queued} TTS${aiStats.gates.tts.active}/${aiStats.gates.tts.limit}+${aiStats.gates.tts.queued}`,
+      `Gate背压: 普通拒绝对话${aiStats.gates.ai.rejectedPassive} 搜索${aiStats.gates.search.rejectedPassive} 图${aiStats.gates.vision.rejectedPassive} 听写${aiStats.gates.stt.rejectedPassive} TTS${aiStats.gates.tts.rejectedPassive}`,
+      `回复缓存: ${aiStats.replyCacheEntries}条 ${aiStats.replyCacheHits}/${aiStats.replyCacheMisses} 策略${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`,
       `回复真实性: 证据${aiStats.evidenceTraceCount} 无实时${aiStats.realtimeIntentWithoutDataCount} 旧证据${aiStats.realtimeStaleEvidenceCount} 事实修正${aiStats.factGuardRepairCount} 质量修复${aiStats.qualityRepairCount} 输出修复${aiStats.outputRepairCount} 新鲜度${aiStats.freshnessRepairCount}`,
       ...(aiStats.lastRealtimeFreshness.length > 0 ? [`最近实时证据: ${aiStats.lastRealtimeFreshness.join(' / ').slice(0, 160)}`] : []),
       `搜索缓存: ${search.cacheEntries}/${search.maxEntries}条 空${search.negativeEntries} ${search.hits}/${search.misses} 飞行${search.inFlight}`,

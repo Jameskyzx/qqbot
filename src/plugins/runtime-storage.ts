@@ -64,6 +64,52 @@ export function resolveProjectPath(rel: string): string {
   return path.join(PROJECT_ROOT, rel);
 }
 
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function renameWithRetry(tmp: string, filepath: string): void {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      fs.renameSync(tmp, filepath);
+      return;
+    } catch (err) {
+      lastError = err;
+      const code = (err as NodeJS.ErrnoException).code || '';
+      if (!['EBUSY', 'EACCES', 'EPERM'].includes(code)) break;
+      sleepSync(20 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
+export function writeTextFileAtomic(filepath: string, content: string): void {
+  fs.mkdirSync(path.dirname(filepath), { recursive: true });
+  const tmp = `${filepath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    fs.writeFileSync(tmp, content, 'utf-8');
+    renameWithRetry(tmp, filepath);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    } catch {
+      // Best-effort cleanup; the write/rename error is the useful failure.
+    }
+    throw err;
+  }
+}
+
+export function writeJsonFileAtomic(
+  filepath: string,
+  value: unknown,
+  options: { pretty?: boolean; trailingNewline?: boolean } = {},
+): void {
+  const space = options.pretty === false ? undefined : 2;
+  const newline = options.trailingNewline === false ? '' : '\n';
+  writeTextFileAtomic(filepath, `${JSON.stringify(value, null, space)}${newline}`);
+}
+
 export function probeWritableDir(target: RuntimeStorageTarget): RuntimeStorageProbe {
   const dir = resolveProjectPath(target.rel);
   const probe = path.join(dir, `.storage-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);

@@ -1,5 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { createLogger } from '../logger';
+import { writeJsonFileAtomic } from './runtime-storage';
+
+const logger = createLogger('ContextStore');
 
 /**
  * 持久化上下文存储
@@ -69,7 +73,7 @@ function flush(): void {
     try {
       flushHandler();
     } catch (err) {
-      console.error('[ContextStore] flush异常:', err);
+      logger.error('[ContextStore] flush异常:', err);
     }
   }
 }
@@ -86,12 +90,10 @@ export function flushNow(): void {
 export function writeSession(sessionId: string, ctx: StoredContext): boolean {
   try {
     const filepath = getFilePath(sessionId);
-    const tempPath = `${filepath}.${process.pid}.tmp`;
-    fs.writeFileSync(tempPath, JSON.stringify(ctx), 'utf-8');
-    fs.renameSync(tempPath, filepath);
+    writeJsonFileAtomic(filepath, ctx, { pretty: false, trailingNewline: false });
     return true;
   } catch (err) {
-    console.error(`[ContextStore] 写入失败 ${sessionId}:`, err);
+    logger.error(`[ContextStore] 写入失败 ${sessionId}:`, err);
     return false;
   }
 }

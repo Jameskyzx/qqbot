@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { createLogger } from '../logger';
+import { writeTextFileAtomic } from './runtime-storage';
+
+const logger = createLogger('Embedding');
 
 /**
  * 轻量历史检索存储
@@ -294,13 +298,11 @@ function flushSession(sessionId: string): void {
     const content = session.messages
       .map((m) => JSON.stringify({ id: m.id, ts: m.ts, role: m.role, text: m.text }))
       .join('\n') + '\n';
-    const tmp = `${filepath}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, content);
-    fs.renameSync(tmp, filepath);
+    writeTextFileAtomic(filepath, content);
     session.dirty = false;
   } catch (err) {
     lastError = err instanceof Error ? err.message.slice(0, 180) : String(err).slice(0, 180);
-    console.error('[Embedding] flush 失败', err);
+    logger.error('[Embedding] flush 失败', err);
   }
 }
 

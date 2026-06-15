@@ -22,9 +22,20 @@ function ts(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 
+function serialize(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.stack || value.message;
+  if (value === undefined) return 'undefined';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function format(level: string, color: string, scope: string, args: unknown[]): string[] {
   const prefix = `${COLORS.gray}[${ts()}]${COLORS.reset} ${color}[${level}]${COLORS.reset} ${COLORS.cyan}[${scope}]${COLORS.reset}`;
-  return [prefix, ...args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))];
+  return [prefix, ...args.map(serialize)];
 }
 
 export function createLogger(scope: string) {

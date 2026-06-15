@@ -3,6 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { withGate } from './concurrency';
 import type { AIConfig } from '../types';
+import { createLogger } from '../logger';
+import { writeJsonFileAtomic } from './runtime-storage';
+
+const logger = createLogger('Search');
 
 interface CacheEntry {
   value: string;
@@ -67,9 +71,9 @@ function loadDiskCache(): void {
       entry.disk = true;
       searchCache.set(key, entry);
     }
-    if (searchCache.size > 0) console.log(`[Search] 加载${searchCache.size}条磁盘缓存`);
+    if (searchCache.size > 0) logger.info(`[Search] 加载${searchCache.size}条磁盘缓存`);
   } catch (err) {
-    console.error('[Search] 磁盘缓存加载失败:', err instanceof Error ? err.message : err);
+    logger.error('[Search] 磁盘缓存加载失败:', err);
   }
 }
 
@@ -89,12 +93,9 @@ function flushDiskCache(): void {
   try {
     ensureCacheDir();
     pruneCache(false);
-    const payload = JSON.stringify(Object.fromEntries(searchCache), null, 0);
-    const tmp = `${CACHE_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, payload, 'utf-8');
-    fs.renameSync(tmp, CACHE_FILE);
+    writeJsonFileAtomic(CACHE_FILE, Object.fromEntries(searchCache), { pretty: false, trailingNewline: false });
   } catch (err) {
-    console.error('[Search] 磁盘缓存写入失败:', err instanceof Error ? err.message : err);
+    logger.error('[Search] 磁盘缓存写入失败:', err);
   }
 }
 

@@ -12,6 +12,7 @@ import {
 } from './hltv-api';
 import { buildCsPlanFactTypeCoverageLines } from './cs-fact-coverage';
 import type { CsFactTypePlanItem } from './cs-fact-coverage';
+import { writeJsonFileAtomic } from './runtime-storage';
 
 export type WatchKind = 'team' | 'player' | 'match';
 
@@ -163,10 +164,7 @@ function loadStore(): CsWatchStore {
 
 function saveStore(store: CsWatchStore): void {
   const filepath = storePath();
-  fs.mkdirSync(path.dirname(filepath), { recursive: true });
-  const tmp = `${filepath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf-8');
-  fs.renameSync(tmp, filepath);
+  writeJsonFileAtomic(filepath, store, { trailingNewline: false });
 }
 
 function nowText(timestamp: number): string {

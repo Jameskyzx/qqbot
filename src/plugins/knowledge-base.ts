@@ -4,7 +4,11 @@ import * as crypto from 'crypto';
 import * as https from 'https';
 import * as http from 'http';
 import * as zlib from 'zlib';
+import { createLogger } from '../logger';
 import { getKnowledgeDbStats, searchKnowledgeDb, syncKnowledgeDb } from './knowledge-db';
+import { writeJsonFileAtomic, writeTextFileAtomic } from './runtime-storage';
+
+const logger = createLogger('Knowledge');
 
 interface KnowledgeSection {
   title: string;
@@ -292,7 +296,7 @@ export function knowledgeSourceEvidenceHint(sourceId: string): string {
 
 function ensureSourcesFile(): void {
   if (fs.existsSync(SOURCES_FILE)) return;
-  fs.writeFileSync(SOURCES_FILE, JSON.stringify(defaultSources(), null, 2), 'utf-8');
+  writeJsonFileAtomic(SOURCES_FILE, defaultSources(), { trailingNewline: false });
 }
 
 export function getKnowledgeRuntimePaths(): { knowledgeDir: string; mainFile: string; sourcesFile: string; quarantineDir: string; auditFile: string; inboxDir: string } {
@@ -330,9 +334,7 @@ function readSourceState(): Record<string, number> {
 
 function writeSourceState(state: Record<string, number>): void {
   ensureKnowledgeDirs();
-  const tmp = `${SOURCE_STATE_FILE}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf-8');
-  fs.renameSync(tmp, SOURCE_STATE_FILE);
+  writeJsonFileAtomic(SOURCE_STATE_FILE, state, { trailingNewline: false });
 }
 
 export function getKnowledgeSourceState(): Record<string, number> {
@@ -383,7 +385,7 @@ export function pruneKnowledgeAutoLog(retentionDays: number = 14): void {
   if (!fs.existsSync(AUTO_LOG_FILE)) return;
   const cutoff = Date.now() - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000;
   const kept = readAutoLog().filter((entry) => entry.createdAt >= cutoff || entry.status === 'committed');
-  fs.writeFileSync(AUTO_LOG_FILE, kept.map((entry) => JSON.stringify(entry)).join('\n') + (kept.length ? '\n' : ''), 'utf-8');
+  writeTextFileAtomic(AUTO_LOG_FILE, kept.map((entry) => JSON.stringify(entry)).join('\n') + (kept.length ? '\n' : ''));
 }
 
 export function listKnowledgeBatches(limit: number = 8): KnowledgeBatchSummary[] {
@@ -1366,12 +1368,12 @@ function loadKnowledge(): void {
     cachedSections = parseMarkdown(cachedFullText);
     cachedMtime = stat.mtimeMs;
     syncKnowledgeDb(cachedSections, stat.mtimeMs);
-    console.log(`[Knowledge] 加载 ${cachedSections.length} 个知识库分块`);
+    logger.info(`[Knowledge] 加载 ${cachedSections.length} 个知识库分块`);
   } catch (err) {
     cachedFullText = '';
     cachedSections = [];
     cachedMtime = 0;
-    console.error('[Knowledge] 加载失败:', err instanceof Error ? err.message : err);
+    logger.error('[Knowledge] 加载失败:', err);
   }
 }
 
@@ -2187,7 +2189,7 @@ export function rollbackKnowledgeBatch(batchId: string): { removedBlocks: number
     return '\n';
   }).replace(/\n{4,}/g, '\n\n\n');
   if (removedBlocks > 0) {
-    fs.writeFileSync(DEFAULT_KNOWLEDGE_FILE, nextText.trimEnd() + '\n', 'utf-8');
+    writeTextFileAtomic(DEFAULT_KNOWLEDGE_FILE, nextText.trimEnd() + '\n');
     cachedMtime = 0;
     loadKnowledge();
   }
@@ -2202,7 +2204,7 @@ export function rollbackKnowledgeBatch(batchId: string): { removedBlocks: number
     return entry;
   });
   if (updatedEntries > 0) {
-    fs.writeFileSync(AUTO_LOG_FILE, updated.map((entry) => JSON.stringify(entry)).join('\n') + '\n', 'utf-8');
+    writeTextFileAtomic(AUTO_LOG_FILE, updated.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
   }
   return { removedBlocks, updatedEntries };
 }
@@ -2289,7 +2291,7 @@ export function auditKnowledge(): KnowledgeAuditReport {
     candidates: pendingCandidates.size,
     quarantineFiles: 0,
   };
-  fs.writeFileSync(AUDIT_FILE, JSON.stringify(report, null, 2), 'utf-8');
+  writeJsonFileAtomic(AUDIT_FILE, report, { trailingNewline: false });
   lastAuditReport = report;
   return report;
 }

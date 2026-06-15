@@ -1,9 +1,11 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { URL } from 'url';
 import { Bot } from './bot';
-import { CONFIG_PATH, loadConfig } from './config';
+import { CONFIG_PATH, loadConfig, normalizeConfig } from './config';
+import { writeJsonFileAtomic } from './plugins/runtime-storage';
 import { getCacheStats as getImageCacheStats } from './plugins/image-cache';
 import { getSearchStats } from './plugins/web-search';
 import { getVoiceStats } from './plugins/tts';
@@ -12,16 +14,17 @@ import { getKnowledgeStats } from './plugins/knowledge-base';
 import { getAiChatStats } from './plugins/ai-chat';
 import { getEmbeddingStats } from './plugins/embedding-store';
 import { getHltvStats } from './plugins/hltv-api';
+import { createLogger } from './logger';
 
 /**
  * 轻量Web管理后台
  *
  * 端点：
  *   GET  /            - 仪表盘 HTML
- *   GET  /api/status  - 综合状态 JSON
- *   GET  /api/config  - 当前 config (脱敏 api_key)
+ *   GET  /api/status  - 综合状态 JSON (默认需要鉴权)
+ *   GET  /api/config  - 当前 config (脱敏 api_key，默认需要鉴权)
  *   POST /api/config  - 更新 config (需要鉴权)
- *   GET  /api/logs    - 最近日志
+ *   GET  /api/logs    - 最近日志 (默认需要鉴权)
  *   POST /api/restart - 触发重启 (PM2 会自动重启)
  *   GET  /api/health  - 健康检查
  *
@@ -30,6 +33,8 @@ import { getHltvStats } from './plugins/hltv-api';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const LOGS_DIR = path.resolve(PROJECT_ROOT, 'logs');
+const DEFAULT_WEB_HOST = '127.0.0.1';
+const log = createLogger('Web');
 
 let server: http.Server | null = null;
 
@@ -37,11 +42,30 @@ function getAdminToken(): string {
   return (process.env.WANJIER_ADMIN_TOKEN || '').trim();
 }
 
+function getWebHost(): string {
+  return (process.env.WANJIER_WEB_ADMIN_HOST || DEFAULT_WEB_HOST).trim() || DEFAULT_WEB_HOST;
+}
+
+function isReadOnlyPublic(): boolean {
+  return (process.env.WANJIER_WEB_ADMIN_READONLY_PUBLIC || '').trim() === '1';
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
 function checkAuth(req: http.IncomingMessage): boolean {
   const token = getAdminToken();
+  if (token.length < 16) return false;
   if (!token) return false; // 没设置就不允许（避免暴露）
   const provided = (req.headers['x-admin-token'] || '').toString().trim();
-  return provided === token;
+  return safeEqual(provided, token);
+}
+
+function checkReadAuth(req: http.IncomingMessage): boolean {
+  return isReadOnlyPublic() || checkAuth(req);
 }
 
 function sendJson(res: http.ServerResponse, status: number, data: unknown): void {
@@ -366,11 +390,21 @@ function gatherStatus(bot: Bot): any {
 
 export function startWebServer(bot: Bot, port: number): void {
   if (server) {
-    console.log('[Web] 已经启动，跳过');
+    log.info('已经启动，跳过');
     return;
   }
-  if (!getAdminToken()) {
-    console.log('[Web] WANJIER_ADMIN_TOKEN 未设置，写操作将被拒绝；只读端点仍可用');
+  const host = getWebHost();
+  const token = getAdminToken();
+  if (!token) {
+    log.warn('WANJIER_ADMIN_TOKEN 未设置，除 /api/health 外的后台 API 将被拒绝');
+  } else if (token.length < 16) {
+    log.warn('WANJIER_ADMIN_TOKEN 长度不足16位，除 /api/health 外的后台 API 将被拒绝');
+  }
+  if (isReadOnlyPublic()) {
+    log.warn('只读 API 已通过 WANJIER_WEB_ADMIN_READONLY_PUBLIC=1 显式开放');
+  }
+  if (host === '0.0.0.0' || host === '::') {
+    log.warn('当前监听公网地址；建议只在反向代理/防火墙保护下使用');
   }
 
   server = http.createServer(async (req, res) => {
@@ -390,6 +424,10 @@ export function startWebServer(bot: Bot, port: number): void {
       }
 
       if (req.method === 'GET' && pathname === '/api/status') {
+        if (!checkReadAuth(req)) {
+          sendJson(res, 401, { error: 'Unauthorized' });
+          return;
+        }
         sendJson(res, 200, gatherStatus(bot));
         return;
       }
@@ -405,6 +443,10 @@ export function startWebServer(bot: Bot, port: number): void {
       }
 
       if (req.method === 'GET' && pathname === '/api/config') {
+        if (!checkReadAuth(req)) {
+          sendJson(res, 401, { error: 'Unauthorized' });
+          return;
+        }
         try {
           const config = loadConfig();
           sendJson(res, 200, maskConfig(config));
@@ -439,7 +481,8 @@ export function startWebServer(bot: Bot, port: number): void {
               newConfig.ai.api_key = existing.ai?.api_key || newConfig.ai.api_key;
             }
           } catch { /* */ }
-          fs.writeFileSync(CONFIG_PATH, JSON.stringify(newConfig, null, 2));
+          normalizeConfig(newConfig);
+          writeJsonFileAtomic(CONFIG_PATH, newConfig);
           sendJson(res, 200, { ok: true, backup });
         } catch (err) {
           sendJson(res, 400, { error: err instanceof Error ? err.message : 'invalid' });
@@ -448,6 +491,10 @@ export function startWebServer(bot: Bot, port: number): void {
       }
 
       if (req.method === 'GET' && pathname === '/api/logs') {
+        if (!checkReadAuth(req)) {
+          sendJson(res, 401, { error: 'Unauthorized' });
+          return;
+        }
         const filename = url.searchParams.get('file') || 'out.log';
         // 防止路径穿越
         if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
@@ -472,24 +519,23 @@ export function startWebServer(bot: Bot, port: number): void {
 
       sendJson(res, 404, { error: 'Not Found' });
     } catch (err) {
-      console.error('[Web] 请求处理异常:', err);
+      log.error('请求处理异常:', err);
       try {
         sendJson(res, 500, { error: err instanceof Error ? err.message : 'internal' });
       } catch { /* */ }
     }
   });
 
-  server.listen(port, '0.0.0.0', () => {
-    console.log(`[Web] 管理后台启动: http://0.0.0.0:${port}/`);
-    if (!getAdminToken()) {
-      console.log(`[Web] 提示: 设置环境变量 WANJIER_ADMIN_TOKEN 以启用写操作`);
+  server.listen(port, host, () => {
+    log.info(`管理后台启动: http://${host}:${port}/`);
+    if (!token) {
+      log.info('提示: 设置环境变量 WANJIER_ADMIN_TOKEN 以启用后台 API');
     } else {
-      const t = getAdminToken();
-      console.log(`[Web] Admin token 已设置 (${t.slice(0, 4)}...) 长度=${t.length}`);
+      log.info(`Admin token 已设置 (${token.slice(0, 4)}...) 长度=${token.length}`);
     }
   });
   server.on('error', (err) => {
-    console.error('[Web] 服务器错误:', err.message);
+    log.error('服务器错误:', err.message);
   });
 }
 

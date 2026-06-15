@@ -3,8 +3,11 @@ import { MessageHandler } from './handler';
 import { GroupMessageEvent } from './types';
 import { CONFIG_PATH, hasUsableApiKey, loadConfig } from './config';
 import { startWebServer } from './web-server';
+import { createLogger } from './logger';
 import * as fs from 'fs';
 import * as path from 'path';
+
+const logger = createLogger('Index');
 
 // 启动时加载.env文件（如果存在）
 function loadDotEnv(): void {
@@ -32,9 +35,9 @@ function loadDotEnv(): void {
         process.env[key] = value;
       }
     }
-    console.log(`[Bot] 已加载 .env 文件`);
+    logger.info('[Bot] 已加载 .env 文件');
   } catch (err) {
-    console.warn(`[Bot] 加载.env失败:`, err instanceof Error ? err.message : err);
+    logger.warn('[Bot] 加载.env失败:', err);
   }
 }
 
@@ -63,36 +66,40 @@ import { registerPokeListener } from './plugins/poke';
 import { registerGiftThanksListener } from './plugins/gift-thanks';
 import { registerPrivateForward } from './plugins/private-forward';
 import { registerRecallListener, recordMessage } from './plugins/recall';
+import { cleanupCache as cleanImageCache } from './plugins/image-cache';
+import { cleanSearchCache } from './plugins/web-search';
+import { cleanVoiceCache } from './plugins/tts';
+import { cleanSttCache } from './plugins/stt';
 
 function main(): void {
-  console.log('');
-  console.log('  ╔══════════════════════════════════╗');
-  console.log('  ║       玩机器 QQ Bot v2.3         ║');
-  console.log('  ║     OneBot v11 · NapCatQQ        ║');
-  console.log('  ╚══════════════════════════════════╝');
-  console.log('');
+  logger.info('');
+  logger.info('  ╔══════════════════════════════════╗');
+  logger.info('  ║       玩机器 QQ Bot v2.3         ║');
+  logger.info('  ║     OneBot v11 · NapCatQQ        ║');
+  logger.info('  ╚══════════════════════════════════╝');
+  logger.info('');
 
   let config;
   try {
     config = loadConfig();
   } catch (err) {
-    console.error('');
-    console.error('  ❌ 配置加载失败');
-    console.error('  请复制 config.example.json 为 config.json 并填入配置');
-    console.error(`  路径: ${CONFIG_PATH}`);
-    console.error(`  原因: ${err instanceof Error ? err.message : String(err)}`);
-    console.error('');
+    logger.error('');
+    logger.error('  ❌ 配置加载失败');
+    logger.error('  请复制 config.example.json 为 config.json 并填入配置');
+    logger.error(`  路径: ${CONFIG_PATH}`);
+    logger.error('  原因:', err);
+    logger.error('');
     process.exit(1);
   }
 
-  console.log(`  🤖 名称: ${config.bot_name}`);
-  console.log(`  🆔 Bot QQ: ${config.bot_qq || '未填写(以OneBot self_id为准)'}`);
-  console.log(`  🔗 连接: ${config.ws_url}`);
-  console.log(`  🎭 预设: ${config.ai?.active_preset || '未配置'}`);
-  console.log(`  📡 触发: ${config.ai?.trigger_mode || 'command'}`);
-  console.log(`  📋 群: ${config.enabled_groups.length > 0 ? config.enabled_groups.join(', ') : '全部群'}`);
-  console.log(`  👑 管理: ${config.admin_qq.length > 0 ? config.admin_qq.join(', ') : '未设置'}`);
-  console.log('');
+  logger.info(`  🤖 名称: ${config.bot_name}`);
+  logger.info(`  🆔 Bot QQ: ${config.bot_qq || '未填写(以OneBot self_id为准)'}`);
+  logger.info(`  🔗 连接: ${config.ws_url}`);
+  logger.info(`  🎭 预设: ${config.ai?.active_preset || '未配置'}`);
+  logger.info(`  📡 触发: ${config.ai?.trigger_mode || 'command'}`);
+  logger.info(`  📋 群: ${config.enabled_groups.length > 0 ? config.enabled_groups.join(', ') : '全部群'}`);
+  logger.info(`  👑 管理: ${config.admin_qq.length > 0 ? config.admin_qq.join(', ') : '未设置'}`);
+  logger.info('');
 
   startAiChatBackgroundTasks(config.ai);
 
@@ -103,10 +110,10 @@ function main(): void {
   startDailyPulseTasks(bot);
   const handler = new MessageHandler(bot);
 
-  // 注册插件（顺序：管理 > 统计 > 复读 > 工具 > 趣味 > AI兜底）
+  // 注册插件（顺序：管理 > 统计 > 复读 > 工具 > 趣味 > 对话兜底）
   handler.use(adminPlugin);
   handler.use(statsPlugin);
-  handler.use(repeaterPlugin);  // 复读机（在AI之前，避免复读被AI截胡）
+  handler.use(repeaterPlugin);  // 复读机（在对话之前，避免复读被对话截胡）
   handler.use(helpPlugin);
   handler.use(pingPlugin);
   handler.use(statusPlugin);
@@ -119,7 +126,7 @@ function main(): void {
   handler.use(funPlugin);
   handler.use(dailyPulsePlugin);
   handler.use(stickersPlugin);
-  handler.use(aiChatPlugin);    // AI 放最后
+  handler.use(aiChatPlugin);    // 对话放最后
 
   // 注册非消息事件监听器
   registerWelcomeListener(bot);
@@ -135,7 +142,7 @@ function main(): void {
     if (event.post_type === 'message' && event.message_type === 'group') {
       const e = event as GroupMessageEvent;
       const name = e.sender.card || e.sender.nickname;
-      console.log(`[群${e.group_id}] ${name}(${e.user_id}): ${e.raw_message}`);
+      logger.info(`[群${e.group_id}] ${name}(${e.user_id}): ${e.raw_message}`);
 
       // 记录消息（用于撤回监控）
       recordMessage(e.message_id, name, e.raw_message);
@@ -152,7 +159,7 @@ function main(): void {
     try {
       startWebServer(bot, webPort);
     } catch (err) {
-      console.error('[Web] 启动失败:', err instanceof Error ? err.message : err);
+      logger.error('[Web] 启动失败:', err);
     }
   }
 
@@ -161,7 +168,7 @@ function main(): void {
   const shutdown = (exitCode = 0) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log('\n[Bot] 正在关闭...');
+    logger.info('\n[Bot] 正在关闭...');
     bot.close();
     shutdownCsReportTasks();
     shutdownCsWatchTasks();
@@ -181,13 +188,21 @@ function main(): void {
     const heapMB = Math.round(usage.heapUsed / 1024 / 1024);
     const rssMB = Math.round(usage.rss / 1024 / 1024);
     if (heapMB > 900) {
-      console.warn(`[Memory] 堆内存${heapMB}MB RSS=${rssMB}MB 触发GC`);
+      logger.warn(`[Memory] 堆内存${heapMB}MB RSS=${rssMB}MB 触发GC`);
       if (global.gc) {
         try { global.gc(); } catch { /* */ }
       }
+      try {
+        cleanSearchCache();
+        cleanImageCache();
+        cleanVoiceCache(config.ai);
+        cleanSttCache(config.ai);
+      } catch (err) {
+        logger.warn('[Memory] 压力清理缓存失败:', err);
+      }
     }
     if (rssMB > 1300) {
-      console.error(`[Memory] RSS ${rssMB}MB 接近上限 主动重启避免OOM`);
+      logger.error(`[Memory] RSS ${rssMB}MB 接近上限 主动重启避免OOM`);
       shutdown(1);
     }
   }, 5 * 60 * 1000);
@@ -203,9 +218,9 @@ function main(): void {
         const freeGB = Math.round((stats.bavail * stats.bsize) / 1024 / 1024 / 1024);
         const usedPercent = Math.round((1 - stats.bavail / stats.blocks) * 100);
         if (usedPercent > 90) {
-          console.error(`[Disk] 磁盘使用${usedPercent}% 剩余${freeGB}GB/${totalGB}GB 接近上限`);
+          logger.error(`[Disk] 磁盘使用${usedPercent}% 剩余${freeGB}GB/${totalGB}GB 接近上限`);
         } else if (usedPercent > 80) {
-          console.warn(`[Disk] 磁盘使用${usedPercent}% 剩余${freeGB}GB/${totalGB}GB 接近警戒`);
+          logger.warn(`[Disk] 磁盘使用${usedPercent}% 剩余${freeGB}GB/${totalGB}GB 接近警戒`);
         }
       }
     } catch { /* statfs可能不可用 */ }
@@ -216,7 +231,7 @@ function main(): void {
     const message = reason instanceof Error
       ? (reason.stack || reason.message)
       : String(reason);
-    console.error(`[Fatal] ${label}:`, message);
+    logger.error(`[Fatal] ${label}:`, message);
     shutdown(1);
   };
 

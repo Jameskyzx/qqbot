@@ -3,7 +3,11 @@ import * as http from 'http';
 import * as zlib from 'zlib';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createLogger } from '../logger';
 import { webSearch } from './web-search';
+import { writeJsonFileAtomic } from './runtime-storage';
+
+const logger = createLogger('HLTV');
 
 /**
  * CS2 实时数据接口 - 多层兜底
@@ -238,10 +242,10 @@ function loadDiskCache(): void {
     }
     diskEntriesLoaded = loaded;
     pruneCache(false);
-    if (loaded > 0) console.log(`[CSData] 加载${loaded}条实时数据磁盘缓存`);
+    if (loaded > 0) logger.info(`[CSData] 加载${loaded}条实时数据磁盘缓存`);
   } catch (err) {
     lastDiskError = err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160);
-    console.error('[CSData] 磁盘缓存加载失败:', lastDiskError);
+    logger.error('[CSData] 磁盘缓存加载失败:', lastDiskError);
   }
 }
 
@@ -266,14 +270,12 @@ function flushDiskCache(): void {
         }]),
     );
     const payload: DiskCachePayload = { version: 1, savedAt: now, entries };
-    const tmp = `${CACHE_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, `${JSON.stringify(payload)}\n`, 'utf-8');
-    fs.renameSync(tmp, CACHE_FILE);
+    writeJsonFileAtomic(CACHE_FILE, payload, { pretty: false });
     lastDiskFlushAt = now;
     lastDiskError = '';
   } catch (err) {
     lastDiskError = err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160);
-    console.error('[CSData] 磁盘缓存写入失败:', lastDiskError);
+    logger.error('[CSData] 磁盘缓存写入失败:', lastDiskError);
   }
 }
 
@@ -659,7 +661,7 @@ async function fetchLiquipedia(page: string, timeoutMs: number = 8000): Promise<
       // 429 / 403 = 触发限流，记录冷却期
       if (res.statusCode === 429 || res.statusCode === 403) {
         rateLimitedUntil = Date.now() + 10 * 60 * 1000;
-        console.warn(`[hltv] Liquipedia 限流(${res.statusCode})，冷却10分钟`);
+        logger.warn(`[hltv] Liquipedia 限流(${res.statusCode})，冷却10分钟`);
         finish('');
         res.resume();
         return;
@@ -687,7 +689,7 @@ async function fetchLiquipedia(page: string, timeoutMs: number = 8000): Promise<
         if (body.startsWith('<!DOCTYPE') || body.startsWith('<html')) {
           if (/Rate Limited/i.test(body)) {
             rateLimitedUntil = Date.now() + 10 * 60 * 1000;
-            console.warn('[hltv] Liquipedia 反爬页面检测到限流，冷却10分钟');
+            logger.warn('[hltv] Liquipedia 反爬页面检测到限流，冷却10分钟');
           }
           finish('');
           return;

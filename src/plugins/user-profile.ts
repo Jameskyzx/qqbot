@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PluginContext } from '../types';
+import { writeJsonFileAtomic } from './runtime-storage';
 
 type ProfileChatType = 'group' | 'private';
 type ProfileField = 'teams' | 'players' | 'maps' | 'tone' | 'note';
@@ -169,10 +170,7 @@ function loadStore(): UserProfileStore {
 
 function saveStore(store: UserProfileStore): void {
   const filepath = storePath();
-  fs.mkdirSync(path.dirname(filepath), { recursive: true });
-  const tmp = `${filepath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ version: 1, profiles: store.profiles }, null, 2), 'utf-8');
-  fs.renameSync(tmp, filepath);
+  writeJsonFileAtomic(filepath, { version: 1, profiles: store.profiles }, { trailingNewline: false });
   diskWrites++;
   lastSavedAt = Date.now();
   lastError = '';

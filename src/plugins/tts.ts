@@ -5,6 +5,10 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { spawn } from 'child_process';
 import { AIConfig } from '../types';
+import { createLogger } from '../logger';
+import { parseLocalCommand } from './local-command';
+
+const logger = createLogger('TTS');
 
 /**
  * TTS语音合成 - 使用MiMo-V2.5-TTS / VoiceClone
@@ -464,7 +468,28 @@ function runLocalVoiceGeneration(
       fs.writeFileSync(textFile, text, 'utf-8');
 
       localTtsRuns++;
-      const child = spawn(command, {
+      const parsedCommand = config.tts_local_command_shell === false ? parseLocalCommand(command) : null;
+      if (config.tts_local_command_shell === false && !parsedCommand) {
+        setVoiceError('local tts command parse failed');
+        finish(null);
+        return;
+      }
+      const child = parsedCommand
+        ? spawn(parsedCommand.file, parsedCommand.args, {
+          cwd: PROJECT_ROOT,
+          env: {
+            ...process.env,
+            QQBOT_TTS_TEXT: text,
+            QQBOT_TTS_TEXT_FILE: textFile,
+            QQBOT_TTS_OUTPUT: fallbackOutput,
+            QQBOT_TTS_VOICE_SAMPLE: sample.ready ? sample.filepath : '',
+            QQBOT_TTS_PROMPT: config.tts_voice_prompt || '',
+            QQBOT_TTS_FORMAT: 'wav',
+          },
+          shell: false,
+          windowsHide: true,
+        })
+        : spawn(command, {
         cwd: PROJECT_ROOT,
         env: {
           ...process.env,
@@ -608,7 +633,7 @@ async function runApiVoiceGeneration(
   }
 
   if (lastError) {
-    console.error('[TTS] API生成失败:', lastError.message);
+    logger.error('[TTS] API生成失败:', lastError);
   }
   return null;
 }

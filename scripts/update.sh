@@ -13,6 +13,7 @@ cd "$ROOT_DIR"
 
 MODE="safe"
 RUN_SMOKE="${WANJIER_UPDATE_SMOKE:-1}"
+RUN_API_TEST="${WANJIER_UPDATE_API_TEST:-1}"
 RUN_DAILY_IMAGE_AUDIT="${WANJIER_UPDATE_DAILY_IMAGE_AUDIT:-1}"
 STRICT_DAILY_IMAGES="${WANJIER_DAILY_IMAGE_AUDIT_STRICT:-0}"
 WRITE_DAILY_IMAGE_TEMPLATE="${WANJIER_UPDATE_DAILY_IMAGE_TEMPLATE:-1}"
@@ -26,6 +27,12 @@ for arg in "$@"; do
       ;;
     --no-smoke)
       RUN_SMOKE="0"
+      ;;
+    --api-test)
+      RUN_API_TEST="1"
+      ;;
+    --no-api-test)
+      RUN_API_TEST="0"
       ;;
     --image-audit)
       RUN_DAILY_IMAGE_AUDIT="1"
@@ -44,9 +51,10 @@ for arg in "$@"; do
       WRITE_DAILY_IMAGE_TEMPLATE="0"
       ;;
     -h|--help)
-      echo "用法: bash scripts/update.sh [--hard] [--smoke|--no-smoke] [--image-audit|--no-image-audit] [--strict-images] [--image-template|--no-image-template]"
+      echo "用法: bash scripts/update.sh [--hard] [--smoke|--no-smoke] [--api-test|--no-api-test] [--image-audit|--no-image-audit] [--strict-images] [--image-template|--no-image-template]"
       echo "  默认: 安全 ff-only 拉取，不覆盖本地改动"
       echo "  --hard: 备份配置后强制 reset 到 origin/main，用于 VPS 明确对齐远程"
+      echo "  --no-api-test: 跳过真实远端接口探针，只做本地构建/doctor/smoke"
       echo "  --strict-images: 每日图片池未达到每对象200张时终止更新"
       echo "  --no-image-template: 不写 data/daily-beauty-images.todo.json"
       exit 0
@@ -63,6 +71,7 @@ echo "  玩机器 Bot VPS 更新"
 echo "========================================="
 echo "模式: $MODE"
 echo "完整smoke: $RUN_SMOKE"
+echo "真实接口探针: $RUN_API_TEST"
 echo "每日图片审计: $RUN_DAILY_IMAGE_AUDIT strict=$STRICT_DAILY_IMAGES"
 echo "每日待补模板: $WRITE_DAILY_IMAGE_TEMPLATE"
 echo "目标分支: origin/main"
@@ -182,7 +191,11 @@ npm ci
 
 echo "[6/9] 构建与自检..."
 npm run build
-assert_chat_api_ready
+if [ "$RUN_API_TEST" = "1" ]; then
+  assert_chat_api_ready
+else
+  echo "  跳过真实接口探针（WANJIER_UPDATE_API_TEST=0 或 --no-api-test）"
+fi
 npm run doctor
 if npm run | grep -q "data:test"; then
   npm run data:test

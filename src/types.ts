@@ -205,6 +205,8 @@ export interface AIConfig {
   stt_record_format?: 'mp3' | 'wav' | 'amr' | 'm4a';
   /** 本地语音听写命令，使用环境变量QQBOT_STT_INPUT/QQBOT_STT_OUTPUT */
   stt_local_command?: string;
+  /** 本地语音听写命令是否通过 shell 执行；false 时按 argv 安全拆分执行 */
+  stt_local_command_shell?: boolean;
   /** 本地语音听写命令超时毫秒 */
   stt_local_timeout_ms?: number;
   /** 单次最多听写语音条数 */
@@ -239,6 +241,8 @@ export interface AIConfig {
   tts_provider?: 'api' | 'local' | 'auto';
   /** 本地TTS命令，使用环境变量QQBOT_TTS_TEXT/QQBOT_TTS_TEXT_FILE/QQBOT_TTS_OUTPUT */
   tts_local_command?: string;
+  /** 本地TTS命令是否通过 shell 执行；false 时按 argv 安全拆分执行 */
+  tts_local_command_shell?: boolean;
   /** 本地TTS输出目录，相对项目根目录或绝对路径 */
   tts_local_output_dir?: string;
   /** 本地TTS命令超时毫秒 */

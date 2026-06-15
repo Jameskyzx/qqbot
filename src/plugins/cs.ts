@@ -25,9 +25,9 @@ import { detectCsTopicQuery, detectFuzzyCommand, FuzzyCommandKey } from './fuzzy
 import { buildCsPrewarmPlanReport, buildCsPrewarmReport } from './cs-prewarm';
 import { buildCsFactTypeCoverageLines, formatCsFactTypeCoverageBlock } from './cs-fact-coverage';
 
-type CsNaturalRoute =
-  | { sub: 'brief' | 'match' | 'results' | 'ranking'; subject: string; natural: boolean }
-  | { sub: 'team' | 'player' | 'search'; subject: string; natural: boolean };
+type CsIntentRoute =
+  | { sub: 'brief' | 'match' | 'results' | 'ranking'; subject: string }
+  | { sub: 'team' | 'player' | 'search'; subject: string };
 
 type EvidenceTarget = 'all' | 'matches' | 'results' | 'ranking' | 'match' | 'team' | 'player';
 
@@ -406,7 +406,7 @@ function buildCsFactVerifyReport(args: string[]): string {
   return formatFactVerifyForKey(parsed.target, parsed.subject);
 }
 
-function cacheTargetsForCsRoute(route: CsNaturalRoute): CsIntentCacheTarget[] {
+function cacheTargetsForCsRoute(route: CsIntentRoute): CsIntentCacheTarget[] {
   if (route.sub === 'brief') {
     return [
       { label: '赛程/正在打', key: 'matches', evidenceTarget: 'matches', subject: '' },
@@ -440,7 +440,7 @@ function formatIntentCacheTarget(target: CsIntentCacheTarget): string {
   return `- ${target.label} [${target.key}]: stale | expired=${snapshot.expiredSeconds}s age=${snapshot.ageSeconds}s${source}；只能当旧线索，先刷新；证据卡 ${evidenceCommand}`;
 }
 
-function formatIntentPrewarmAdvice(route: CsNaturalRoute, targets: CsIntentCacheTarget[], needsRefresh: boolean): string {
+function formatIntentPrewarmAdvice(route: CsIntentRoute, targets: CsIntentCacheTarget[], needsRefresh: boolean): string {
   if (!needsRefresh) return '预热建议: 目标缓存都是 fresh，直接问通常会很快。';
   if (targets.length === 1) {
     const target = targets[0];
@@ -452,7 +452,7 @@ function formatIntentPrewarmAdvice(route: CsNaturalRoute, targets: CsIntentCache
   return '预热建议: 多个目标有 stale/miss，管理员先 /cs warm plan all 看总请求数，再按需 /cs warm all。';
 }
 
-function commandForCsRoute(route: CsNaturalRoute): string {
+function commandForCsRoute(route: CsIntentRoute): string {
   if (route.sub === 'brief') return '/cs brief';
   if (route.sub === 'match') {
     const matchId = extractMatchIdFromSubject(route.subject);
@@ -467,9 +467,9 @@ function commandForCsRoute(route: CsNaturalRoute): string {
 
 function formatCsIntentReport(input: string): string {
   const clean = (input || '').trim();
-  if (!clean) return '/cs intent <自然语言问题>\n例: /cs intent donk最近状态怎么样';
+  if (!clean) return '/cs intent <问法文本>\n例: /cs intent donk最近状态怎么样';
 
-  const route = routeNaturalCsQuery(clean);
+  const route = routeCsIntentQuery(clean);
   const topic = detectCsTopicQuery(clean);
   const topicTargets = [
     topic.needsMatches ? 'matches' : '',
@@ -485,9 +485,9 @@ function formatCsIntentReport(input: string): string {
   if (!route) {
     lines.push(
       '路由: 不会被 CS 实时插件直接接管。',
-      `AI实时注入预测: ${topicTargets.join(' / ') || '无'}`,
+      `事实类型预测: ${topicTargets.join(' / ') || '无'}`,
       topicTargets.length > 0
-        ? '建议: 这类问法可能仍会给 AI 注入实时参考；要确定当前事实，先 /cs verify all 或 /cs brief check。'
+        ? '建议: 普通聊天不会自动接管或注入实时参考；要查当前事实，显式用 /cs verify all 或 /cs brief check。'
         : '建议: 更像稳定战术/闲聊/玩机器语态问题，适合走普通 AI/知识库；如果想查实时数据，改成“现在排名/今天比赛/donk最近状态”。',
       '边界: 未路由不代表没有答案，只代表这条不会直接走 /cs match/results/ranking/team/player。',
     );
@@ -500,60 +500,16 @@ function formatCsIntentReport(input: string): string {
   const miss = targets.length - fresh - stale;
   const predictedCommand = commandForCsRoute(route);
   lines.push(
-    `路由: ${route.natural ? '自然问法' : '命令'} -> ${route.sub}${route.subject ? ` (${route.subject})` : ''}`,
+    `路由: 问法预检 -> ${route.sub}${route.subject ? ` (${route.subject})` : ''}`,
     `预计命令: ${predictedCommand}`,
     `缓存判断: fresh ${fresh} / stale ${stale} / miss ${miss}`,
     ...targets.map(formatIntentCacheTarget),
     formatIntentPrewarmAdvice(route, targets, stale + miss > 0),
-    `AI实时注入预测: ${topicTargets.join(' / ') || '无；此问法会由 CS 插件直接回答'}`,
+    `普通聊天自动触发: 已关闭；需要实时数据请显式执行 ${predictedCommand}`,
+    `事实类型预测: ${topicTargets.join(' / ') || targets.map((target) => target.evidenceTarget).join(' / ') || '无'}`,
     '边界: fresh 可作为当前快照；stale 只能说旧线索；miss 不能反推“没有比赛/没有赛果/没有变动”。',
   );
   return lines.join('\n');
-}
-
-function formatNaturalFactAppendix(route: CsNaturalRoute | null): string {
-  if (!route?.natural) return '';
-  const targets = cacheTargetsForCsRoute(route);
-  if (targets.length === 0) return '';
-  const rows = targets.map((target) => ({
-    target,
-    snapshot: inspectHltvCacheEntry(target.key),
-  }));
-  const fresh = rows.filter((row) => row.snapshot?.status === 'fresh').length;
-  const stale = rows.filter((row) => row.snapshot?.status === 'stale').length;
-  const miss = rows.filter((row) => !row.snapshot).length;
-  const first = rows[0]?.target;
-  const verify = targets.length === 1 && first
-    ? `/cs verify ${commandArgsForEvidenceTarget(first.evidenceTarget, first.subject)}`.trim()
-    : '/cs verify all';
-  const evidence = targets.length === 1 && first
-    ? evidenceCommandForTarget(first.evidenceTarget, first.subject)
-    : '/cs evidence all';
-  const freshness = rows.map((row) => {
-    if (!row.snapshot) return `${row.target.label}=miss`;
-    if (row.snapshot.status === 'fresh') return `${row.target.label}=fresh(${row.snapshot.ageSeconds}s)`;
-    return `${row.target.label}=stale(expired ${row.snapshot.expiredSeconds}s)`;
-  }).join(' / ');
-  const action = stale === 0 && miss === 0
-    ? '可当当前快照，但只说上面资料明确出现的事实。'
-    : fresh > 0
-      ? '只把 fresh 项当当前快照；stale 当旧线索，miss 只代表本地无快照。'
-      : '不能包装成“现在/最新/刚查HLTV”；需要当前结论先补证。';
-  const refresh = rows
-    .filter((row) => row.snapshot?.status !== 'fresh')
-    .map((row) => `${warmPlanCommandForEvidenceTarget(row.target.evidenceTarget, row.target.subject)} -> ${warmCommandForEvidenceTarget(row.target.evidenceTarget, row.target.subject)}`)
-    .filter((item, index, all) => all.indexOf(item) === index)
-    .join('；');
-  return [
-    `事实预检: fresh ${fresh} / stale ${stale} / miss ${miss}；${freshness || '无目标'}`,
-    `回复边界: ${action}`,
-    `复核: ${verify}；证据: ${evidence}${refresh ? `；补证: 管理员 ${refresh}` : ''}`,
-  ].join('\n');
-}
-
-function appendNaturalFactPreflight(text: string, route: CsNaturalRoute | null): string {
-  const appendix = formatNaturalFactAppendix(route);
-  return appendix ? `${text}\n\n${appendix}` : text;
 }
 
 function normalizeNaturalText(text: string): string {
@@ -606,22 +562,22 @@ function extractSubjectFromNatural(rawText: string): string {
   return stripNaturalIntentWords(text);
 }
 
-function routeNaturalCsQuery(rawText: string): CsNaturalRoute | null {
+function routeCsIntentQuery(rawText: string): CsIntentRoute | null {
   const text = normalizeNaturalText(rawText);
   if (!text || text.length > 120) return null;
   const matchId = extractMatchIdFromNatural(rawText);
-  if (matchId) return { sub: 'match', subject: matchId, natural: true };
+  if (matchId) return { sub: 'match', subject: matchId };
 
   const fuzzy = detectFuzzyCommand(text);
   const subject = extractSubjectFromNatural(text);
 
-  if (fuzzy === 'csbrief') return { sub: 'brief', subject: '', natural: true };
-  if (fuzzy === 'match') return { sub: 'match', subject: '', natural: true };
-  if (fuzzy === 'ranking') return { sub: 'ranking', subject: '', natural: true };
-  if (fuzzy === 'cs2news') return { sub: 'results', subject: '', natural: true };
+  if (fuzzy === 'csbrief') return { sub: 'brief', subject: '' };
+  if (fuzzy === 'match') return { sub: 'match', subject: '' };
+  if (fuzzy === 'ranking') return { sub: 'ranking', subject: '' };
+  if (fuzzy === 'cs2news') return { sub: 'results', subject: '' };
 
   if (/^(?:cs|cs2|hltv)?\s*(?:短报|日报|看点|总结)$/i.test(text)) {
-    return { sub: 'brief', subject: '', natural: true };
+    return { sub: 'brief', subject: '' };
   }
 
   const realtimeIntent = /(?:最新|现在|当前|目前|今天|今日|最近|近期|状态|表现|怎么样|怎样|如何|数据|stats?|排名|排行|阵容|转会|战绩)/i.test(text);
@@ -631,17 +587,17 @@ function routeNaturalCsQuery(rawText: string): CsNaturalRoute | null {
   const profileIntent = /(?:状态|表现|怎么样|怎样|如何|数据|stats?|rating|adr|kast|阵容|roster|转会|战绩)/i.test(text);
   if (realtimeIntent && subject && profileIntent && !explicitMatchIntent && !explicitResultsIntent && !explicitRankingIntent) {
     if (/(?:选手|player|职业哥|哥们|rating|adr|kast)/i.test(text) || looksLikeKnownPlayer(subject)) {
-      return { sub: 'player', subject, natural: true };
+      return { sub: 'player', subject };
     }
     if (/(?:队伍|战队|team|阵容|roster|转会|战绩)/i.test(text) || looksLikeKnownTeam(subject)) {
-      return { sub: 'team', subject, natural: true };
+      return { sub: 'team', subject };
     }
   }
 
   const topic = detectCsTopicQuery(text);
-  if (topic.needsRanking) return { sub: 'ranking', subject: '', natural: true };
-  if (topic.needsResults) return { sub: 'results', subject: '', natural: true };
-  if (topic.needsMatches) return { sub: 'match', subject: '', natural: true };
+  if (topic.needsRanking) return { sub: 'ranking', subject: '' };
+  if (topic.needsResults) return { sub: 'results', subject: '' };
+  if (topic.needsMatches) return { sub: 'match', subject: '' };
   return null;
 }
 
@@ -667,14 +623,12 @@ export const csPlugin: Plugin = {
   name: 'cs',
   description: 'CS2/HLTV实时数据聚合入口',
   handler: async (ctx) => {
-    const naturalRoute = ctx.command ? null : routeNaturalCsQuery(ctx.rawText);
-    if (ctx.command !== 'cs' && ctx.command !== 'cs2' && ctx.command !== 'hltv' && !naturalRoute) return false;
+    if (ctx.command !== 'cs' && ctx.command !== 'cs2' && ctx.command !== 'hltv') return false;
 
     const config = ctx.bot.getConfig();
-    const sub = naturalRoute?.sub || (ctx.args[0] || 'brief').toLowerCase();
-    const rest = naturalRoute ? [] : ctx.args.slice(1);
-    const subject = naturalRoute?.subject || normalizeSubject(rest);
-    const naturalPrefix = naturalRoute ? 'CS实时问答' : '';
+    const sub = (ctx.args[0] || 'brief').toLowerCase();
+    const rest = ctx.args.slice(1);
+    const subject = normalizeSubject(rest);
 
     try {
       const wantsTodayCheck = ['check', 'dry-run', 'plan', '预检', '检查'].includes((rest[0] || '').toLowerCase());
@@ -689,7 +643,7 @@ export const csPlugin: Plugin = {
       }
 
       if (sub === 'brief' || sub === 'today' || sub === '日报' || sub === '短报') {
-        ctx.reply(appendNaturalFactPreflight(await dataFetchers.brief(), naturalRoute));
+        ctx.reply(await dataFetchers.brief());
         return true;
       }
 
@@ -697,31 +651,31 @@ export const csPlugin: Plugin = {
         const matchId = extractMatchIdFromSubject(subject);
         if (matchId) {
           const value = await dataFetchers.matchDetail(matchId);
-          const text = value ? `${naturalPrefix ? `${naturalPrefix} | ` : ''}CS单场详情:\n${withCacheFootnote(value, `match:${matchId}`)}` : `没拉到 match ${matchId} 的单场详情。可以先 /cs results 看最近赛果里的 matchid。`;
-          ctx.reply(appendNaturalFactPreflight(text, naturalRoute));
+          const text = value ? `CS单场详情:\n${withCacheFootnote(value, `match:${matchId}`)}` : `没拉到 match ${matchId} 的单场详情。可以先 /cs results 看最近赛果里的 matchid。`;
+          ctx.reply(text);
           return true;
         }
         const value = await dataFetchers.matches();
-        const text = value ? `${naturalPrefix ? `${naturalPrefix} | ` : ''}当前/即将比赛:\n${withCacheFootnote(value, 'matches')}` : '没拉到比赛数据，先跑 /cs status 看数据源。';
-        ctx.reply(appendNaturalFactPreflight(text, naturalRoute));
+        const text = value ? `当前/即将比赛:\n${withCacheFootnote(value, 'matches')}` : '没拉到比赛数据，先跑 /cs status 看数据源。';
+        ctx.reply(text);
         return true;
       }
 
       if (sub === 'results' || sub === 'result' || sub === 'news' || sub === '战报' || sub === '赛果') {
         const value = await dataFetchers.results();
-        if (value) ctx.reply(appendNaturalFactPreflight(`${naturalPrefix ? `${naturalPrefix} | ` : ''}最近赛果:\n${withCacheFootnote(value, 'results')}`, naturalRoute));
+        if (value) ctx.reply(`最近赛果:\n${withCacheFootnote(value, 'results')}`);
         else {
           const searched = await dataFetchers.search(subject || 'CS2 recent match results HLTV');
           const text = searched ? `CS近况:\n${searched}` : '没搜到新赛果，可能是网络或外站限流。';
-          ctx.reply(appendNaturalFactPreflight(text, naturalRoute));
+          ctx.reply(text);
         }
         return true;
       }
 
       if (sub === 'ranking' || sub === 'rank' || sub === 'top' || sub === '排名') {
         const value = await dataFetchers.ranking();
-        const text = value ? `${naturalPrefix ? `${naturalPrefix} | ` : ''}CS2战队排名:\n${withCacheFootnote(value, 'ranking')}` : '排名没拉到，先跑 /cs status 看数据源。';
-        ctx.reply(appendNaturalFactPreflight(text, naturalRoute));
+        const text = value ? `CS2战队排名:\n${withCacheFootnote(value, 'ranking')}` : '排名没拉到，先跑 /cs status 看数据源。';
+        ctx.reply(text);
         return true;
       }
 
@@ -733,8 +687,8 @@ export const csPlugin: Plugin = {
         const value = await dataFetchers.team(subject);
         const fallback = value || await dataFetchers.search(`${subject} CS2 roster ranking latest`);
         const cacheKey = getCsProfileCacheKey('team', subject);
-        const text = fallback ? `${naturalPrefix ? `${naturalPrefix} | ` : ''}队伍数据:\n${value ? withCacheFootnote(fallback, cacheKey) : fallback}` : `没找到「${subject}」的可靠队伍数据。`;
-        ctx.reply(appendNaturalFactPreflight(text, naturalRoute));
+        const text = fallback ? `队伍数据:\n${value ? withCacheFootnote(fallback, cacheKey) : fallback}` : `没找到「${subject}」的可靠队伍数据。`;
+        ctx.reply(text);
         return true;
       }
 
@@ -746,8 +700,8 @@ export const csPlugin: Plugin = {
         const value = await dataFetchers.player(subject);
         const fallback = value || await dataFetchers.search(`${subject} CS2 stats latest`);
         const cacheKey = getCsProfileCacheKey('player', subject);
-        const text = fallback ? `${naturalPrefix ? `${naturalPrefix} | ` : ''}选手数据:\n${value ? withCacheFootnote(fallback, cacheKey) : fallback}` : `没找到「${subject}」的可靠选手数据。`;
-        ctx.reply(appendNaturalFactPreflight(text, naturalRoute));
+        const text = fallback ? `选手数据:\n${value ? withCacheFootnote(fallback, cacheKey) : fallback}` : `没找到「${subject}」的可靠选手数据。`;
+        ctx.reply(text);
         return true;
       }
 
@@ -857,7 +811,7 @@ export const csPlugin: Plugin = {
         '/cs evidence [all|matches|results|ranking|match <id>|team <队伍>|player <选手>] - 来源链接/缓存证据卡',
         '/cs hltvcheck <matchid> - 只读活链路核验 HLTV 比赛页候选，不写事实缓存',
         '/cs verify [matches|results|ranking|match <id>|team <队伍>|player <选手>|all] - 只读预检事实回复能否当当前结论',
-        '/cs intent <自然语言问题> - 只读预检问法会不会走实时插件、命中哪个缓存键',
+        '/cs intent <问法文本> - 只读预检显式 /cs 命令和缓存键',
         '/cs health - 实测数据链路',
       ].join('\n'));
       return true;
@@ -870,7 +824,7 @@ export const csPlugin: Plugin = {
 };
 
 export const __test = {
-  routeNaturalCsQuery,
+  routeCsIntentQuery,
   extractMatchIdFromSubject,
   parseEvidenceArgs,
   buildCsFactVerifyReport,

@@ -14,6 +14,7 @@ import { buildCsPrewarmPlan, prewarmCsDataForReport } from './cs-prewarm';
 import type { CsPrewarmPlanResult, CsPrewarmPlanRow, CsPrewarmResult } from './cs-prewarm';
 import { buildCsPlanFactTypeCoverageLines } from './cs-fact-coverage';
 import { webSearch } from './web-search';
+import { writeJsonFileAtomic } from './runtime-storage';
 
 type ReportChatType = 'group' | 'private';
 
@@ -117,10 +118,7 @@ function loadStore(): CsReportStore {
 
 function saveStore(store: CsReportStore): void {
   const filepath = storePath();
-  fs.mkdirSync(path.dirname(filepath), { recursive: true });
-  const tmp = `${filepath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf-8');
-  fs.renameSync(tmp, filepath);
+  writeJsonFileAtomic(filepath, store, { trailingNewline: false });
 }
 
 function formatShanghaiParts(date: Date): { dateKey: string; timeKey: string } {

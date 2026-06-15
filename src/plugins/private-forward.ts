@@ -1,5 +1,8 @@
 import { Bot } from '../bot';
 import { PrivateMessageEvent, OneBotEvent } from '../types';
+import { createLogger } from '../logger';
+
+const logger = createLogger('Private');
 
 /**
  * 私聊转发插件
@@ -19,7 +22,7 @@ export function registerPrivateForward(bot: Bot): void {
     const config = bot.getConfig();
     const name = e.sender.nickname || String(e.user_id);
 
-    console.log(`[私聊] ${name}(${e.user_id}): ${e.raw_message}`);
+    logger.info(`[私聊] ${name}(${e.user_id}): ${e.raw_message}`);
 
     // 转发给管理员
     if (config.admin_qq.length > 0) {
@@ -32,5 +35,5 @@ export function registerPrivateForward(bot: Bot): void {
     }
   });
 
-  console.log('[Private] 私聊日志/管理员转发已启用，私聊回复走主插件链');
+  logger.info('[Private] 私聊日志/管理员转发已启用，私聊回复走主插件链');
 }

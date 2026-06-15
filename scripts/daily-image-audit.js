@@ -67,11 +67,13 @@ function templateCards(targets) {
     title: target.label,
     tags: target.tags,
     urls: [],
+    files: [],
+    dirs: [],
   }));
 }
 
 function templateCsv(targets) {
-  const fieldNames = ['key', 'nick', 'name', 'weapon', 'skin', 'characterKey', 'characterName', 'itemKey', 'itemName', 'title'];
+  const fieldNames = ['key', 'nick', 'name', 'weapon', 'skin', 'characterKey', 'characterName', 'itemKey', 'itemName', 'element', 'region', 'title'];
   const header = ['kind', 'label', 'current', 'missing', 'minImages', ...fieldNames, 'tags', 'urls'];
   const lines = [header.map(csvCell).join(',')];
   for (const target of targets) {

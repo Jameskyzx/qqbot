@@ -1,5 +1,8 @@
 import { Plugin, NoticeEvent } from '../types';
 import { Bot } from '../bot';
+import { createLogger } from '../logger';
+
+const logger = createLogger('Welcome');
 
 /**
  * 入群欢迎插件
@@ -58,7 +61,7 @@ export function registerWelcomeListener(bot: Bot): void {
     });
   });
 
-  console.log('[Welcome] 入群欢迎已启用');
+  logger.info('[Welcome] 入群欢迎已启用');
 }
 
 // 兼容插件系统的空插件（实际逻辑在 listener 中）

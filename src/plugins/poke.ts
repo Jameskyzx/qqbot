@@ -1,6 +1,9 @@
 import { Bot } from '../bot';
 import { NoticeEvent } from '../types';
+import { createLogger } from '../logger';
 import { getRandomKnowledgeLine } from './knowledge-base';
+
+const logger = createLogger('Poke');
 
 /**
  * 戳一戳回应插件
@@ -168,7 +171,7 @@ export function registerPokeListener(bot: Bot): void {
     }
   });
 
-  console.log('[Poke] 戳一戳回应已启用');
+  logger.info('[Poke] 戳一戳回应已启用');
 }
 
 export const __test = {

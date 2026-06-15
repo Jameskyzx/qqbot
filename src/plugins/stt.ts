@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { spawn } from 'child_process';
 import { AIConfig } from '../types';
+import { parseLocalCommand } from './local-command';
 
 const CACHE_DIR = path.resolve(__dirname, '..', '..', 'stt_cache');
 let cacheHits = 0;
@@ -638,7 +639,26 @@ function callLocalAudioModel(config: AIConfig, buffer: Buffer, mime: string, sou
       fs.writeFileSync(inputPath, buffer);
 
       localSttRuns++;
-      const child = spawn(command, {
+      const parsedCommand = config.stt_local_command_shell === false ? parseLocalCommand(command) : null;
+      if (config.stt_local_command_shell === false && !parsedCommand) {
+        setSttError('local stt command parse failed');
+        finish('');
+        return;
+      }
+      const child = parsedCommand
+        ? spawn(parsedCommand.file, parsedCommand.args, {
+          cwd: path.resolve(__dirname, '..', '..'),
+          env: {
+            ...process.env,
+            QQBOT_STT_INPUT: inputPath,
+            QQBOT_STT_OUTPUT: outputPath,
+            QQBOT_STT_MIME: mime,
+            QQBOT_STT_SOURCE: source,
+          },
+          shell: false,
+          windowsHide: true,
+        })
+        : spawn(command, {
         cwd: path.resolve(__dirname, '..', '..'),
         env: {
           ...process.env,

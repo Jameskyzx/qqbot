@@ -132,6 +132,75 @@ function listNewestMtime(dirRel, pattern) {
   return newest;
 }
 
+function checkDirectConsoleUsage() {
+  const srcDir = path.join(root, 'src');
+  const hits = [];
+  function walk(current) {
+    if (!fs.existsSync(current)) return;
+    for (const item of fs.readdirSync(current)) {
+      const filepath = path.join(current, item);
+      const stat = fs.statSync(filepath);
+      if (stat.isDirectory()) {
+        walk(filepath);
+        continue;
+      }
+      if (!filepath.endsWith('.ts')) continue;
+      const rel = path.relative(root, filepath).replace(/\\/g, '/');
+      if (rel === 'src/logger.ts') continue;
+      const lines = fs.readFileSync(filepath, 'utf-8').split(/\r?\n/);
+      for (let i = 0; i < lines.length; i++) {
+        if (/\bconsole\.(?:log|warn|error|info|debug)\s*\(/.test(lines[i])) {
+          hits.push(`${rel}:${i + 1}`);
+          if (hits.length >= 12) return;
+        }
+      }
+      if (hits.length >= 12) return;
+    }
+  }
+  walk(srcDir);
+  if (hits.length > 0) {
+    hard.push(`src 里仍有直接 console.*，请使用 createLogger: ${hits.join(', ')}`);
+  } else {
+    ok.push('src 日志已统一走 logger');
+  }
+}
+
+function checkAtomicJsonWritePolicy() {
+  const srcDir = path.join(root, 'src');
+  const hits = [];
+  function walk(current) {
+    if (!fs.existsSync(current)) return;
+    for (const item of fs.readdirSync(current)) {
+      const filepath = path.join(current, item);
+      const stat = fs.statSync(filepath);
+      if (stat.isDirectory()) {
+        walk(filepath);
+        continue;
+      }
+      if (!filepath.endsWith('.ts')) continue;
+      const rel = path.relative(root, filepath).replace(/\\/g, '/');
+      if (rel === 'src/plugins/runtime-storage.ts') continue;
+      const lines = fs.readFileSync(filepath, 'utf-8').split(/\r?\n/);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const writesJsonDirectly = /\bfs\.writeFileSync\s*\([^)]*JSON\.stringify/.test(line);
+        const renamesDirectly = /\bfs\.renameSync\s*\(/.test(line);
+        if (writesJsonDirectly || renamesDirectly) {
+          hits.push(`${rel}:${i + 1}`);
+          if (hits.length >= 12) return;
+        }
+      }
+      if (hits.length >= 12) return;
+    }
+  }
+  walk(srcDir);
+  if (hits.length > 0) {
+    hard.push(`src JSON/状态写盘请统一走 runtime-storage 原子写入: ${hits.join(', ')}`);
+  } else {
+    ok.push('src JSON/状态写盘已统一走 runtime-storage');
+  }
+}
+
 function checkConfig(config, example) {
   if (!isPlainObject(config)) {
     hard.push('config.json 不是 JSON 对象');
@@ -178,6 +247,25 @@ function checkConfig(config, example) {
   else if (loginInterval === 0) risk.push('login_check_interval_seconds=0，QQ登录态异常不会被主动发现');
   else if (loginInterval < 30) suggest.push('login_check_interval_seconds 低于30秒，可能给NapCat API带来不必要压力');
   else ok.push(`登录态检查间隔: ${loginInterval}s`);
+
+  const webPort = Number(config.web_admin_port || 0);
+  if (webPort > 0) {
+    const token = String(process.env.WANJIER_ADMIN_TOKEN || '').trim();
+    const host = String(process.env.WANJIER_WEB_ADMIN_HOST || '127.0.0.1').trim() || '127.0.0.1';
+    if (!Number.isSafeInteger(webPort) || webPort >= 65536) hard.push(`web_admin_port 不合法: ${config.web_admin_port}`);
+    else ok.push(`Web 管理后台端口: ${webPort}`);
+    if (!token) risk.push('web_admin_port 已启用但 WANJIER_ADMIN_TOKEN 未设置；除 /api/health 外后台 API 会拒绝访问');
+    else if (token.length < 16) risk.push('WANJIER_ADMIN_TOKEN 长度不足16位；后台 API 会拒绝访问');
+    else ok.push('Web 管理后台 token 看起来已设置');
+    if (host === '0.0.0.0' || host === '::') {
+      suggest.push('WANJIER_WEB_ADMIN_HOST 监听公网地址；建议只在反向代理/防火墙保护下使用');
+    } else {
+      ok.push(`Web 管理后台监听: ${host}`);
+    }
+    if (process.env.WANJIER_WEB_ADMIN_READONLY_PUBLIC === '1') {
+      risk.push('WANJIER_WEB_ADMIN_READONLY_PUBLIC=1；只读状态/日志/配置接口会开放，请确认有网络层保护');
+    }
+  }
 
   const apiKey = process.env.WANJIER_API_KEY || process.env.OPENAI_API_KEY || ai.api_key;
   if (hasUsableApiKey(apiKey)) ok.push('API Key 看起来已配置');
@@ -253,8 +341,14 @@ function main() {
   else ok.push('dist/index.js 存在');
 
   const newestSrc = listNewestMtime('src', /\.ts$/);
-  const distMtime = statMtime('dist/index.js');
-  if (newestSrc && distMtime && newestSrc > distMtime + 1000) risk.push('src 比 dist 新；需要重新 npm run build');
+  const newestDist = listNewestMtime('dist', /\.js$/) || statMtime('dist/index.js');
+  if (newestSrc && newestDist && newestSrc > newestDist + 1000) {
+    risk.push('src 比 dist 新；需要重新 npm run build');
+  } else if (newestSrc && newestDist) {
+    ok.push('dist JS 产物不早于最新 src');
+  }
+  checkDirectConsoleUsage();
+  checkAtomicJsonWritePolicy();
 
   if (!exists('knowledge/wanjier.md')) hard.push('knowledge/wanjier.md 缺失');
   else {

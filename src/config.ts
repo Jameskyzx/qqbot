@@ -1,11 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { AIConfig, BotConfig, PresetConfig } from './types';
+import { createLogger } from './logger';
+import { writeJsonFileAtomic } from './plugins/runtime-storage';
 
 export const CONFIG_PATH = path.resolve(__dirname, '..', 'config.json');
 export const CONFIG_VERSION = 20260609;
 
 type PlainObject = Record<string, unknown>;
+const log = createLogger('Config');
 
 const DEFAULT_AI_CONFIG: AIConfig = {
   api_url: '',
@@ -16,12 +19,12 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   presets: {},
   max_context_rounds: 30,
   max_context_messages: 50,
-  context_send_messages: 22,
-  max_tokens: 1400,
+  context_send_messages: 28,
+  max_tokens: 1600,
   temperature: 0.92,
   trigger_mode: 'command',
   trigger_keywords: [],
-  trigger_probability: 0.08,
+  trigger_probability: 0.12,
   passive_random_min_chars: 4,
   passive_random_allow_numeric: false,
   poke_reply_probability: 1,
@@ -54,7 +57,7 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   enable_knowledge: true,
   knowledge_max_chars: 2600,
   knowledge_force_style: true,
-  related_reply_probability: 0.65,
+  related_reply_probability: 0.72,
   persona_mode: 'first_person_bot',
   aggression_level: 'medium',
   knowledge_update_mode: 'reviewed_command',
@@ -91,10 +94,11 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   enable_tts: false,
   enable_stt: false,
   stt_model: '',
-  stt_provider: 'api',
+  stt_provider: 'auto',
   stt_payload_mode: 'auto',
   stt_record_format: 'mp3',
   stt_local_command: '',
+  stt_local_command_shell: true,
   stt_local_timeout_ms: 15000,
   stt_max_records: 1,
   stt_max_file_mb: 4,
@@ -104,14 +108,15 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   stt_cache_max_files: 3000,
   context_compression_defer_when_busy: true,
   enable_memory_retrieval: true,
-  memory_top_k: 4,
+  memory_top_k: 5,
   memory_min_similarity: 0.18,
-  memory_inject_max_chars: 700,
+  memory_inject_max_chars: 900,
   memory_max_messages_per_session: 700,
   memory_max_sessions_in_memory: 80,
   tts_model: 'mimo-v2.5-tts',
-  tts_provider: 'api',
+  tts_provider: 'auto',
   tts_local_command: '',
+  tts_local_command_shell: true,
   tts_local_output_dir: 'voice_cache/local',
   tts_local_timeout_ms: 15000,
   tts_clone_model: 'mimo-v2.5-tts-voiceclone',
@@ -351,6 +356,7 @@ function normalizeAiConfig(value: unknown): AIConfig {
     stt_payload_mode: validSttPayloadModes.has(sttPayloadMode) ? sttPayloadMode as AIConfig['stt_payload_mode'] : 'auto',
     stt_record_format: validSttRecordFormats.has(sttRecordFormat) ? sttRecordFormat as AIConfig['stt_record_format'] : 'mp3',
     stt_local_command: asString(raw.stt_local_command, DEFAULT_AI_CONFIG.stt_local_command || ''),
+    stt_local_command_shell: asBoolean(raw.stt_local_command_shell, DEFAULT_AI_CONFIG.stt_local_command_shell !== false),
     stt_local_timeout_ms: Math.floor(asNumber(raw.stt_local_timeout_ms, DEFAULT_AI_CONFIG.stt_local_timeout_ms || 15000, 3000, 120000)),
     stt_max_records: Math.floor(asNumber(raw.stt_max_records, DEFAULT_AI_CONFIG.stt_max_records || 1, 1, 4)),
     stt_max_file_mb: asNumber(raw.stt_max_file_mb, DEFAULT_AI_CONFIG.stt_max_file_mb || 4, 0.5, 16),
@@ -368,6 +374,7 @@ function normalizeAiConfig(value: unknown): AIConfig {
     tts_model: asString(raw.tts_model, DEFAULT_AI_CONFIG.tts_model || 'mimo-v2.5-tts'),
     tts_provider: validAudioProviders.has(ttsProvider) ? ttsProvider as AIConfig['tts_provider'] : 'api',
     tts_local_command: asString(raw.tts_local_command, DEFAULT_AI_CONFIG.tts_local_command || ''),
+    tts_local_command_shell: asBoolean(raw.tts_local_command_shell, DEFAULT_AI_CONFIG.tts_local_command_shell !== false),
     tts_local_output_dir: asString(raw.tts_local_output_dir, DEFAULT_AI_CONFIG.tts_local_output_dir || 'voice_cache/local'),
     tts_local_timeout_ms: Math.floor(asNumber(raw.tts_local_timeout_ms, DEFAULT_AI_CONFIG.tts_local_timeout_ms || 15000, 3000, 120000)),
     tts_clone_model: asString(raw.tts_clone_model, DEFAULT_AI_CONFIG.tts_clone_model || 'mimo-v2.5-tts-voiceclone'),
@@ -420,6 +427,7 @@ export function normalizeConfig(value: unknown): BotConfig {
   return {
     config_version: Math.floor(asNumber(value.config_version, 0, 0, Number.MAX_SAFE_INTEGER)) || undefined,
     ws_url: wsUrl,
+    web_admin_port: Math.floor(asNumber(value.web_admin_port, 0, 0, 65535)) || undefined,
     login_check_interval_seconds: Math.floor(asNumber(value.login_check_interval_seconds, 60, 0, 3600)),
     login_check_api_timeout_ms: Math.floor(asNumber(value.login_check_api_timeout_ms, 5000, 1000, 60000)),
     bot_qq: configuredBotQq,
@@ -455,15 +463,13 @@ export function loadConfig(configPath: string = CONFIG_PATH): BotConfig {
       const merged = mergeMissingFields(parsed, normalized);
       const newText = `${JSON.stringify(merged, null, 2)}\n`;
       if (newText !== originalText && newText.trim().length > 50) {
-        const tmp = `${configPath}.migrate.${process.pid}.tmp`;
-        fs.writeFileSync(tmp, newText, 'utf-8');
-        fs.renameSync(tmp, configPath);
-        console.log(`[Config] 自动补全了 config.json 中缺失的字段（已备份合并到原文件）`);
+        writeJsonFileAtomic(configPath, merged);
+        log.info('自动补全了 config.json 中缺失的字段（已备份合并到原文件）');
       }
     }
   } catch (err) {
     // 迁移失败不影响启动
-    console.warn(`[Config] 自动迁移跳过: ${err instanceof Error ? err.message : err}`);
+    log.warn(`自动迁移跳过: ${err instanceof Error ? err.message : err}`);
   }
 
   return normalized;
@@ -474,7 +480,7 @@ function mergeMissingFields(raw: PlainObject, normalized: BotConfig): PlainObjec
   const result: PlainObject = { ...raw };
 
   // 顶级字段
-  const topFields = ['config_version', 'login_check_interval_seconds', 'login_check_api_timeout_ms', 'bot_name', 'command_prefix'] as const;
+  const topFields = ['config_version', 'web_admin_port', 'login_check_interval_seconds', 'login_check_api_timeout_ms', 'bot_name', 'command_prefix'] as const;
   for (const key of topFields) {
     if (!(key in result) && normalized[key as keyof BotConfig] !== undefined) {
       result[key] = normalized[key as keyof BotConfig] as any;
@@ -517,8 +523,6 @@ export function updateConfigFile(
   }
 
   mutator(parsed);
-  const tmp = `${configPath}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(parsed, null, 2)}\n`, 'utf-8');
-  fs.renameSync(tmp, configPath);
+  writeJsonFileAtomic(configPath, parsed);
   return normalizeConfig(parsed);
 }

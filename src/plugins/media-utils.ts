@@ -1,5 +1,8 @@
 import * as fs from 'fs';
 import { AIConfig, MessageEvent, MessageSegment, PluginContext } from '../types';
+import { createLogger } from '../logger';
+
+const logger = createLogger('Media');
 
 /**
  * 媒体处理工具模块
@@ -145,13 +148,13 @@ export async function resolveOneBotImageSources(
       }
     } catch (err) {
       napcatErr = err instanceof Error ? err.message : String(err);
-      console.warn(`[Vision] get_image失败 source=${source.slice(0, 80)} err=${napcatErr}`);
+      logger.warn(`[Vision] get_image失败 source=${source.slice(0, 80)} err=${napcatErr}`);
     }
 
     if (bestSource) {
       resolved.push(bestSource);
     } else {
-      console.warn(`[Vision] get_image无可用source 退回原始 source=${source.slice(0, 80)} err=${napcatErr}`);
+      logger.warn(`[Vision] get_image无可用source 退回原始 source=${source.slice(0, 80)} err=${napcatErr}`);
       // 即使 get_image 失败，原始 source 可能仍然是可下载的 URL
       resolved.push(source);
     }

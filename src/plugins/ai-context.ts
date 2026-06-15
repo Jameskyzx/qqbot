@@ -23,6 +23,9 @@ import {
   inspectSessionIndexByUser,
   dropSessionIndexByUser,
 } from './embedding-store';
+import { createLogger } from '../logger';
+
+const logger = createLogger('Context');
 
 /**
  * 上下文管理器 - 内存+磁盘双层
@@ -108,7 +111,7 @@ export class ContextManager {
 
   private loadOnStartup(): void {
     const ids = listAllSessions();
-    console.log(`[Context] 磁盘有${ids.length}个历史会话(按需加载)`);
+    logger.info(`[Context] 磁盘有${ids.length}个历史会话(按需加载)`);
   }
 
   configure(options: {

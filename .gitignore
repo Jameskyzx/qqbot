@@ -10,6 +10,7 @@ stt_cache/
 image_cache/
 context_store/
 search_cache/
+authorized-images/
 
 # 贴纸目录里的图片不入仓（README.md 仍然入仓）
 stickers/*
@@ -20,6 +21,14 @@ voice_sample.mp3
 local-tts.sh
 local-stt.sh
 data/*.todo.json
+
+# 运行时状态数据（素材清单和预览图仍可按需入仓）
+data/cs-*.json
+data/user-profiles.json
+data/runtime-*.json
+data/*-cache.json
+data/*.bak.*
+data/*.tmp
 
 # 知识库运行时数据
 knowledge/audit.json

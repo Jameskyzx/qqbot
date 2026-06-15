@@ -1,6 +1,9 @@
 import WebSocket from 'ws';
 import { BotConfig, OneBotEvent, MessageSegment } from './types';
 import { sanitizeOutgoingMessage } from './message-sanitize';
+import { createLogger } from './logger';
+
+const log = createLogger('Bot');
 
 type ApiCallback = {
   resolve: (data: unknown) => void;
@@ -113,7 +116,7 @@ export class Bot {
           if (this.lastPingAt && this.lastPongAt < this.lastPingAt && now - this.lastPingAt > 90000) {
             this.staleHeartbeatReconnects++;
             this.lastError = 'WebSocket heartbeat stale';
-            console.error('[Bot] WebSocket 心跳超时，主动断开等待重连');
+            log.error('WebSocket 心跳超时，主动断开等待重连');
             this.ws.terminate();
             return;
           }
@@ -123,7 +126,7 @@ export class Bot {
           this.ws.ping();
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          console.error('[Bot] 心跳发送失败:', message);
+          log.error('心跳发送失败:', message);
         }
       }
     }, 30000);
@@ -143,7 +146,7 @@ export class Bot {
 
     this.connecting = true;
     const poolInfo = this.wsUrlPool.length > 1 ? ` [pool ${this.currentPoolIdx + 1}/${this.wsUrlPool.length}]` : '';
-    console.log(`[Bot] 正在连接 ${this.currentWsUrl}${poolInfo} ...`);
+    log.info(`正在连接 ${this.currentWsUrl}${poolInfo} ...`);
     const ws = new WebSocket(this.currentWsUrl);
     this.ws = ws;
 
@@ -154,7 +157,7 @@ export class Bot {
       this.lastPongAt = Date.now();
       this.lastError = '';
       this.framesAtConnectionOpen = this.framesReceived;
-      console.log('[Bot] ✅ WebSocket 连接成功！');
+      log.info('WebSocket 连接成功');
       // 定时发送心跳保持连接活跃
       this.startHeartbeat();
       this.ensureLoginCheckTimer(true);
@@ -179,7 +182,7 @@ export class Bot {
         // 处理事件
         this.dispatchEvent(parsed as OneBotEvent);
       } catch (err) {
-        console.error('[Bot] 解析消息失败:', err);
+        log.error('解析消息失败:', err);
       }
     });
 
@@ -203,7 +206,7 @@ export class Bot {
         this.consecutiveEarlyDisconnects++;
         if (this.consecutiveEarlyDisconnects >= 3) {
           this.lastConnectionHint = `连续${this.consecutiveEarlyDisconnects}次WebSocket很快断开，常见原因是NapCat未完成QQ登录、QQ掉线、OneBot配置未生效或端口映射不对`;
-          console.error(`[Bot] ${this.lastConnectionHint}。先看 docker logs napcat，再进 WebUI 扫码/重新登录。`);
+          log.error(`${this.lastConnectionHint}。先看 docker logs napcat，再进 WebUI 扫码/重新登录。`);
         }
       } else {
         this.consecutiveEarlyDisconnects = 0;
@@ -212,14 +215,14 @@ export class Bot {
       if (this.manuallyClosed) return;
 
       const reasonText = reason.length > 0 ? ` reason=${reason.toString()}` : '';
-      console.log(`[Bot] 连接断开 code=${code}${reasonText}，${Math.round(this.reconnectInterval / 1000)}秒后重连...`);
+      log.info(`连接断开 code=${code}${reasonText}，${Math.round(this.reconnectInterval / 1000)}秒后重连...`);
       this.scheduleReconnect();
     });
 
     ws.on('error', (err) => {
       this.connecting = false;
       this.lastError = err.message;
-      console.error('[Bot] WebSocket 错误:', err.message);
+      log.error('WebSocket 错误:', err.message);
     });
   }
 
@@ -230,7 +233,7 @@ export class Bot {
       this.currentPoolIdx = (this.currentPoolIdx + 1) % this.wsUrlPool.length;
       this.currentWsUrl = this.wsUrlPool[this.currentPoolIdx];
       this.consecutiveEarlyDisconnects = 0;
-      console.log(`[Bot] 切换到备用 ws_url: ${this.currentWsUrl}`);
+      log.info(`切换到备用 ws_url: ${this.currentWsUrl}`);
     }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -332,7 +335,7 @@ export class Bot {
     this.consecutiveEarlyDisconnects = 0;
     this.lastConnectionHint = '';
     if (!previousOk) {
-      console.log(`[Bot] 登录态检查恢复: QQ${this.lastLoginUserId || '-'} ${this.lastLoginNickname || ''}`.trim());
+      log.info(`登录态检查恢复: QQ${this.lastLoginUserId || '-'} ${this.lastLoginNickname || ''}`.trim());
     }
   }
 
@@ -341,7 +344,7 @@ export class Bot {
     this.lastLoginError = message || '登录态检查失败';
     this.loginCheckFailures++;
     if (previousOk || this.loginCheckFailures === 1 || this.loginCheckFailures % 5 === 0) {
-      console.error(`[Bot] 登录态检查失败(${this.loginCheckFailures}): ${this.lastLoginError}。NapCat可能还在，但QQ可能已下线；优先去WebUI扫码/重新登录。`);
+      log.error(`登录态检查失败(${this.loginCheckFailures}): ${this.lastLoginError}。NapCat可能还在，但QQ可能已下线；优先去WebUI扫码/重新登录。`);
     }
   }
 
@@ -350,7 +353,7 @@ export class Bot {
     this.lastLoginOk = false;
     this.lastLoginError = message || 'WebSocket 已断开';
     if (wasOk) {
-      console.error(`[Bot] 登录态已失效: ${this.lastLoginError}`);
+      log.error(`登录态已失效: ${this.lastLoginError}`);
     }
   }
 
@@ -393,7 +396,7 @@ export class Bot {
       try {
         handler(event);
       } catch (err) {
-        console.error('[Bot] 事件处理器异常:', err);
+        log.error('事件处理器异常:', err);
       }
     }
   }
@@ -423,7 +426,7 @@ export class Bot {
       if (ok) return true;
       const retryMsg = this.retryableMessage(msg);
       if (!retryMsg) return false;
-      console.warn(`[Bot] 群${groupId} 消息发送失败，重试: ${this.describeMessage(msg)} -> ${this.describeMessage(retryMsg)}`);
+      log.warn(`群${groupId} 消息发送失败，重试: ${this.describeMessage(msg)} -> ${this.describeMessage(retryMsg)}`);
       await delay(700);
       return this.sendGroupMessageBatchOnce(groupId, retryMsg, onMessageId);
     });
@@ -436,7 +439,7 @@ export class Bot {
     }, this.sendTimeoutMs(msg)).then((res: any) => {
       if (typeof res?.retcode === 'number' && res.retcode !== 0) {
         this.groupSendFailures++;
-        console.error(`[Bot] 发送群消息失败: 群${groupId} ${this.describeMessage(msg)} retcode=${res.retcode} ${res.message || res.wording || ''}`);
+        log.error(`发送群消息失败: 群${groupId} ${this.describeMessage(msg)} retcode=${res.retcode} ${res.message || res.wording || ''}`);
         return false;
       }
 
@@ -448,7 +451,7 @@ export class Bot {
     }).catch((err) => {
       this.groupSendFailures++;
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[Bot] 发送群消息异常: 群${groupId} ${this.describeMessage(msg)} ${errMsg}`);
+      log.error(`发送群消息异常: 群${groupId} ${this.describeMessage(msg)} ${errMsg}`);
       return false;
     });
   }
@@ -478,7 +481,7 @@ export class Bot {
       if (ok) return true;
       const retryMsg = this.retryableMessage(msg);
       if (!retryMsg) return false;
-      console.warn(`[Bot] 私聊${userId} 消息发送失败，重试: ${this.describeMessage(msg)} -> ${this.describeMessage(retryMsg)}`);
+      log.warn(`私聊${userId} 消息发送失败，重试: ${this.describeMessage(msg)} -> ${this.describeMessage(retryMsg)}`);
       await delay(700);
       return this.sendPrivateMessageBatchOnce(userId, retryMsg, onMessageId);
     });
@@ -491,7 +494,7 @@ export class Bot {
     }, this.sendTimeoutMs(msg)).then((res: any) => {
       if (typeof res?.retcode === 'number' && res.retcode !== 0) {
         this.privateSendFailures++;
-        console.error(`[Bot] 发送私聊消息失败: QQ${userId} ${this.describeMessage(msg)} retcode=${res.retcode} ${res.message || res.wording || ''}`);
+        log.error(`发送私聊消息失败: QQ${userId} ${this.describeMessage(msg)} retcode=${res.retcode} ${res.message || res.wording || ''}`);
         return false;
       }
 
@@ -503,7 +506,7 @@ export class Bot {
     }).catch((err) => {
       this.privateSendFailures++;
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[Bot] 发送私聊消息异常: QQ${userId} ${this.describeMessage(msg)} ${errMsg}`);
+      log.error(`发送私聊消息异常: QQ${userId} ${this.describeMessage(msg)} ${errMsg}`);
       return false;
     });
   }
@@ -627,7 +630,7 @@ export class Bot {
   callApi(action: string, params: Record<string, unknown> = {}): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       this.apiFailures++;
-      console.error('[Bot] WebSocket 未连接，无法调用 API:', action);
+      log.error('WebSocket 未连接，无法调用 API:', action);
       return;
     }
 
@@ -636,7 +639,7 @@ export class Bot {
     this.ws.send(payload, (err) => {
       if (err) {
         this.apiFailures++;
-        console.error(`[Bot] API 发送失败 ${action}:`, err.message);
+        log.error(`API 发送失败 ${action}:`, err.message);
       }
     });
   }

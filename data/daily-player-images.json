@@ -1,0 +1,1082 @@
+{
+  "generatedAt": "2026-06-11T07:13:18.551Z",
+  "source": "dist/plugins/fun.csPlayers image fields",
+  "note": "Compatibility fallback only. Use data/daily-beauty-images.json or DAILY_IMAGE_PACK_ROOT for 200+ curated images per player.",
+  "cards": [
+    {
+      "kind": "player",
+      "key": "ZywOo",
+      "nick": "ZywOo",
+      "name": "Mathieu Herbaut",
+      "title": "ZywOo / Vitality official-compatible image",
+      "team": "Vitality",
+      "role": "AWPer / 核心大哥",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/2/2b/ZywOo_at_BLAST_Bounty_Winter_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "s1mple",
+      "nick": "s1mple",
+      "name": "Oleksandr Kostyliev",
+      "title": "s1mple / NAVI / Falcons 语境 official-compatible image",
+      "team": "NAVI / Falcons 语境",
+      "role": "AWPer / 巨星位",
+      "tags": [
+        "player",
+        "compatibility",
+        "wikimedia",
+        "wikimedia"
+      ],
+      "priority": 70,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/70/Oleksandr_s1mple_Kostyliev_%28cropped%29.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "donk",
+      "nick": "donk",
+      "name": "Danil Kryshkovets",
+      "title": "donk / Team Spirit official-compatible image",
+      "team": "Team Spirit",
+      "role": "Rifler / Entry",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/a/a5/Donk_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "sh1ro",
+      "nick": "sh1ro",
+      "name": "Dmitriy Sokolov",
+      "title": "sh1ro / Team Spirit official-compatible image",
+      "team": "Team Spirit",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/4/4c/Sh1ro_at_BLAST_Open_Spring_2025.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "ropz",
+      "nick": "ropz",
+      "name": "Robin Kool",
+      "title": "ropz / FaZe / Vitality 语境 official-compatible image",
+      "team": "FaZe / Vitality 语境",
+      "role": "Lurker / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/f/f4/Ropz_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "dev1ce",
+      "nick": "dev1ce",
+      "name": "Nicolai Reedtz",
+      "title": "dev1ce / Astralis 语境 official-compatible image",
+      "team": "Astralis 语境",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/0/05/Dev1ce_at_Roman_Imperium_Cup_V.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "Aleksib",
+      "nick": "Aleksib",
+      "name": "Aleksi Virolainen",
+      "title": "Aleksib / NAVI official-compatible image",
+      "team": "NAVI",
+      "role": "IGL",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/2/26/Aleksib_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "b1t",
+      "nick": "b1t",
+      "name": "Valerii Vakhovskyi",
+      "title": "b1t / NAVI official-compatible image",
+      "team": "NAVI",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/2/2e/B1t_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "w0nderful",
+      "nick": "w0nderful",
+      "name": "Ihor Zhdanov",
+      "title": "w0nderful / NAVI official-compatible image",
+      "team": "NAVI",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/9/9e/W0nderful_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "EliGE",
+      "nick": "EliGE",
+      "name": "Jonathan Jablonowski",
+      "title": "EliGE / Complexity / Liquid 语境 official-compatible image",
+      "team": "Complexity / Liquid 语境",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/e/e3/EliGE_at_SL_Budapest_Major_2025.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "flameZ",
+      "nick": "flameZ",
+      "name": "Shahar Shushan",
+      "title": "flameZ / Vitality official-compatible image",
+      "team": "Vitality",
+      "role": "Entry / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/2/29/FlameZ_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "magixx",
+      "nick": "magixx",
+      "name": "Boris Vorobyev",
+      "title": "magixx / Team Spirit official-compatible image",
+      "team": "Team Spirit",
+      "role": "Support / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/e/e3/Magixx_at_BLAST_Bounty_Winter_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "huNter-",
+      "nick": "huNter-",
+      "name": "Nemanja Kovac",
+      "title": "huNter- / G2 语境 official-compatible image",
+      "team": "G2 语境",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/5/52/HuNter-_at_Stake_Ranked_Episode_1.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "malbsMd",
+      "nick": "malbsMd",
+      "name": "Mario Samayoa",
+      "title": "malbsMd / G2 official-compatible image",
+      "team": "G2",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/d/d4/MalbsMd_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "Jimpphat",
+      "nick": "Jimpphat",
+      "name": "Jimi Salo",
+      "title": "Jimpphat / MOUZ official-compatible image",
+      "team": "MOUZ",
+      "role": "Anchor / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/0/0d/Jimpphat_at_PGL_Cluj-Napoca_2025.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "siuhy",
+      "nick": "siuhy",
+      "name": "Kamil Szkaradek",
+      "title": "siuhy / MOUZ official-compatible image",
+      "team": "MOUZ",
+      "role": "IGL",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/d/df/Siuhy_at_BLAST_Bounty_Winter_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "m0NESY",
+      "nick": "m0NESY",
+      "name": "Ilya Osipov",
+      "title": "m0NESY / G2 / Falcons 语境 official-compatible image",
+      "team": "G2 / Falcons 语境",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/e/e3/M0NESY_at_BLAST_Rivals_Spring_2025.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "NiKo",
+      "nick": "NiKo",
+      "name": "Nikola Kovac",
+      "title": "NiKo / G2 / Falcons 语境 official-compatible image",
+      "team": "G2 / Falcons 语境",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/a/a1/NiKo_at_Copenhagen_Major_2024_EU_RMR.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "karrigan",
+      "nick": "karrigan",
+      "name": "Finn Andersen",
+      "title": "karrigan / FaZe official-compatible image",
+      "team": "FaZe",
+      "role": "IGL",
+      "tags": [
+        "player",
+        "compatibility",
+        "wikimedia",
+        "wikimedia"
+      ],
+      "priority": 70,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/41/Interview_karrigan_-_FaZe_(DH_Masters_Malm%C3%B6_2017)_(cropped).jpg"
+    },
+    {
+      "kind": "player",
+      "key": "rain",
+      "nick": "rain",
+      "name": "Havard Nygaard",
+      "title": "rain / FaZe official-compatible image",
+      "team": "FaZe",
+      "role": "Entry / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "wikimedia",
+        "event-photo",
+        "wikimedia"
+      ],
+      "priority": 70,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/54/Rain_BLAST_Backstage_2020_FaZe_Clan_(cropped).jpg"
+    },
+    {
+      "kind": "player",
+      "key": "Twistzz",
+      "nick": "Twistzz",
+      "name": "Russel Van Dulken",
+      "title": "Twistzz / Liquid / FaZe 语境 official-compatible image",
+      "team": "Liquid / FaZe 语境",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "wikimedia",
+        "wikimedia"
+      ],
+      "priority": 70,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/bb/Twistzz_IMG_1465_(47926460051)_(cropped).jpg"
+    },
+    {
+      "kind": "player",
+      "key": "jL",
+      "nick": "jL",
+      "name": "Justinas Lekavicius",
+      "title": "jL / NAVI official-compatible image",
+      "team": "NAVI",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/1/18/JL_at_IEM_Sydney_2023.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "Spinx",
+      "nick": "Spinx",
+      "name": "Lotan Giladi",
+      "title": "Spinx / Vitality 语境 official-compatible image",
+      "team": "Vitality 语境",
+      "role": "Lurker / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/a/ad/Spinx_at_Copenhagen_Major_2024_EU_RMR.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "broky",
+      "nick": "broky",
+      "name": "Helvijs Saukants",
+      "title": "broky / FaZe official-compatible image",
+      "team": "FaZe",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/1/16/Broky_at_IEM_Katowice_2024.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "frozen",
+      "nick": "frozen",
+      "name": "David Cernansky",
+      "title": "frozen / FaZe official-compatible image",
+      "team": "FaZe",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/4/43/Frozen_at_Copenhagen_Major_2024_EU_RMR.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "apEX",
+      "nick": "apEX",
+      "name": "Dan Madesclaire",
+      "title": "apEX / Vitality official-compatible image",
+      "team": "Vitality",
+      "role": "IGL",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/b/b7/ApEX_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "mezii",
+      "nick": "mezii",
+      "name": "William Merriman",
+      "title": "mezii / Vitality 语境 official-compatible image",
+      "team": "Vitality 语境",
+      "role": "Rifler / Support",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/c/ca/Mezii_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "KSCERATO",
+      "nick": "KSCERATO",
+      "name": "Kaike Cerato",
+      "title": "KSCERATO / FURIA official-compatible image",
+      "team": "FURIA",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/e/ef/KSCERATO_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "yuurih",
+      "nick": "yuurih",
+      "name": "Yuri Santos",
+      "title": "yuurih / FURIA official-compatible image",
+      "team": "FURIA",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/1/17/Yuurih_at_BLAST_Bounty_Winter_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "MAJ3R",
+      "nick": "MAJ3R",
+      "name": "Engin Kupeli",
+      "title": "MAJ3R / Eternal Fire official-compatible image",
+      "team": "Eternal Fire",
+      "role": "IGL",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/b/b5/MAJ3R_at_IEM_Krakow_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "tabseN",
+      "nick": "tabseN",
+      "name": "Johannes Wodarz",
+      "title": "tabseN / BIG official-compatible image",
+      "team": "BIG",
+      "role": "Rifler / IGL",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/5/5e/TabseN_at_CCT_Season_3_Global_Finals.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "electroNic",
+      "nick": "electroNic",
+      "name": "Denis Sharipov",
+      "title": "electroNic / Virtus.pro / NAVI 语境 official-compatible image",
+      "team": "Virtus.pro / NAVI 语境",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/b/b3/ElectroNic_at_IEM_Krakow_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "Perfecto",
+      "nick": "Perfecto",
+      "name": "Ilya Zalutskiy",
+      "title": "Perfecto / Virtus.pro / NAVI 语境 official-compatible image",
+      "team": "Virtus.pro / NAVI 语境",
+      "role": "Support / Anchor",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/f/f5/Perfecto_oct-2025_playerphoto.png"
+    },
+    {
+      "kind": "player",
+      "key": "NAF",
+      "nick": "NAF",
+      "name": "Keith Markovic",
+      "title": "NAF / Liquid official-compatible image",
+      "team": "Liquid",
+      "role": "Rifler / Lurker",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/6/62/NAF_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "cadiaN",
+      "nick": "cadiaN",
+      "name": "Casper Moller",
+      "title": "cadiaN / Heroic / Liquid 语境 official-compatible image",
+      "team": "Heroic / Liquid 语境",
+      "role": "AWPer / IGL",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/5/55/CadiaN_at_Roman_Imperium_Cup_VII.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "kennyS",
+      "nick": "kennyS",
+      "name": "Kenny Schrub",
+      "title": "kennyS / 传奇选手 official-compatible image",
+      "team": "传奇选手",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/0/0e/KennyS_at_BLAST_Paris_Major_2023_EU_RMR.jpeg"
+    },
+    {
+      "kind": "player",
+      "key": "GeT_RiGhT",
+      "nick": "GeT_RiGhT",
+      "name": "Christopher Alesund",
+      "title": "GeT_RiGhT / 传奇选手 official-compatible image",
+      "team": "传奇选手",
+      "role": "Lurker / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/4/4b/GeT_RiGhT_%40_PGL_Major_Stockholm_2021.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "f0rest",
+      "nick": "f0rest",
+      "name": "Patrik Lindberg",
+      "title": "f0rest / 传奇选手 official-compatible image",
+      "team": "传奇选手",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/5/5c/F0rest_at_IEM_Dallas_2023.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "coldzera",
+      "nick": "coldzera",
+      "name": "Marcelo David",
+      "title": "coldzera / 传奇选手 / RED Canids 语境 official-compatible image",
+      "team": "传奇选手 / RED Canids 语境",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/0/08/Coldzera_at_Copenhagen_Major_2024_AME_RMR.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "olofmeister",
+      "nick": "olofmeister",
+      "name": "Olof Kajbjer",
+      "title": "olofmeister / 传奇选手 official-compatible image",
+      "team": "传奇选手",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/f/fe/Olofmeister_%40_PGL_Major_Stockholm_2021.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "GuardiaN",
+      "nick": "GuardiaN",
+      "name": "Ladislav Kovacs",
+      "title": "GuardiaN / 传奇选手 official-compatible image",
+      "team": "传奇选手",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/9/9b/GuardiaN_%40_EPICENTER_2019.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "Snax",
+      "nick": "Snax",
+      "name": "Janusz Pogorzelski",
+      "title": "Snax / G2 / 传奇语境 official-compatible image",
+      "team": "G2 / 传奇语境",
+      "role": "IGL / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/3/37/Snax_at_BLAST_Bounty_Winter_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "TaZ",
+      "nick": "TaZ",
+      "name": "Wiktor Wojtas",
+      "title": "TaZ / 教练 / 传奇选手 official-compatible image",
+      "team": "教练 / 传奇选手",
+      "role": "Coach / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/9/9c/TaZ_at_BLAST_Open_Spring_2025.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "NEO",
+      "nick": "NEO",
+      "name": "Filip Kubski",
+      "title": "NEO / FaZe 教练 / 传奇选手 official-compatible image",
+      "team": "FaZe 教练 / 传奇选手",
+      "role": "Coach / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/e/e4/NEO_at_PGL_Cluj-Napoca_2025.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "dupreeh",
+      "nick": "dupreeh",
+      "name": "Peter Rasmussen",
+      "title": "dupreeh / 传奇选手 official-compatible image",
+      "team": "传奇选手",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/4/4f/Dupreeh_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "Magisk",
+      "nick": "Magisk",
+      "name": "Emil Reif",
+      "title": "Magisk / Astralis / Falcons 语境 official-compatible image",
+      "team": "Astralis / Falcons 语境",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/8/8f/Magisk_at_ESL_Pro_League_S22.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "gla1ve",
+      "nick": "gla1ve",
+      "name": "Lukas Rossander",
+      "title": "gla1ve / ENCE / Astralis 语境 official-compatible image",
+      "team": "ENCE / Astralis 语境",
+      "role": "IGL",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/a/a5/Gla1ve_at_Roman_Imperium_Cup_V.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "XANTARES",
+      "nick": "XANTARES",
+      "name": "Can Dortkardes",
+      "title": "XANTARES / Eternal Fire official-compatible image",
+      "team": "Eternal Fire",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/d/d5/XANTARES_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "woxic",
+      "nick": "woxic",
+      "name": "Ozgur Eker",
+      "title": "woxic / Eternal Fire official-compatible image",
+      "team": "Eternal Fire",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/4/49/Woxic_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "bLitz",
+      "nick": "bLitz",
+      "name": "Garidmagnai Byambasuren",
+      "title": "bLitz / The MongolZ official-compatible image",
+      "team": "The MongolZ",
+      "role": "IGL / Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "team-photo",
+        "liquipedia"
+      ],
+      "priority": 40,
+      "url": "https://liquipedia.net/commons/images/3/30/The_MongolZ_2023_allmode.png"
+    },
+    {
+      "kind": "player",
+      "key": "910",
+      "nick": "910",
+      "name": "Usukhbayar Banzragch",
+      "title": "910 / The MongolZ official-compatible image",
+      "team": "The MongolZ",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "team-photo",
+        "liquipedia"
+      ],
+      "priority": 40,
+      "url": "https://liquipedia.net/commons/images/3/30/The_MongolZ_2023_allmode.png"
+    },
+    {
+      "kind": "player",
+      "key": "Techno4K",
+      "nick": "Techno4K",
+      "name": "Sodbayar Munkhbold",
+      "title": "Techno4K / The MongolZ official-compatible image",
+      "team": "The MongolZ",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "team-photo",
+        "liquipedia"
+      ],
+      "priority": 40,
+      "url": "https://liquipedia.net/commons/images/3/30/The_MongolZ_2023_allmode.png"
+    },
+    {
+      "kind": "player",
+      "key": "somebody",
+      "nick": "somebody",
+      "name": "Haowen Xu",
+      "title": "somebody / TYLOO official-compatible image",
+      "team": "TYLOO",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "team-photo",
+        "liquipedia"
+      ],
+      "priority": 40,
+      "url": "https://liquipedia.net/commons/images/2/2f/TYLOO_2019_allmode.png"
+    },
+    {
+      "kind": "player",
+      "key": "JamYoung",
+      "nick": "JamYoung",
+      "name": "Yi Yang",
+      "title": "JamYoung / TYLOO / 中国CS语境 official-compatible image",
+      "team": "TYLOO / 中国CS语境",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "team-photo",
+        "liquipedia"
+      ],
+      "priority": 40,
+      "url": "https://liquipedia.net/commons/images/2/2f/TYLOO_2019_allmode.png"
+    },
+    {
+      "kind": "player",
+      "key": "Westmelon",
+      "nick": "Westmelon",
+      "name": "Qinghui Liu",
+      "title": "Westmelon / Lynn Vision official-compatible image",
+      "team": "Lynn Vision",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "team-photo",
+        "liquipedia"
+      ],
+      "priority": 40,
+      "url": "https://liquipedia.net/commons/images/0/0a/Lynn_Vision_Gaming_2023_allmode.png"
+    },
+    {
+      "kind": "player",
+      "key": "Jame",
+      "nick": "Jame",
+      "name": "Dzhami Ali",
+      "title": "Jame / Virtus.pro official-compatible image",
+      "team": "Virtus.pro",
+      "role": "AWPer / IGL",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/1/12/Jame_at_IEM_Katowice_2024.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "torzsi",
+      "nick": "torzsi",
+      "name": "Adam Torzsas",
+      "title": "torzsi / MOUZ official-compatible image",
+      "team": "MOUZ",
+      "role": "AWPer",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/b/b7/Torzsi_at_IEM_Dallas_2024.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "xertioN",
+      "nick": "xertioN",
+      "name": "Dorian Berman",
+      "title": "xertioN / MOUZ official-compatible image",
+      "team": "MOUZ",
+      "role": "Rifler / Entry",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/e/e1/XertioN_at_PGL_Copenhagen_2024_EU_RMR_A.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "iM",
+      "nick": "iM",
+      "name": "Ivan Mihai",
+      "title": "iM / NAVI official-compatible image",
+      "team": "NAVI",
+      "role": "Rifler",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/6/69/IM_at_BLAST_Open_Spring_2026.jpg"
+    },
+    {
+      "kind": "player",
+      "key": "zont1x",
+      "nick": "zont1x",
+      "name": "Myroslav Plakhotia",
+      "title": "zont1x / Team Spirit official-compatible image",
+      "team": "Team Spirit",
+      "role": "Rifler / Anchor",
+      "tags": [
+        "player",
+        "compatibility",
+        "liquipedia",
+        "event-photo",
+        "liquipedia"
+      ],
+      "priority": 70,
+      "url": "https://liquipedia.net/commons/images/5/58/Zont1x_at_BLAST_Bounty_Winter_2026.jpg"
+    }
+  ]
+}

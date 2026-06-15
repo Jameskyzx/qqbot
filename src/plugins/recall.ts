@@ -1,5 +1,8 @@
 import { Bot } from '../bot';
 import { NoticeEvent } from '../types';
+import { createLogger } from '../logger';
+
+const logger = createLogger('Recall');
 
 /**
  * 撤回监控插件（可选）
@@ -72,5 +75,5 @@ export function registerRecallListener(bot: Bot, enabled: boolean = true): void 
     bot.sendGroupMessage(groupId, reply);
   });
 
-  console.log('[Recall] 撤回监控已启用');
+  logger.info('[Recall] 撤回监控已启用');
 }

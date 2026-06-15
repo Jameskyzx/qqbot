@@ -4,6 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { AIConfig } from '../types';
+import { createLogger } from '../logger';
+
+const logger = createLogger('ImageCache');
 
 /**
  * 图片缓存管理器
@@ -85,7 +88,7 @@ function loadCacheIndex(): void {
         lastUsed: stat.mtimeMs,
       });
     }
-    console.log(`[ImageCache] 加载${memIndex.size}个缓存图片`);
+    logger.info(`[ImageCache] 加载${memIndex.size}个缓存图片`);
   } catch { /* */ }
 }
 loadCacheIndex();
@@ -387,7 +390,7 @@ function downloadAndCache(url: string, redirectCount: number = 0, cacheKeyUrl: s
         }
         if ((statusCode === 403 || statusCode === 401) && uaIndex < userAgents.length - 1) {
           res.resume();
-          console.warn(`[ImageCache] HTTP ${statusCode} ua=${uaIndex}，换UA重试 url=${url.slice(0, 80)}`);
+          logger.warn(`[ImageCache] HTTP ${statusCode} ua=${uaIndex}，换UA重试 url=${url.slice(0, 80)}`);
           void downloadAndCache(url, redirectCount, cacheKeyUrl, uaIndex + 1, family).then(safeResolve);
           return;
         }

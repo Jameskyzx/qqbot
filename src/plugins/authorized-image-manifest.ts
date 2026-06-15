@@ -1,5 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { createLogger } from '../logger';
+
+const logger = createLogger('ImageManifest');
 
 export interface AuthorizedImageManifestCard {
   kind?: string;
@@ -20,6 +23,16 @@ export interface AuthorizedImageManifestCard {
   url?: string;
   urls?: string[];
   images?: string[];
+  file?: string;
+  files?: string[];
+  path?: string;
+  paths?: string[];
+  dir?: string;
+  dirs?: string[];
+  directory?: string;
+  directories?: string[];
+  imageDir?: string;
+  imageDirs?: string[];
   title?: string;
 }
 
@@ -76,16 +89,105 @@ function manifestTags(item: AuthorizedImageManifestCard): string[] {
   return [];
 }
 
-function expandImageManifestItems(rawCards: AuthorizedImageManifestCard[]): AuthorizedImageManifestCard[] {
+const LOCAL_IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+const MAX_LOCAL_DIRECTORY_IMAGES_PER_CARD = 5000;
+
+function decodeFileUrl(value: string): string {
+  const raw = value.trim();
+  if (!raw.toLowerCase().startsWith('file://')) return raw;
+  try {
+    return decodeURIComponent(new URL(raw).pathname).replace(/^\/+([a-zA-Z]:)/, '$1');
+  } catch {
+    return raw.slice('file://'.length).replace(/^\/+([a-zA-Z]:)/, '$1');
+  }
+}
+
+function resolveLocalManifestPath(value: string, baseDir: string): string {
+  const decoded = decodeFileUrl(value);
+  if (path.isAbsolute(decoded)) return path.normalize(decoded);
+  return path.resolve(baseDir, decoded);
+}
+
+function isSupportedLocalImagePath(filepath: string): boolean {
+  return LOCAL_IMAGE_EXTENSIONS.has(path.extname(filepath).toLowerCase());
+}
+
+function localImageSourcesFromDirectory(directory: string): string[] {
+  const results: string[] = [];
+  const stack = [directory];
+  while (stack.length > 0 && results.length < MAX_LOCAL_DIRECTORY_IMAGES_PER_CARD) {
+    const current = stack.pop()!;
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    entries
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach((entry) => {
+        const filepath = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(filepath);
+          return;
+        }
+        if (entry.isFile() && isSupportedLocalImagePath(filepath)) results.push(filepath);
+      });
+  }
+  return results;
+}
+
+function normalizeManifestImageSources(item: AuthorizedImageManifestCard, baseDir: string): string[] {
+  const remoteOrInline = [
+    typeof item.url === 'string' ? item.url : '',
+    ...(Array.isArray(item.urls) ? item.urls : []),
+    ...(Array.isArray(item.images) ? item.images : []),
+  ]
+    .map((url) => String(url || '').trim())
+    .filter((url) => /^https?:\/\//i.test(url) || /^data:image\/[^;]+;base64,/i.test(url) || /^base64:\/\//i.test(url));
+
+  const localFiles = [
+    typeof item.file === 'string' ? item.file : '',
+    typeof item.path === 'string' ? item.path : '',
+    ...(Array.isArray(item.files) ? item.files : []),
+    ...(Array.isArray(item.paths) ? item.paths : []),
+  ]
+    .map((source) => String(source || '').trim())
+    .filter(Boolean)
+    .map((source) => resolveLocalManifestPath(source, baseDir))
+    .filter((source) => isSupportedLocalImagePath(source) && fs.existsSync(source));
+
+  const directories = [
+    typeof item.dir === 'string' ? item.dir : '',
+    typeof item.directory === 'string' ? item.directory : '',
+    typeof item.imageDir === 'string' ? item.imageDir : '',
+    ...(Array.isArray(item.dirs) ? item.dirs : []),
+    ...(Array.isArray(item.directories) ? item.directories : []),
+    ...(Array.isArray(item.imageDirs) ? item.imageDirs : []),
+  ]
+    .map((source) => String(source || '').trim())
+    .filter(Boolean)
+    .map((source) => resolveLocalManifestPath(source, baseDir))
+    .filter((source) => fs.existsSync(source));
+
+  const directoryFiles = directories.flatMap(localImageSourcesFromDirectory);
+  return [...new Set([...remoteOrInline, ...localFiles, ...directoryFiles])];
+}
+
+function imageSourceTitle(item: AuthorizedImageManifestCard, source: string, index: number): string {
+  const baseTitle = String(item.title || '').trim();
+  if (index === 0) return baseTitle;
+  if (!/^https?:\/\//i.test(source) && !/^data:image/i.test(source) && !/^base64:\/\//i.test(source)) {
+    const basename = path.basename(source, path.extname(source)).trim();
+    if (basename) return `${baseTitle || 'image'} #${index + 1} ${basename}`;
+  }
+  return `${baseTitle || 'image'} #${index + 1}`;
+}
+
+function expandImageManifestItems(rawCards: AuthorizedImageManifestCard[], baseDir: string): AuthorizedImageManifestCard[] {
   return rawCards.flatMap((item: AuthorizedImageManifestCard) => {
     if (!item || typeof item !== 'object') return [];
-    const urls = [
-      typeof item.url === 'string' ? item.url : '',
-      ...(Array.isArray(item.urls) ? item.urls : []),
-      ...(Array.isArray(item.images) ? item.images : []),
-    ]
-      .map((url) => String(url || '').trim())
-      .filter((url) => /^https?:\/\//i.test(url));
+    const urls = normalizeManifestImageSources(item, baseDir);
     const tags = manifestTags(item);
     return [...new Set(urls)].map((url, index) => ({
       kind: String(item.kind || '').trim(),
@@ -103,7 +205,7 @@ function expandImageManifestItems(rawCards: AuthorizedImageManifestCard[]): Auth
       quality: String(item.quality || '').trim(),
       tags,
       priority: Number.isFinite(Number(item.priority)) ? Number(item.priority) : 0,
-      title: index === 0 ? String(item.title || '').trim() : `${String(item.title || '').trim() || 'card'} #${index + 1}`,
+      title: imageSourceTitle(item, url, index),
       url,
     }));
   });
@@ -150,7 +252,7 @@ function cacheId(manifestKey: string, manifestPath: string): string {
 function parseManifestFile(manifestPath: string): AuthorizedImageManifestCard[] {
   const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
   const rawCards = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.cards) ? parsed.cards : [];
-  return expandImageManifestItems(rawCards);
+  return expandImageManifestItems(rawCards, path.dirname(manifestPath));
 }
 
 function loadManifestEntry(manifestPath: string, manifestKey: string): ImageManifestCacheEntry {
@@ -228,7 +330,7 @@ function loadManifestEntry(manifestPath: string, manifestKey: string): ImageMani
     };
     manifestCache.set(id, entry);
     evictOldManifestCacheEntries();
-    console.warn(`[image-manifest] 本地图片清单读取失败 ${manifestKey}:`, entry.lastError);
+    logger.warn(`[image-manifest] 本地图片清单读取失败 ${manifestKey}:`, entry.lastError);
     return entry;
   }
 }

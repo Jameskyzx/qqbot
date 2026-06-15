@@ -4,6 +4,7 @@ import * as path from 'path';
 import { Plugin } from '../types';
 import { getMediaObservabilitySnapshot } from './ai-chat';
 import { getUserProfile } from './user-profile';
+import { writeJsonFileAtomic } from './runtime-storage';
 
 type DailyPulseChatType = 'group' | 'private';
 
@@ -176,10 +177,7 @@ function loadStore(): DailyPulseStore {
 
 function saveStore(store: DailyPulseStore): void {
   const filepath = storePath();
-  fs.mkdirSync(path.dirname(filepath), { recursive: true });
-  const tmp = `${filepath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf-8');
-  fs.renameSync(tmp, filepath);
+  writeJsonFileAtomic(filepath, store, { trailingNewline: false });
 }
 
 function formatShanghaiParts(date: Date): { dateKey: string; timeKey: string; label: string } {
@@ -282,9 +280,9 @@ function formatChallengeCompletionLine(item: DailyPulseChallengeCompletion, inde
 function formatMediaRecapClosingStatus(): string {
   try {
     const media = getMediaObservabilitySnapshot();
-    return `识图语音收尾: 今日实跑 ${media.todayRuns}；${media.hint}；边界: 只有真实 /vision test、/voice stt、/voice test trace 才算看过/听过/发过。`;
+    return `识图语音收尾: 今日实跑 ${media.todayRuns}；${media.hint}；要算数就跑 /vision test、/voice stt、/voice test。`;
   } catch {
-    return '识图语音收尾: /media daily 看今日三件套；只有 /vision test、/voice stt、/voice test 成功才算。';
+    return '识图语音收尾: /media daily 看今日三件套；要落账就跑 /vision test、/voice stt、/voice test。';
   }
 }
 
@@ -293,7 +291,7 @@ function formatMediaDailyShortStatus(): string {
     const media = getMediaObservabilitySnapshot();
     return `今日实跑 ${media.todayRuns}；陪跑 /daily media；完整状态 /media daily`;
   } catch {
-    return '陪跑 /daily media；完整状态 /media daily；真实跑通看 /vision test、/voice stt、/voice test';
+    return '陪跑 /daily media；完整状态 /media daily；要落账就跑 /vision test、/voice stt、/voice test';
   }
 }
 
@@ -389,8 +387,8 @@ export function buildDailyPulseMessage(
     `今日先手: ${focus}`,
     `今日小任务: ${task}`,
     `识图语音: ${mediaStatus}`,
-    '好玩入口: 今日CS / 今日偏好 / 今日证据 / 今日人话 / 今日闭环分 / 今日指挥台 / 今日队形 / 今日聊天节奏 / 今日接力 / 今日话题 / 今日语音台词 / 今日安排 / 保连续 / 识图语音陪跑 / 催我一下 / /daily personal / /daily proof / /daily reply / /daily score / /daily center / /daily vibe / /daily relay / /daily line / /daily gap / /daily squad / /daily ice / /daily script / /daily plan / /daily guard / /daily media / /daily nudge / /daily challenge / /csquiz / /cstrain / /media daily / 发图说帮我看图 / /voice status',
-    '边界: 这是固定日签和群聊提醒，不是实时赛事事实；比赛、排名、阵容看 /cs brief、/csreport focus 或 /cs verify。',
+    '顺手入口: 今日CS / 今日挑战 / 今日打卡 / 今日安排 / 今日队形 / 今日话题 / 今日语音台词 / /daily personal / /daily proof / /daily score / /daily center / /daily vibe / /daily relay / /daily gap / /daily line / /daily squad / /daily ice / /daily script / /daily plan / /daily guard / /daily media / /daily nudge / /csquiz / /cstrain / 发图说帮我看图',
+    '比赛、排名、阵容别靠印象报死，想聊新的就看 /cs brief、/csreport focus 或 /cs verify。',
   ].join('\n');
 }
 
@@ -454,8 +452,8 @@ export function buildDailyRecapMessage(
     reviewPoint,
     tomorrowHook,
     smallTask,
-    '入口: /cstrain log <分钟> <地图> <武器> <备注> / /cstrain stats / /trace last / /vision last / /voice last',
-    '边界: 这是复盘提醒和训练建议，不读取你的 demo/截图/语音；要我真看图或听语音，直接发附件并明确问。',
+    '继续用: /cstrain log <分钟> <地图> <武器> <备注> / /cstrain stats / /vision last / /voice last',
+    '要我真看图或听语音，直接发附件并把问题说清楚。',
   ].filter(Boolean).join('\n');
 }
 
@@ -505,8 +503,8 @@ export function buildDailyChallengeMessage(
     `挑战: ${challenge}`,
     `三步: ${steps}`,
     reward,
-    '入口: /daily done / /daily checkin / /daily board / /daily recap / /cstrain log <分钟> <地图> <武器> <备注>',
-    '边界: 这是本地每日挑战和训练提醒，不读取 demo、截图或语音；要真看图/听语音，直接发附件并明确问。',
+    '继续用: /daily done / /daily checkin / /daily board / /daily recap / /cstrain log <分钟> <地图> <武器> <备注>',
+    '要我真看图或听语音，直接发附件并把问题说清楚。',
   ].join('\n');
 }
 
@@ -695,7 +693,7 @@ export function recordDailyWrapUp(
     `打卡: 今日已到 / 连续${checkin?.streak || 0}天 / 最佳${checkin?.bestStreak || 0}天 / 累计${checkin?.total || 0}次`,
     formatPostCompletionMediaStep(seed),
     '下一步: 跑完 /daily media 的看图/听写/发语音小闭环，晚上看 /daily recap 收尾；明天再来 /daily challenge。',
-    '边界: 这里只记录你主动说的收工，不读取对局、截图或语音内容。',
+    '这里先记你主动说的收工，复盘细节要另外发图、发语音或写出来。',
   ].join('\n');
 }
 
@@ -886,7 +884,7 @@ export function formatDailySquadSummary(
     `识图语音: ${formatMediaDailyShortStatus()}`,
     `下一步: ${viewerNext}；群动作: ${groupAction}。`,
     '入口: /daily guard / /daily media / /daily me / /daily challenge board / /daily board',
-    '边界: 这里只读当前会话本地每日记录和多模态 trace 摘要；不会替任何人写挑战、打卡，也不会假装看过图或听过语音。',
+    '这张只看当前会话记录；要补记录就自己说“挑战完成”“今日打卡”或“今日收工”。',
   ].filter(Boolean).join('\n');
 }
 
@@ -946,7 +944,7 @@ export function formatDailyIcebreaker(
 
   return [
     `每日破冰话题 | ${parts.label}`,
-    '模式: 只读话题卡，不写挑战/打卡，不下载图片，不听写语音，不调用模型',
+    '今天拿来破冰，不顺手写记录。',
     `QQ${userId}: ${opener}`,
     `群话题: ${csPoll}`,
     `看图接力: 发图 + “${imagePrompt}”`,
@@ -955,7 +953,7 @@ export function formatDailyIcebreaker(
     `你的缺口: 挑战${challengedToday ? '已完成' : '未完成'} / 打卡${checkedToday ? '已到' : '未打'}；${personalNext}`,
     `识图语音: ${formatMediaDailyShortStatus()}`,
     '入口: /daily squad / /daily media / /daily challenge / /csquiz / /cstrain / /media daily',
-    '边界: 这是群聊破冰脚本，不代表已经看过图或听过语音；check/warm/cache hit 不算实跑，真实内容以 /vision test、/voice stt、/voice test 的 trace 为准。',
+    '图和语音要落账就真测，别拿 check、warm 或缓存当今天跑过。',
   ].join('\n');
 }
 
@@ -1013,7 +1011,7 @@ export function formatDailyUserSummary(
     `识图语音: ${mediaStatus}`,
     `下一步: ${next.join('；')}`,
     '入口: /daily challenge / /daily done / /daily checkin / /daily media / /daily challenge board / /daily board',
-    '边界: 这里只读本地每日记录，不读取聊天内容、demo、截图或语音；要真看图/听语音，直接发附件并明确问。',
+    '要我真看图或听语音，直接发附件并把问题说清楚。',
   ].join('\n');
 }
 
@@ -1057,11 +1055,11 @@ export function formatDailyActionPlan(
     opener,
     `日常进度: 挑战${challengedToday ? '已完成' : '未完成'} / 打卡${checkedToday ? '已到' : '未打'}`,
     `先手: ${first}`,
-    '识图语音: /media daily 看今日三件套；缺哪条就真测 /vision test、/voice stt、/voice test，别拿 check/warm/cache hit 充数。',
+    '识图语音: /media daily 看今日三件套；缺哪条就真测 /vision test、/voice stt、/voice test，别拿预检和缓存充数。',
     `好玩/有用: ${useful}`,
     `收尾: ${close}`,
     '入口: /daily me / /daily week / /daily wrap / /daily media / /media daily / /csquiz / /cstrain',
-    '边界: 这里只读本地每日记录，不读取聊天内容、demo、截图或语音；识图/听写/发语音是否真跑，以 /media daily 和 trace 里的真实记录为准。',
+    '识图、听写、发语音有没有跑过，看 /media daily 和 trace，别靠感觉。',
   ].join('\n');
 }
 
@@ -1116,7 +1114,7 @@ export function formatDailyNudge(
     `一句: ${line}`,
     `现在就做: ${action}`,
     '备用入口: /daily plan / /daily guard / /daily me / /daily media / /daily wrap / /media daily',
-    '边界: 这里只读本地每日记录，不会替你写挑战或打卡；要记账请明确说“挑战完成”“今日打卡”或“今日收工”。',
+    '要记账就明确说“挑战完成”“今日打卡”或“今日收工”。',
   ].join('\n');
 }
 
@@ -1169,7 +1167,7 @@ export function formatDailyStreakGuard(
     `顺手加一件: ${mediaAction}`,
     `一句: ${coach}`,
     '入口: /daily wrap / /daily done / /daily checkin / /daily media / /daily recap',
-    '边界: 这里只读本地每日记录和多模态 trace 摘要；不会替你写记录，也不会假装看过图或听过语音。',
+    '补记录要你自己开口；图和语音要落账就真测。',
   ].join('\n');
 }
 
@@ -1229,7 +1227,7 @@ export function formatDailyMediaCompanion(
 
   return [
     `识图语音今日陪跑 | ${parts.label}`,
-    '模式: 只读行动卡，不下载图片、不听写语音、不调用模型、不生成音频',
+    '照这张跑小闭环，跑完再回来收尾。',
     `QQ${userId}: ${opener}`,
     `日常进度: 挑战${challengedToday ? '已完成' : '未完成'} / 打卡${checkedToday ? '已到' : '未打'}`,
     `今日实跑: ${media?.todayRuns || '看 /media daily 获取今日实跑'}`,
@@ -1240,7 +1238,7 @@ export function formatDailyMediaCompanion(
     `真测: /voice test ${voiceLine}`,
     `收尾: ${finish}`,
     '入口: /media daily / /vision test <图片URL> / /voice stt <语音URL> / /voice test <短句> / /daily recap',
-    '边界: check/warm/cache hit 不算今天真的看过或听过；只有 /vision test、/voice stt、/voice test 成功 trace 才算实跑。',
+    'check、warm、缓存都别当战绩；要落账就真测 /vision test、/voice stt、/voice test。',
   ].join('\n');
 }
 
@@ -1300,7 +1298,7 @@ export function formatDailyMediaScript(
 
   return [
     `识图语音每日脚本包 | ${parts.label}`,
-    '模式: 只读脚本，不下载图片、不听写语音、不调用模型、不生成音频',
+    '照着跑脚本，别把脚本本身当完成。',
     `QQ${userId} 进度: 挑战${challengedToday ? '已完成' : '未完成'} / 打卡${checkedToday ? '已到' : '未打'}`,
     `今日实跑: ${media?.todayRuns || '看 /media daily 获取今日实跑'}`,
     `1. 看图脚本: 发图 + “${imageScript}”`,
@@ -1310,7 +1308,7 @@ export function formatDailyMediaScript(
     `群里回执: ${receipt}`,
     `日常收尾: ${dailyNext}`,
     '入口: /daily media / /media daily / /vision test <图片URL> / /voice stt <语音URL> / /voice test <短句>',
-    '边界: 这张卡只给脚本和命令；check/warm/cache hit 不算今天真看图、真听写或真发声，只有 /vision test、/voice stt、/voice test 成功 trace 才算实跑。',
+    '脚本不是完成记录；要落账就真测 /vision test、/voice stt、/voice test。',
   ].join('\n');
 }
 
@@ -1366,7 +1364,7 @@ export function formatDailyMediaGap(
 
   return [
     `识图语音今日补缺 | ${parts.label}`,
-    '模式: 只读补缺单，不下载图片、不听写语音、不调用模型、不生成音频',
+    '缺哪条补哪条，别靠感觉补链路。',
     `QQ${userId}: ${opener}`,
     `今日实跑: ${media?.todayRuns || '读取不到多模态摘要；看 /media daily'}`,
     `完成: ${done.length ? done.map((item) => `${item.label}${item.passed}/${item.attempts}`).join('；') : '暂无成功 trace'}`,
@@ -1379,7 +1377,7 @@ export function formatDailyMediaGap(
     `最近发声: ${media?.lastVoiceSummary || '无真实语音发送 trace'}`,
     `日常收尾: ${dailyNext}`,
     '入口: /daily script / /media daily / /media recent 3 / /vision last / /voice recent 3 / /trace last',
-    '边界: 只有 /vision test、/voice stt、/voice test 成功 trace 才算今天真看图、真听写或真发声；check/warm/cache hit 都不算实跑。',
+    '要落账就真测 /vision test、/voice stt、/voice test；check、warm、缓存别当战绩。',
   ].filter(Boolean).join('\n');
 }
 
@@ -1450,7 +1448,7 @@ export function formatDailyVoiceLineKit(
 
   return [
     `每日语音台词 | ${parts.label}`,
-    '模式: 只读台词卡，不调用 AI，不生成音频，不发送 record',
+    '这张只给台词，想真发就自己跑 /voice test。',
     `QQ${userId}: ${tone}`,
     `今日实跑: ${media?.todayRuns || '读取不到多模态摘要；看 /media daily'}；发语音${voiceRun ? `${voiceRun.passed}/${voiceRun.attempts}` : '0/0'}`,
     `主句: ${mainLine}`,
@@ -1463,7 +1461,7 @@ export function formatDailyVoiceLineKit(
     `今天优先: ${priority}`,
     `日常收尾: ${dailyNext}`,
     '入口: /daily media / /daily gap / /media daily / /voice recent 3 / /trace last',
-    '边界: /voice check 和 /voice warm 只做预检或缓存；只有 /voice test 成功 trace 才算今天真发过语音，授权样本也不能说成现实本人语音。',
+    '/voice check 和 /voice warm 只是预检；真发看 /voice test，授权样本也别说成现实本人语音。',
   ].join('\n');
 }
 
@@ -1556,7 +1554,7 @@ export function formatDailyMediaRelay(
 
   return [
     `识图语音每日接力 | ${parts.label}`,
-    '模式: 只读接力卡，不写挑战/打卡，不下载图片，不听写语音，不调用模型，不生成音频',
+    '这张只排接力，谁接棒谁真跑。',
     `QQ${userId}: ${opener}`,
     `${groupRhythm} 你: 挑战${challengedToday ? '已完成' : '未完成'} / 打卡${checkedToday ? '已到' : '未打'}。`,
     `今日实跑: ${media?.todayRuns || '读取不到多模态摘要；看 /media daily'}；优先棒位: ${priority}`,
@@ -1568,7 +1566,7 @@ export function formatDailyMediaRelay(
     `交棒话术: ${handoff}`,
     `你的收尾: ${personalNext}`,
     '入口: /daily line / /daily gap / /daily squad / /daily ice / /vision last / /voice recent 3',
-    '边界: 这张卡只是分工脚本；check/warm/cache hit 不算实跑，只有 /vision test、/voice stt、/voice test 成功 trace 才算今天真看图、真听写或真发声。',
+    '分工不算完成，真测 /vision test、/voice stt、/voice test 才落账。',
   ].join('\n');
 }
 
@@ -1644,7 +1642,7 @@ export function formatDailyChatVibe(
 
   return [
     `每日聊天节奏 | ${parts.label}`,
-    '模式: 只读真人感卡，不改 prompt，不写记录，不调用模型，不生成音频',
+    '今天聊天就按这个节奏走，短一点，别写成报告。',
     `QQ${userId}: ${pace}`,
     `开场一句: ${opener}`,
     `接图: ${imageReply}`,
@@ -1654,7 +1652,7 @@ export function formatDailyChatVibe(
     `识图语音: ${media?.todayRuns || '读取不到多模态摘要；看 /media daily'}；${mediaNudge}`,
     `你的收尾: ${personalNext}`,
     '入口: /daily relay / /daily line / /daily gap / /daily ice / /media daily / /style status',
-    '边界: 这是聊天节奏建议，不代表已经看过图、听过语音或发过语音；实时事实仍要 fresh 证据，多模态是否真跑以 trace 为准。',
+    '图、语音、实时事实都别硬编；该真测真测，该核证核证。',
   ].join('\n');
 }
 
@@ -1728,7 +1726,7 @@ export function formatDailyHumanReplyPack(
   ], `${seed}:close`);
   const avoid = pick([
     '别说“根据资料综合来看”，直接说你看见了什么。',
-    '别说“作为AI我无法”，改成“我这边没证据，先别报死”。',
+    '别说“无法处理”，改成“我这边没证据，先别报死”。',
     '别把缓存 hit 说成刚看过、刚听过。',
     '别把画像偏好说成实时阵容、排名或状态。',
   ], `${seed}:avoid`);
@@ -1738,7 +1736,7 @@ export function formatDailyHumanReplyPack(
 
   return [
     `每日人话接话包 | ${parts.label}`,
-    '模式: 只读短句卡，不写挑战/打卡，不改 prompt，不调用模型，不下载图片，不听写语音，不生成音频',
+    '这张只给可复制短句，别复制成说明书。',
     `QQ${userId}: 口吻 ${tone}`,
     `开场: ${opener}`,
     `接图: ${imageReply}`,
@@ -1748,7 +1746,7 @@ export function formatDailyHumanReplyPack(
     `别说: ${avoid}`,
     `今日实跑: ${media?.todayRuns || '读取不到多模态摘要；看 /media daily'}；${mediaLine}`,
     '入口: /daily vibe / /daily proof / /daily relay / /daily line / /daily gap / /media daily',
-    '边界: 这些是可复制的短句建议，不代表已经看图、听写或发声；真实完成看 /daily proof 和 trace，实时事实看 fresh 证据。',
+    '短句只是短句；完成看 /daily proof 和 trace，实时事实看新证据。',
   ].join('\n');
 }
 
@@ -1807,7 +1805,7 @@ export function formatDailyCompletionScore(
 
   return [
     `今日闭环分 | ${parts.label}`,
-    '模式: 只读评分卡，不写挑战/打卡，不下载图片，不听写语音，不调用模型，不生成音频',
+    '这张只算当前闭环，缺哪项补哪项。',
     `QQ${userId}: ${total}/100，${mood}`,
     `完成: ${done.length ? done.map((item) => `${item.label}+${item.weight}`).join('；') : '暂无完成项'}`,
     `缺口: ${missing.length ? missing.map((item) => `${item.label}-${item.weight}`).join('；') : '今天五项都收住了'}`,
@@ -1816,7 +1814,7 @@ export function formatDailyCompletionScore(
     `一分钟补法: ${oneMinute}`,
     `收尾: ${total >= 100 ? '/daily recap' : '/daily score 补完再看；缺多模态就 /daily relay，缺日常就 /daily guard'}`,
     '入口: /daily me / /daily guard / /daily relay / /daily gap / /media daily / /daily recap',
-    '边界: 闭环分只按本地每日记录和真实多模态 trace 估算；check/warm/cache hit 不加分，只有 /vision test、/voice stt、/voice test 成功 trace 才算多模态完成。',
+    '分数只看每日记录和 trace；check、warm、缓存不加分。',
   ].filter(Boolean).join('\n');
 }
 
@@ -1911,19 +1909,19 @@ export function formatDailyPersonalizedBrief(
 
   return [
     `每日偏好卡 | ${parts.label}`,
-    '模式: 只读画像卡，不写挑战/打卡，不改画像，不调用模型，不下载图片，不生成音频',
+    '按你填过的偏好排一版，不替你改画像。',
     `${name}(${userId}): ${opener}`,
     `画像偏好: ${profileLine}`,
     `今日打法: ${practice}`,
     `选手参照: ${playerHook}`,
-    `队伍边界: ${teamHook}`,
+    `队伍提醒: ${teamHook}`,
     `聊天口吻: ${toneHook}`,
     `看图引子: ${imageHook}`,
     `语音短句: ${voiceLine}`,
     `多模态: ${media?.todayRuns || '读取不到多模态摘要；看 /media daily'}；优先补: ${mediaPriority}`,
     `日常收尾: ${dailyNext}`,
     '入口: /profile / /daily vibe / /daily relay / /daily score / /daily media / /media daily',
-    '画像边界: 这里只使用你在当前会话自填的偏好来个性化建议；偏好不是实时赛事事实，阵容/排名/赛果/赛程仍要 fresh 证据和 /cs verify。多模态是否真跑以 trace 为准。',
+    '偏好只是偏好，阵容、排名、赛果、赛程还是看 fresh 证据和 /cs verify。',
   ].join('\n');
 }
 
@@ -1991,7 +1989,7 @@ export function formatDailyEvidenceLedger(
 
   return [
     `今日证据账本 | ${parts.label}`,
-    '模式: 只读证据卡，不写挑战/打卡，不改画像，不下载图片，不听写语音，不调用模型，不生成音频',
+    '这张只查今天留下了什么记录。',
     `QQ${userId}: 已证明 ${provenCount}/5；缺口 ${missing.length ? missing.join('、') : '无'}`,
     `挑战: ${challengedToday ? `可证明；date=${challenge?.lastDoneDate} 连续${challenge?.streak || 0}天 累计${challenge?.total || 0}次` : '未证明；今天没有挑战完成记录'}`,
     `打卡: ${checkedToday ? `可证明；date=${checkin?.lastCheckinDate} 连续${checkin?.streak || 0}天 累计${checkin?.total || 0}次` : '未证明；今天没有每日打卡记录'}`,
@@ -2004,9 +2002,9 @@ export function formatDailyEvidenceLedger(
     `最近听写: ${media?.lastRecordSummary || '无真实听写 trace'}`,
     `最近发声: ${media?.lastVoiceSummary || '无真实语音发送 trace'}`,
     `现在取证: ${next}`,
-    '不能证明: /voice check、/voice warm、/vision check、缓存 hit、画像偏好、聊天建议、脚本卡和口头说过都不等于今天真的看图/听写/发语音。',
+    '别混账: /voice check、/voice warm、/vision check、缓存 hit、画像偏好、聊天建议、脚本卡和口头说过，都不等于今天真跑过。',
     '入口: /daily score / /daily gap / /media daily / /media recent 3 / /vision last / /voice recent 3 / /trace last',
-    '边界: 这张账本只读本地每日记录、自填画像和真实多模态 trace；没出现在记录里的输入不能说成已完成，画像也不能当实时赛事事实。',
+    '没在记录里的别说成完成，画像也别当实时赛事事实。',
   ].join('\n');
 }
 
@@ -2072,7 +2070,7 @@ export function formatDailyCommandCenter(
 
   return [
     `今日指挥台 | ${parts.label}`,
-    '模式: 只读一屏，不写挑战/打卡，不下载图片，不听写语音，不调用模型',
+    '一屏够了，先照着做，缺项自己补。',
     `QQ${userId}: ${opener}`,
     `你: 挑战${challengedToday ? '已完成' : '未完成'} / 打卡${checkedToday ? '已到' : '未打'}`,
     `当前${chatType === 'group' ? '群' : '会话'}: 今日挑战${todayChallenges.length}人 / 今日打卡${todayCheckins.length}人 / 双收${todayDoubleCount}人`,
@@ -2082,7 +2080,7 @@ export function formatDailyCommandCenter(
     `好玩/有用: ${useful}`,
     `收尾: ${close}`,
     '入口: /daily me / /daily squad / /daily script / /daily media / /daily guard / /daily recap',
-    '边界: 这是本地每日记录和多模态 trace 摘要的一屏导航；不会替你写记录，也不会假装看过图、听过语音或发过语音。',
+    '记录要自己补；图和语音要落账就真测。',
   ].join('\n');
 }
 
@@ -2145,7 +2143,7 @@ export function formatDailyWeekSummary(
     `日历: ${rows.join('；')}`,
     `下一步: ${next}`,
     '入口: /daily me / /daily wrap / /daily media / /media daily / /daily challenge board / /daily board',
-    '边界: 这里只读本地每日记录；旧记录只按已有连续天数回填，不能当完整历史流水。',
+    '旧记录只按已有连续天数回填，别当完整流水。',
   ].join('\n');
 }
 
@@ -2769,7 +2767,7 @@ export const dailyPulsePlugin: Plugin = {
       '/daily ice|topic - 今日破冰话题，给群聊选择题、看图接力和语音接力',
       '/daily script|kit - 识图语音每日脚本包，给看图、听写、发语音和验收命令',
       '/daily gap - 识图语音今日补缺，按真实 trace 告诉你三件套缺哪条',
-      '/daily line - 每日语音台词，只读给主句、短回声、预检、预热和真测命令',
+      '/daily line - 每日语音台词，给主句、短回声、预检、预热和真测命令',
       '/daily relay - 识图语音每日接力，给群里分看图位、听写位、发声位和验收位',
       '/daily plan - 今日行动安排，串起挑战、打卡、识图语音三件套和收尾',
       '/daily guard|streak - 保连续短催卡，告诉你现在补挑战、打卡还是识图语音',

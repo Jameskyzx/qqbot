@@ -1,22 +1,16 @@
-import * as crypto from 'crypto';
 import { sanitizeOutgoingText } from '../message-sanitize';
 
 /**
  * 回复后处理模块
  * 从 ai-chat.ts 拆出
- * 清理 AI 输出的格式标签、舞台说明、Markdown，做长度截断和公式化开头去重
+ * 清理模型输出的格式标签、舞台说明、Markdown，做长度截断和公式化开头去重
  */
-
-function hashIndex(input: string, mod: number): number {
-  const digest = crypto.createHash('sha1').update(input).digest();
-  return digest[0] % Math.max(1, mod);
-}
 
 /** 去公式化开头 — 去掉"哥们,/兄弟们,/可以的,"等套话 */
 export function deFormulaicOpening(text: string): string {
   const trimmed = text.trimStart();
   const match = trimmed.match(
-    /^(?:不是哥们|不是，哥们|不是 哥们|哥们|兄弟们?|家人们|可以(?:的)?|有点东西|这波(?:有说法)?|有一说一|讲道理|说实话|看了一眼|简单说两句|先说结论|我的判断是|我只能说)[，,。!！?\s]+(.+)/s,
+    /^(?:不是哥们|不是，哥们|不是 哥们|哥们|兄弟们?|家人们|可以(?:的)?|当然(?:可以)?|好的|好嘞|没问题|收到|明白(?:了)?|有点东西|这波(?:有说法)?|有一说一|讲道理|说实话|看了一眼|简单说两句|简单来说|先说结论|我的判断是|我只能说)[，,。!！?\s]+(.+)/s,
   );
   if (!match) return text;
   const rest = match[1].trimStart();
@@ -24,9 +18,26 @@ export function deFormulaicOpening(text: string): string {
   if (/^(?:你是不是|你是|我是|到底|bot|机器人|ai|AI)/.test(rest)) return text;
   if (/^(?:来了|收到|在|到|感谢|谢谢)/.test(rest)) return text;
 
-  const replacements = ['等一下，', '这个不太对，', '先别急，', '', ''];
-  const idx = hashIndex(rest, replacements.length);
-  return `${replacements[idx]}${rest}`.trimStart();
+  return rest;
+}
+
+function stripAssistantCliches(text: string): string {
+  let next = text;
+  for (let i = 0; i < 4; i++) {
+    next = next
+      .replace(/^(?:当然(?:可以)?|好的|好嘞|没问题|收到|明白(?:了)?)[，,。!！\s]+(?=.{2,})/i, '')
+      .replace(/^(?:下面|以下)(?:是|给你|我来|整理|列出)[^，。！？!?:：\n]{0,40}[：:，,。]\s*/i, '')
+      .replace(/^我(?:会|来|将|可以|帮你|给你)[^，。！？!?:：\n]{0,42}(?:整理|分析|总结|说明|回答|解释|生成|提供)[：:，,。]?\s*/i, '')
+      .replace(/^(?:作为(?:一个)?(?:AI|人工智能|语言模型|机器人|bot|助手|群bot|QQ群bot))[^，。！？!?:：\n]{0,56}[：:，,。]?\s*/i, '')
+      .replace(/^我(?:是|只是)?(?:一个)?(?:AI|人工智能|语言模型|机器人|bot|助手|群bot|QQ群bot)[^，。！？!?:：\n]{0,56}[：:，,。]?\s*/i, '')
+      .replace(/^(?:请注意|需要注意的是|值得注意的是|温馨提示)[：:，,。]?\s*/i, '')
+      .replace(/^(?:从(?:这个|这条|图片|语音|内容)来看|整体来看|简单(?:看|判断)|客观来说)[：:，,。]?\s*/i, '')
+      .replace(/^(?:我的(?:建议|看法|判断)|个人(?:建议|看法|判断|感觉)|我(?:个人)?(?:觉得|认为|感觉))[是：:，,。]?\s*/i, '')
+      .trimStart();
+  }
+  return next
+    .replace(/[。.!！]?\s*(?:希望(?:这|以上)?(?:些)?(?:内容|回答)?(?:能|可以)?(?:帮到你|对你有帮助)|如果你(?:还)?(?:需要|想要|有其他问题).{0,48}|欢迎(?:继续)?(?:提问|追问|交流)|如需(?:更多|进一步).{0,36})[。.!！]?\s*$/i, '')
+    .trim();
 }
 
 /** 自然长度截断 — 超过maxLen时在最后一个句末标点截断 */
@@ -153,7 +164,7 @@ export function softenUnverifiedClaims(text: string, hasRealtimeData: boolean): 
       : '这块我没实时来源，不敢装有来源';
   }
   if (hasCurrentQualifier && (hasCsEntity || hasCsRealtimeNoun) && !alreadyConservative) {
-    return text.replace(/[。.!！]?\s*$/, '') + '。这块没实时来源我不敢拍死 你以最新为准';
+    return '这块我没实时来源，不敢拍死；你以最新为准';
   }
 
   // 检测高风险断言模式
@@ -256,6 +267,10 @@ export function stripEvidenceMetadata(text: string): string {
 /** 完整后处理 — AI 输出 → 清理后的最终文本 */
 export function postProcessReply(text: string): string {
   text = text.trim();
+  text = text
+    .replace(/我是(?:一个)?(?:AI|人工智能|语言模型|机器人|bot|助手|群bot|QQ群bot)[，,。!！]?\s*/gi, '')
+    .replace(/作为(?:一个)?(?:AI|人工智能|语言模型|机器人|bot|助手|群bot|QQ群bot)[^，。！？!?:：\n]{0,56}[：:，,。]?\s*/gi, '')
+    .replace(/(?:AI|人工智能|语言模型)(?:无法|不能|没有办法)[^。！？!?]{0,80}[。！？!?]?/gi, '这块我不敢硬编。');
   text = text.replace(
     /^[(（【\[]\s*(?:直播口吻(?:接弹幕)?|玩机器(?:风格|口吻)?|6657(?:风格|口吻)?|Machine(?:风格|口吻)?|拟态|风格参考|接弹幕|真人感|群聊回复|QQ?群回复|bot回复|机器人回复|第一人称(?:拟态)?|口吻)\s*[)）】\]]\s*[：:，,、-]?\s*/i,
     '',
@@ -283,6 +298,7 @@ export function postProcessReply(text: string): string {
   }
   text = text.replace(/(?:根据|结合|参考)(?:知识库|素材|临场素材包|临场笔记|语态素材|话题素材|实时事实参考|实时参考)[，, ]*/g, '');
   text = text.replace(/(?:知识库|临场素材包|临场笔记|语态素材|话题素材|实时事实参考|实时参考)(?:里)?(?:显示|提到|说|给到)[，, ]*/g, '');
+  text = stripAssistantCliches(text);
   text = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/```\w*\n?/g, '').replace(/```/g, '').trim());
   text = text.replace(/\*\*(.*?)\*\*/g, '$1');
   text = text.replace(/\*(.*?)\*/g, '$1');
@@ -293,6 +309,7 @@ export function postProcessReply(text: string): string {
   text = text.replace(/^["「『](.+)["」』]$/s, '$1');
   text = text.replace(/^[（(]\s*(.+?)\s*[）)]$/s, '$1');
   text = stripEvidenceMetadata(text);
+  text = stripAssistantCliches(text);
   text = deFormulaicOpening(text);
   text = text.replace(/\n{3,}/g, '\n\n');
   text = text.replace(/^ +/gm, '');
@@ -338,17 +355,43 @@ function removeDuplicates(text: string): string {
       result.push(sentence + punct);
       continue;
     }
-    const normalized = sentence.trim().toLowerCase();
+    const normalized = normalizeDuplicateSentence(sentence);
     // 太短的不算重复（"在""嗯""草"这种）
     if (normalized.length < 4) {
       result.push(sentence + punct);
       continue;
     }
-    if (seen.has(normalized)) continue; // 跳过重复句
+    if ([...seen].some((past) => isNearDuplicateSentence(normalized, past))) continue; // 跳过重复句
     seen.add(normalized);
     result.push(sentence + punct);
   }
   return result.join('');
+}
+
+function normalizeDuplicateSentence(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/^(?:不是哥们|不是，哥们|不是 哥们|哥们|兄弟们?|家人们|老哥|兄弟|先别急|等一下|等等|讲道理|说实话|有一说一|我只能说|这波(?:有说法)?|有点东西|可以(?:的)?)[，,。!！?？\s]*/i, '')
+    .replace(/(?:真的|确实|属于是|只能说|有点|一点|这波|这个|这种|就是|还是|其实|感觉)/g, '')
+    .replace(/[\s，,。.!！?？；;、:："'“”‘’（）()\[\]{}]/g, '');
+}
+
+function isNearDuplicateSentence(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const shorter = a.length < b.length ? a : b;
+  const longer = a.length < b.length ? b : a;
+  if (shorter.length >= 8 && longer.includes(shorter)) return true;
+  if (shorter.length < 10) return false;
+  const grams = new Set<string>();
+  for (let i = 0; i <= shorter.length - 2; i++) grams.add(shorter.slice(i, i + 2));
+  if (grams.size === 0) return false;
+  let hits = 0;
+  for (let i = 0; i <= longer.length - 2; i++) {
+    if (grams.has(longer.slice(i, i + 2))) hits++;
+  }
+  return hits / Math.max(1, grams.size) >= 0.86;
 }
 
 /** 修复标点问题 */

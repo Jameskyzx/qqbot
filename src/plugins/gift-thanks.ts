@@ -3,6 +3,9 @@ import { AIConfig, NoticeEvent } from '../types';
 import { getRandomKnowledgeLine } from './knowledge-base';
 import { generateVoice, getVoiceStats, inspectVoiceCache } from './tts';
 import { voiceRecordSegment } from './media-utils';
+import { createLogger } from '../logger';
+
+const logger = createLogger('Gift');
 
 interface GiftNotice extends NoticeEvent {
   sender_id?: number;
@@ -759,7 +762,7 @@ export function registerGiftThanksListener(bot: Bot): void {
     }
   });
 
-  console.log('[Gift] 礼物感谢已启用');
+  logger.info('[Gift] 礼物感谢已启用');
 }
 
 export const __test = {

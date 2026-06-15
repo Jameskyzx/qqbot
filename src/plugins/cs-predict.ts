@@ -5,6 +5,7 @@ import { Plugin, PluginContext } from '../types';
 import { fetchMatchDetail, fetchOngoingMatches, fetchRecentResults, inspectHltvCacheEntry } from './hltv-api';
 import { buildCsPlanFactTypeCoverageLines } from './cs-fact-coverage';
 import type { CsFactTypePlanItem } from './cs-fact-coverage';
+import { writeJsonFileAtomic } from './runtime-storage';
 
 type PredictChatType = 'group' | 'private';
 type PredictChoice = 'A' | 'B';
@@ -514,10 +515,7 @@ function pruneStore(store: CsPredictStore): void {
 function saveStore(store: CsPredictStore): void {
   pruneStore(store);
   const filepath = storePath();
-  fs.mkdirSync(path.dirname(filepath), { recursive: true });
-  const tmp = `${filepath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf-8');
-  fs.renameSync(tmp, filepath);
+  writeJsonFileAtomic(filepath, store, { trailingNewline: false });
 }
 
 function nowText(timestamp: number): string {

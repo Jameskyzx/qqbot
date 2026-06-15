@@ -6,11 +6,6 @@ import {
   dropAiSessionMemoryByQuery,
   formatReplyCachePoolStatus,
   formatReplyCachePreflight,
-  filterMemoryTruthRisk,
-  extractMediaCheckSources,
-  extractVisionCheckSources,
-  formatMediaCacheWarm,
-  formatVisionCacheWarm,
   formatVoiceCacheWarm,
   getAiChatStats,
   getMediaWarmupCandidates,
@@ -23,6 +18,9 @@ import {
   startAiChatBackgroundTasks,
   trimAiSessionMemory,
 } from './ai-chat';
+import { extractMediaCheckSources, extractVisionCheckSources } from './ai-media-sources';
+import { filterMemoryTruthRisk } from './ai-memory-utils';
+import { formatMediaCacheWarm, formatVisionCacheWarm } from './ai-media-preflight';
 import { cleanupCache as cleanImageCache, getCacheStats as getImageCacheStats, getImageDataUrl, inspectImageCacheSources } from './image-cache';
 import { auditKnowledge, getKnowledgeStats, pruneKnowledgeAutoLog } from './knowledge-base';
 import { cleanSttCache, getSttStats } from './stt';
@@ -443,7 +441,7 @@ function formatMaintenanceRunbookPlan(config: BotConfig, runtime: ReturnType<Plu
       p0,
       '补真实 API Key',
       '配置 WANJIER_API_KEY 或 config.json ai.api_key；npm run doctor；npm run api:test',
-      'AI接口未配置或仍是占位值，远端 AI/识图/TTS/STT 会不可用。',
+      '对话接口未配置或仍是占位值，远端对话/识图/TTS/STT 会不可用。',
       '先让基础 AI 链路真通，再看回复风格、语音和识图质量。',
     );
   }
@@ -671,7 +669,7 @@ function formatCacheHealthStatus(config: BotConfig, sessionId: string): string {
   pushAdvice(advice, memory.embeddings.totalIndexed > memory.embeddings.maxMessagesPerSession * Math.max(1, memory.embeddings.sessionsInMemory) * 0.9,
     'RAG索引接近每会话上限，老消息会被裁剪；想省内存可降低 memory_max_messages_per_session。');
   pushAdvice(advice, aiSamples >= 20 && aiStats.replyCacheHits / aiSamples < 0.2 && aiStats.replyCacheEntries >= Math.floor(aiStats.replyCacheMaxEntries * 0.8),
-    'AI回复缓存接近满但命中低，适合缩短 ai_reply_cache_seconds 或检查是否太多高上下文场景在旁路。');
+    '回复缓存接近满但命中低，适合缩短 ai_reply_cache_seconds 或检查是否太多高上下文场景在旁路。');
   pushAdvice(advice, searchStats.maxEntries > 0 && searchStats.negativeEntries > Math.floor(searchStats.maxEntries * 0.35),
     '搜索空缓存偏多，先观察搜索源可用性；必要时降低 search_negative_cache_seconds。');
   pushAdvice(advice, csStats.staleEntries > csStats.entries || csStats.staleServed > 0 || csStats.failures > 0,
@@ -694,8 +692,8 @@ function formatCacheHealthStatus(config: BotConfig, sessionId: string): string {
     '缓存健康',
     `内存压力: ${memoryPressure} heap ${heapUsedMB}/${heapTotalMB}MB rss ${rssMB}MB external ${externalMB}MB；队列${aiStats.pendingJobs} 最老${Math.round(aiStats.oldestQueueAgeMs / 1000)}s`,
     `上下文: 内存${aiStats.sessions}会话 max_context=${contextMaxMessages} 过期${contextExpireMinutes}m 压缩完成${aiStats.completedCompressions}/延后${aiStats.deferredCompressions}/失败${aiStats.failedCompressions}`,
-    `AI回复缓存: 命中率${formatHitRate(aiStats.replyCacheHits, aiStats.replyCacheMisses)} 样本${aiSamples} 条目${aiStats.replyCacheEntries}/${aiStats.replyCacheMaxEntries} 飞行${aiStats.replyInFlight} 旁路${aiStats.replyCacheBypasses}`,
-    `AI缓存策略Top: ${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`,
+    `回复缓存: 命中率${formatHitRate(aiStats.replyCacheHits, aiStats.replyCacheMisses)} 样本${aiSamples} 条目${aiStats.replyCacheEntries}/${aiStats.replyCacheMaxEntries} 飞行${aiStats.replyInFlight} 旁路${aiStats.replyCacheBypasses}`,
+    `缓存策略Top: ${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`,
     `搜索缓存: 命中率${formatHitRate(searchStats.hits, searchStats.misses)} 样本${searchSamples} 条目${searchStats.cacheEntries}/${searchStats.maxEntries} 空${searchStats.negativeEntries} 磁盘命中${searchStats.diskHits} 飞行${searchStats.inFlight}`,
     `CS实时缓存: 命中率${formatHitRate(csStats.hits, csStats.misses)} 样本${csSamples} fresh ${csStats.entries} / stale ${csStats.staleEntries} 磁盘${csStats.diskHits}/${csStats.diskEntriesLoaded} 写入${csStats.writes} 兜底${csStats.staleServed} 失败${csStats.failures}`,
     `图片缓存: 命中率${formatHitRate(imageStats.hits, imageStats.misses)} 样本${imageSamples} ${imageStats.count}/${imageStats.maxFiles}张 ${imageStats.sizeMB}/${imageStats.maxSizeMB}MB(${formatUsagePercent(imageStats.sizeMB, imageStats.maxSizeMB)}) 失败${imageStats.downloadFailures} 飞行${imageStats.inFlight}`,
@@ -881,7 +879,7 @@ function formatMemoryMaintenancePlan(config: BotConfig, sessionId: string): stri
 function formatReplyCachePruneReport(): string {
   const result = pruneExpiredReplyCacheForMaintenance();
   return [
-    'AI回复缓存过期清理',
+    '回复缓存过期清理',
     '模式: 只清理 expired 回复缓存；保留 fresh 热缓存，不联网、不调用模型、不清图片/TTS/STT/CS缓存。',
     `条目: before ${result.before} / fresh ${result.fresh} / expired ${result.expired} / removed ${result.removed} / after ${result.after}`,
     `飞行请求: ${result.inFlight} 个仍保留等待，不会被 prune 打断。`,
@@ -1206,8 +1204,8 @@ export const adminPlugin: Plugin = {
         `索引: 内存${memory.embeddings.sessionsInMemory}/${memory.embeddings.maxSessionsInMemory}会话 ${memory.embeddings.totalIndexed}条 磁盘${memory.embeddings.diskSessions}会话 待写${memory.embeddings.pendingFlushes}`,
         `检索: ${memory.embeddings.hits}/${memory.embeddings.misses} 查询${memory.embeddings.queries} 每会话上限${memory.embeddings.maxMessagesPerSession}`,
         `用户画像缓存: ${profileStats.cached ? 'warm' : 'cold'} 条目${profileStats.profiles} 命中${profileStats.cacheHits}/${profileStats.diskReads} 写入${profileStats.diskWrites} 解析错${profileStats.parseErrors}`,
-        `AI回复缓存: ${aiStats.replyCacheEntries}/${aiStats.replyCacheMaxEntries}条 飞行${aiStats.replyInFlight} 命中${aiStats.replyCacheHits}/${aiStats.replyCacheMisses} 旁路${aiStats.replyCacheBypasses}`,
-        `AI缓存策略Top: ${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`,
+        `回复缓存: ${aiStats.replyCacheEntries}/${aiStats.replyCacheMaxEntries}条 飞行${aiStats.replyInFlight} 命中${aiStats.replyCacheHits}/${aiStats.replyCacheMisses} 旁路${aiStats.replyCacheBypasses}`,
+        `缓存策略Top: ${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`,
         ...(memory.embeddings.lastError ? [`索引最近错误: ${memory.embeddings.lastError}`] : []),
         '用法: /mem health；/mem plan；/mem cache status；/mem cache <消息>；/mem check <消息>；/mem user <QQ号>；/mem recent [条数]；/mem search <关键词>；管理员 /mem cache prune、/mem user drop <QQ号>、/mem drop <关键词>、/mem trim [条数] 或 /mem clear',
         `Node: ${process.version}`,
@@ -1288,7 +1286,7 @@ export const adminPlugin: Plugin = {
           '配置已重载，运行期参数也重新应用了',
           `config_version: ${newConfig.config_version || '未填写'} / ${CONFIG_VERSION}`,
           `预设: ${newConfig.ai.active_preset || '无'}，知识库: ${newConfig.ai.enable_knowledge ? 'on' : 'off'}，搜索: ${newConfig.ai.enable_search ? 'on' : 'off'}`,
-          `并发: AI ${newConfig.ai.ai_global_concurrency} / 搜索 ${newConfig.ai.search_global_concurrency} / 图 ${newConfig.ai.vision_global_concurrency} / 听写 ${newConfig.ai.stt_global_concurrency} / 语音 ${newConfig.ai.tts_global_concurrency}`,
+          `并发: 对话 ${newConfig.ai.ai_global_concurrency} / 搜索 ${newConfig.ai.search_global_concurrency} / 图 ${newConfig.ai.vision_global_concurrency} / 听写 ${newConfig.ai.stt_global_concurrency} / 语音 ${newConfig.ai.tts_global_concurrency}`,
           '跑 /maint status 可以看当前维护面板',
         ].join('\n'));
       } catch (err) {
@@ -1561,7 +1559,7 @@ export const adminPlugin: Plugin = {
           `多模态: 识图=${currentConfig.ai.enable_vision ? 'on' : 'off'}，听写=${currentConfig.ai.enable_stt ? 'on' : 'off'}，语音=${currentConfig.ai.enable_tts ? 'on' : 'off'}`,
           `真人停顿: ${currentConfig.ai.human_reply_delay_enabled === false ? 'off' : 'on'} 普通${currentConfig.ai.human_reply_delay_min_ms ?? 250}-${currentConfig.ai.human_reply_delay_max_ms ?? 1400}ms 强触发${currentConfig.ai.human_reply_delay_forced_min_ms ?? 120}-${currentConfig.ai.human_reply_delay_forced_max_ms ?? 650}ms`,
           `缓存: 搜索${currentConfig.ai.search_cache_max_entries}条，图片${currentConfig.ai.image_cache_max_mb}MB/${currentConfig.ai.image_cache_max_files}文件，TTS${currentConfig.ai.tts_cache_max_mb}MB，STT${currentConfig.ai.stt_cache_max_mb}MB`,
-          `并发: AI ${currentConfig.ai.ai_global_concurrency} / 搜索 ${currentConfig.ai.search_global_concurrency} / 图 ${currentConfig.ai.vision_global_concurrency} / 听写 ${currentConfig.ai.stt_global_concurrency} / 语音 ${currentConfig.ai.tts_global_concurrency}，普通排队上限 ${currentConfig.ai.gate_passive_queue_max}`,
+          `并发: 对话 ${currentConfig.ai.ai_global_concurrency} / 搜索 ${currentConfig.ai.search_global_concurrency} / 图 ${currentConfig.ai.vision_global_concurrency} / 听写 ${currentConfig.ai.stt_global_concurrency} / 语音 ${currentConfig.ai.tts_global_concurrency}，普通排队上限 ${currentConfig.ai.gate_passive_queue_max}`,
         ].join('\n'));
         return true;
       }
@@ -1598,11 +1596,11 @@ export const adminPlugin: Plugin = {
         ...(runtime.lastConnectionHint ? [`连接提示: ${runtime.lastConnectionHint}`] : []),
         `内存: heap ${formatMb(mem.heapUsed)}MB / rss ${formatMb(mem.rss)}MB`,
         `队列: ${aiStats.queuedGroups}群 待处理${aiStats.pendingJobs} 强触发${aiStats.forcedJobs} 最老${Math.round(aiStats.oldestQueueAgeMs / 1000)}s`,
-        `闸门: AI ${aiStats.gates.ai.active}/${aiStats.gates.ai.limit}+${aiStats.gates.ai.queued} 搜索 ${aiStats.gates.search.active}/${aiStats.gates.search.limit}+${aiStats.gates.search.queued} 图 ${aiStats.gates.vision.active}/${aiStats.gates.vision.limit}+${aiStats.gates.vision.queued} 听写 ${aiStats.gates.stt.active}/${aiStats.gates.stt.limit}+${aiStats.gates.stt.queued} 语音 ${aiStats.gates.tts.active}/${aiStats.gates.tts.limit}+${aiStats.gates.tts.queued}`,
+        `闸门: 对话 ${aiStats.gates.ai.active}/${aiStats.gates.ai.limit}+${aiStats.gates.ai.queued} 搜索 ${aiStats.gates.search.active}/${aiStats.gates.search.limit}+${aiStats.gates.search.queued} 图 ${aiStats.gates.vision.active}/${aiStats.gates.vision.limit}+${aiStats.gates.vision.queued} 听写 ${aiStats.gates.stt.active}/${aiStats.gates.stt.limit}+${aiStats.gates.stt.queued} 语音 ${aiStats.gates.tts.active}/${aiStats.gates.tts.limit}+${aiStats.gates.tts.queued}`,
         `知识库: ${knowledgeStats.sections}块 ${knowledgeStats.chars}字 注入${knowledgeStats.selectHits}/${knowledgeStats.selectMisses} 审计${knowledgeStats.auditIssues} 自动批次${knowledgeStats.batches}`,
         `记忆/RAG: ${aiStats.memoryEnabled ? 'on' : 'off'} 内存${aiStats.memory.sessionsInMemory}/${aiStats.memory.maxSessionsInMemory}会话 磁盘${aiStats.memory.diskSessions}会话 索引${aiStats.memory.totalIndexed}条 检索${aiStats.memory.hits}/${aiStats.memory.misses}`,
-        `AI回复缓存: ${aiStats.replyCacheEntries}/${aiStats.replyCacheMaxEntries}条 飞行${aiStats.replyInFlight} 命中${aiStats.replyCacheHits}/${aiStats.replyCacheMisses} 旁路${aiStats.replyCacheBypasses}`,
-        `AI缓存策略Top: ${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`,
+        `回复缓存: ${aiStats.replyCacheEntries}/${aiStats.replyCacheMaxEntries}条 飞行${aiStats.replyInFlight} 命中${aiStats.replyCacheHits}/${aiStats.replyCacheMisses} 旁路${aiStats.replyCacheBypasses}`,
+        `缓存策略Top: ${aiStats.replyCachePolicyTop.join(' / ') || '暂无样本'}`,
         `回复真实性: 证据${aiStats.evidenceTraceCount} 无实时${aiStats.realtimeIntentWithoutDataCount} 旧证据${aiStats.realtimeStaleEvidenceCount} 事实修正${aiStats.factGuardRepairCount} 质量修复${aiStats.qualityRepairCount} 输出修复${aiStats.outputRepairCount}`,
         `真人停顿: ${aiStats.humanReplyDelayCount}次 avg=${aiStats.humanReplyDelayAvgMs}ms 最近=${aiStats.lastHumanReplyDelayMs}ms`,
         ...(aiStats.lastEvidenceLedger.length > 0 ? [`最近证据账本: ${aiStats.lastEvidenceLedger.join(' / ').slice(0, 180)}`] : []),

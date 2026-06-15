@@ -5,6 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
+    "test": "npm run smoke",
+    "verify": "npm run build && npm run doctor && npm audit --omit=dev && npm run smoke",
     "smoke": "node scripts/smoke.js",
     "doctor": "node scripts/doctor.js",
     "daily:image:audit": "node scripts/daily-image-audit.js",
@@ -12,9 +14,20 @@
     "daily:image:template": "node scripts/daily-image-audit.js --template-json",
     "daily:image:template:csv": "node scripts/daily-image-audit.js --template-csv",
     "daily:image:write-template": "node scripts/daily-image-audit.js --template-json --write-template data/daily-beauty-images.todo.json",
+    "daily:image:scan": "node scripts/build-daily-image-manifest.js",
+    "daily:image:scan:write": "node scripts/build-daily-image-manifest.js --write data/daily-beauty-images.json",
+    "daily:image:bestdori": "node scripts/build-bestdori-card-manifest.js",
+    "daily:image:bestdori:write": "node scripts/build-bestdori-card-manifest.js --write data/bestdori-cards.json",
+    "daily:image:players": "node scripts/build-player-image-manifest.js",
+    "daily:image:players:write": "node scripts/build-player-image-manifest.js --write data/daily-player-images.json",
+    "daily:image:genshin": "node scripts/build-genshin-image-manifest.js",
+    "daily:image:genshin:write": "node scripts/build-genshin-image-manifest.js --write data/genshin-character-images.json",
     "api:test": "node scripts/api-test.js",
     "config:sync": "node scripts/sync-config.js",
     "data:test": "node scripts/check-cs-data.js",
+    "maintainability": "node scripts/maintainability-report.js",
+    "maintain": "bash scripts/maintain.sh",
+    "vps:check": "node scripts/vps-check.js",
     "update": "bash scripts/update.sh",
     "voice:test": "node scripts/voice-test.js",
     "stt:test": "node scripts/stt-test.js",
@@ -22,15 +35,20 @@
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts"
   },
-  "keywords": ["qq", "bot", "onebot", "napcat"],
+  "keywords": [
+    "qq",
+    "bot",
+    "onebot",
+    "napcat"
+  ],
   "license": "MIT",
   "dependencies": {
-    "ws": "^8.18.0"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.13",
+    "@types/node": "^22.19.21",
+    "@types/ws": "^8.18.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.0"
+    "typescript": "^5.9.3"
   }
 }

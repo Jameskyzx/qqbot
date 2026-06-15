@@ -57,7 +57,8 @@ src/
     tts.ts                 语音生成和缓存
     diag.ts                严格自检
     status.ts              运行状态
-    fun.ts                 roll/luck/jrrp/choose/rand/csplayer
+    fun.ts                 roll/luck/jrrp/choose/rand/csplayer 逻辑
+    fun-data.ts            趣味/每日抽签静态数据
     admin.ts               reload/maint/ban/unban/kick/title
     help.ts ping.ts stats.ts time.ts poke.ts recall.ts repeater.ts welcome.ts
 knowledge/
@@ -69,6 +70,7 @@ scripts/
   smoke.js                 构建后 smoke test
   recover.sh               一键诊断+恢复
   doctor.js                配置检查
+  maintainability-report.js 只读维护性巡检和下一轮拆分建议
 ```
 
 ## 环境要求
@@ -1380,7 +1382,7 @@ npm run smoke
 每日 CS 系列说明：
 
 - 同一个群友在同一个群同一天抽到同一结果，不同群独立，第二天刷新。
-- 每日选手、战队、地图、武器、枪皮、定位、道具、战术、残局、发刀、木柜子、原神、冷知识、书摘、古诗词、紫禁之巅都优先读取 `data/daily-beauty-images.json` 的专属美图池；每个具体对象建议 200 张起。
+- 每日选手、战队、地图、武器、枪皮、定位、道具、战术、残局、发刀、原神、冷知识、书摘、古诗词、紫禁之巅都优先读取 `data/daily-beauty-images.json` 的专属美图池；木柜子优先读取 `data/bestdori-cards.json` 的游戏卡面，再读专属美图池；每个具体对象建议 200 张起。
 - 枪皮和刀皮按“武器/刀型 + 皮肤名”成对匹配，图片不会跨功能、跨对象混用；缺图时再走专用授权清单、公开图片接口和日签图。
 - 图片发送前会先下载进本地图片缓存，再以 `base64://` 发给 QQ；图片失败时仍返回文字，不会让命令像“没反应”。
 - 输出包含 @、标题、语境、指数、今天打法、别急点、机器短评，排版尽量短而清楚。
@@ -1705,13 +1707,16 @@ knowledge/inbox/
 
 ```bash
 npm run doctor
+npm run maintainability
 npm run build
 npm run api:test
 npm run data:test
 npm run smoke
 ```
 
-`doctor` 是本机/VPS 预检，不需要 QQ 在线，也不需要连接 NapCat。它会检查 `config.json`、`config.example.json`、`dist/index.js`、知识库、缓存目录写入权限、`data/` 运行数据父目录、`context_store/embeddings` RAG 索引目录、`voice_cache/local` 本地 TTS 输出目录、`knowledge/inbox` 素材收件箱、API Key 是否仍是占位值、`src` 是否比 `dist` 新、2G1C 并发配置是否过高。默认只有“硬伤”会返回非 0；如果想让风险项也阻断部署，可以跑 `node scripts/doctor.js --strict`。
+`doctor` 是本机/VPS 预检，不需要 QQ 在线，也不需要连接 NapCat。它会检查 `config.json`、`config.example.json`、`dist/index.js`、知识库、缓存目录写入权限、`data/` 运行数据父目录、`context_store/embeddings` RAG 索引目录、`voice_cache/local` 本地 TTS 输出目录、`knowledge/inbox` 素材收件箱、API Key 是否仍是占位值、`src` 是否比 `dist` 新、源码日志是否统一走 logger、2G1C 并发配置是否过高。默认只有“硬伤”会返回非 0；如果想让风险项也阻断部署，可以跑 `node scripts/doctor.js --strict`。
+
+`maintainability` 是只读架构巡检，会统计 `src/` 和 `scripts/` 的文件规模、最大运行时模块、静态大数据文件、TODO/FIXME、日志/JSON 写盘策略命中情况，并输出下一轮拆分候选。它不修改文件、不要求 QQ 在线；机器可读输出用 `node scripts/maintainability-report.js --json`。
 
 `api:test` 会读取 `.env` 和 `config.json`，真实请求一次 OpenAI 兼容 Chat Completions 接口。只有它显示 `[api:test] OK`，群里的 `/ai` 和 @ 对话才算真的通了；如果失败，它会直接提示是 key、模型名、API 地址还是 VPS 网络问题。
 
@@ -2234,10 +2239,12 @@ VPS 正常更新只跑一条命令：
 
 ```bash
 cd /opt/wanjier-bot
+npm run vps:check
+npm run maintainability
 npm run update
 ```
 
-`npm run update` 会自动备份配置、拉取 `origin/main`、同步配置字段、安装依赖、构建、跑 doctor、跑每日图片池审计、跑 smoke、重启 PM2。以后不要手动拆成 `git pull`、`npm install`、`pm2 restart` 一串命令，避免漏掉构建或审计。
+`npm run vps:check` 是只读预检，会列出当前目录、git/Node/npm/PM2/config/env 状态和推荐命令，不会拉代码、安装依赖或重启服务。`npm run maintainability` 也是只读，只列出当前代码规模和下一轮拆分/治理候选。`npm run update` 会自动备份配置、拉取 `origin/main`、同步配置字段、安装依赖、构建、跑 doctor、跑每日图片池审计、跑 smoke、重启 PM2。以后不要手动拆成 `git pull`、`npm install`、`pm2 restart` 一串命令，避免漏掉构建或审计。
 
 如果 VPS 上 `knowledge/wanjier.md` 有本地改动，先备份并 stash 本地知识库，再跑自动更新：
 
