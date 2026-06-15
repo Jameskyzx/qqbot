@@ -44,6 +44,7 @@ src/
   types.ts                 OneBot 和配置类型
   plugins/
     ai-chat.ts             核心 AI 入口（上下文、知识注入、搜索、识图、STT、TTS 调度）
+    ai-conversation-governance.ts 对话治理层（接话形态、记忆预算、多模态/事实边界）
     ai-context.ts          上下文管理器（内存+磁盘双层、按需加载、压缩摘要）
     llm-api.ts             LLM HTTP 调用、续写、视觉模式自动重试、重试机制
     media-utils.ts         图片/语音 URL 提取、OneBot 媒体解析、base64 封装
@@ -728,6 +729,12 @@ AI 核心字段：
 | `gift_voice_cooldown_seconds` | `180` | 同群礼物语音冷却，避免连送时刷语音 |
 | `gift_voice_min_combo_events` | `2` | 短窗口连续礼物达到多少次后允许语音 |
 | `gift_voice_min_total_count` | `8` | 单次或短窗口累计礼物数量达到多少后允许语音 |
+| `conversation_governance_enabled` | `true` | 启用对话治理层，统一决定接话形态、回复长度、记忆预算和多模态/事实边界 |
+| `conversation_busy_max_sentences` | `1` | 群聊很快时普通主动接话最多几句，防止刷屏 |
+| `conversation_clarify_ambiguous` | `true` | “这咋了/啥意思”这类短问句优先反问澄清，不硬编上下文 |
+| `multimodal_grounding_strict` | `true` | 图片/语音回复先落到真实可见/可听内容，没进链路就承认看不到/没听到 |
+| `fact_freshness_strict` | `true` | 排名、比分、阵容、转会等实时事实必须保留 fresh/stale/miss 边界 |
+| `memory_layering_enabled` | `true` | 将短期上下文、长期 RAG、用户画像和事实知识分层控预算 |
 | `cooldown_seconds` | `0-5` | 普通主动接话冷却，@/回复/命令不受限 |
 | `human_reply_delay_enabled` | `true` | 真人感发送前短停顿；图片、语音输入、明确要语音和排队较久的回复会自动跳过 |
 | `human_reply_delay_min_ms` / `human_reply_delay_max_ms` | `250` / `1400` | 普通主动接话短停顿区间 |
@@ -1714,9 +1721,9 @@ npm run data:test
 npm run smoke
 ```
 
-`doctor` 是本机/VPS 预检，不需要 QQ 在线，也不需要连接 NapCat。它会检查 `config.json`、`config.example.json`、`dist/index.js`、知识库、缓存目录写入权限、`data/` 运行数据父目录、`context_store/embeddings` RAG 索引目录、`voice_cache/local` 本地 TTS 输出目录、`knowledge/inbox` 素材收件箱、API Key 是否仍是占位值、`src` 是否比 `dist` 新、源码日志是否统一走 logger、2G1C 并发配置是否过高。默认只有“硬伤”会返回非 0；如果想让风险项也阻断部署，可以跑 `node scripts/doctor.js --strict`。
+`doctor` 是本机/VPS 预检，不需要 QQ 在线，也不需要连接 NapCat。它会检查 `config.json`、`config.example.json`、`dist/index.js`、知识库、缓存目录写入权限、`data/` 运行数据父目录、`context_store/embeddings` RAG 索引目录、`voice_cache/local` 本地 TTS 输出目录、`knowledge/inbox` 素材收件箱、API Key 是否仍是占位值、`src` 是否比 `dist` 新、源码日志是否统一走 logger、对话治理/记忆分层开关和 2G1C 并发配置是否过高。默认只有“硬伤”会返回非 0；如果想让风险项也阻断部署，可以跑 `node scripts/doctor.js --strict`。
 
-`maintainability` 是只读架构巡检，会统计 `src/` 和 `scripts/` 的文件规模、最大运行时模块、静态大数据文件、TODO/FIXME、日志/JSON 写盘策略命中情况，并输出下一轮拆分候选。它不修改文件、不要求 QQ 在线；机器可读输出用 `node scripts/maintainability-report.js --json`。
+`maintainability` 是只读架构巡检，会统计 `src/` 和 `scripts/` 的文件规模、最大运行时模块、静态大数据文件、TODO/FIXME、日志/JSON 写盘策略命中情况，并输出下一轮拆分候选，重点提示 `ai-chat.ts`、对话治理、媒体编排和实时证据 helpers 的拆分方向。它不修改文件、不要求 QQ 在线；机器可读输出用 `node scripts/maintainability-report.js --json`。
 
 `api:test` 会读取 `.env` 和 `config.json`，真实请求一次 OpenAI 兼容 Chat Completions 接口。只有它显示 `[api:test] OK`，群里的 `/ai` 和 @ 对话才算真的通了；如果失败，它会直接提示是 key、模型名、API 地址还是 VPS 网络问题。
 
@@ -1733,6 +1740,7 @@ npm run smoke
 - 私聊消息链路：私聊 `/ping`、私聊 AI 强制回复、私聊每日 CS 选手出图。
 - 表情后处理：AI 的常见 emoji 会转 QQ face，整条消息会限制表情数量。
 - 示例配置的占位 API Key 不会被误判为可用。
+- 对话治理层会识别事实问法、多模态输入、模糊短问句和繁忙群聊，并把策略写进 `/trace last`。
 
 当前仍需要人工或线上压测覆盖的点：
 
@@ -2244,7 +2252,13 @@ npm run maintainability
 npm run update
 ```
 
-`npm run vps:check` 是只读预检，会列出当前目录、git/Node/npm/PM2/config/env 状态和推荐命令，不会拉代码、安装依赖或重启服务。`npm run maintainability` 也是只读，只列出当前代码规模和下一轮拆分/治理候选。`npm run update` 会自动备份配置、拉取 `origin/main`、同步配置字段、安装依赖、构建、跑 doctor、跑每日图片池审计、跑 smoke、重启 PM2。以后不要手动拆成 `git pull`、`npm install`、`pm2 restart` 一串命令，避免漏掉构建或审计。
+`npm run vps:check` 是只读预检，会列出当前目录、git/Node/npm/PM2/config/env 状态和推荐命令，不会拉代码、安装依赖或重启服务。`npm run maintainability` 也是只读，只列出当前代码规模和下一轮拆分/治理候选。`npm run update` 会自动备份配置、拉取 `origin/main`、同步配置字段、安装依赖、构建、跑 maintainability、跑 doctor、跑每日图片池审计、跑 smoke、重启 PM2。以后不要手动拆成 `git pull`、`npm install`、`pm2 restart` 一串命令，避免漏掉构建或审计。
+
+如果 VPS 的接口 key 暂时没配好，但只想先更新代码和本地自检：
+
+```bash
+npm run update -- --no-api-test
+```
 
 如果 VPS 上 `knowledge/wanjier.md` 有本地改动，先备份并 stash 本地知识库，再跑自动更新：
 
@@ -2268,6 +2282,8 @@ bash scripts/update.sh --strict-images
 ```
 
 `scripts/update.sh` 会打印更新前提交、本地 HEAD、远端 HEAD、更新后提交、每日图片审计和 PM2 重启结果。如果末尾显示“本地提交仍未等于 origin/main”，说明 VPS 目录、分支或本地改动还没对齐。
+
+更新脚本可用 `--no-maintainability` 临时跳过维护性巡检；日常不建议跳过，因为它能提前暴露大模块继续膨胀、写盘策略漂移和后续拆分候选。
 
 更新脚本还会运行 `node scripts/sync-config.js --apply`，把 `config.example.json` 里新增的字段补到现有 `config.json`，并在 `backups/` 下备份旧配置；不会覆盖你的 `api_key`。如果 `config_version` 落后，它会刷新内置 `wanjier` 预设 prompt，否则 VPS 代码更新了但说话规则还可能停在旧版。手动只同步配置可跑：
 
