@@ -13,6 +13,8 @@ cd "$ROOT_DIR"
 RUN_CACHE_CLEAN="${WANJIER_MAINTAIN_CACHE_CLEAN:-1}"
 RUN_DOCTOR="${WANJIER_MAINTAIN_DOCTOR:-1}"
 RUN_VERIFY="${WANJIER_MAINTAIN_VERIFY:-0}"
+RUN_REPORT="${WANJIER_MAINTAIN_REPORT:-1}"
+WRITE_JSON_REPORT="${WANJIER_MAINTAIN_JSON_REPORT:-0}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -25,10 +27,21 @@ for arg in "$@"; do
     --no-doctor)
       RUN_DOCTOR="0"
       ;;
+    --report)
+      RUN_REPORT="1"
+      ;;
+    --no-report)
+      RUN_REPORT="0"
+      ;;
+    --json-report)
+      WRITE_JSON_REPORT="1"
+      RUN_REPORT="1"
+      ;;
     -h|--help)
-      echo "用法: bash scripts/maintain.sh [--verify] [--no-cache-clean] [--no-doctor]"
+      echo "用法: bash scripts/maintain.sh [--verify] [--no-cache-clean] [--no-doctor] [--report|--no-report] [--json-report]"
       echo "  默认: 清理缓存 + doctor + 资源报告"
       echo "  --verify: 追加 npm run build && npm run smoke"
+      echo "  --json-report: 写 logs/maintainability-latest.json"
       exit 0
       ;;
   esac
@@ -68,7 +81,19 @@ else
   echo "[3/4] 跳过 verify；需要时加 --verify"
 fi
 
-echo "[4/4] 资源概览..."
+if [ "$RUN_REPORT" = "1" ]; then
+  echo "[4/5] 维护性巡检..."
+  npm run maintainability
+  if [ "$WRITE_JSON_REPORT" = "1" ]; then
+    mkdir -p logs
+    node scripts/maintainability-report.js --json > logs/maintainability-latest.json
+    echo "  已写入 logs/maintainability-latest.json"
+  fi
+else
+  echo "[4/5] 跳过维护性巡检"
+fi
+
+echo "[5/5] 资源概览..."
 if command -v free >/dev/null 2>&1; then
   free -h
 fi

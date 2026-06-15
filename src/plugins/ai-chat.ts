@@ -253,6 +253,11 @@ import {
   buildSystemPrompt,
   buildTargetText,
 } from './ai-prompt-builders';
+import {
+  buildConversationGovernanceDecision,
+  formatConversationGovernancePrompt,
+  formatConversationGovernanceTrace,
+} from './ai-conversation-governance';
 import { calculateHumanReplyDelayMs } from './ai-human-delay';
 import {
   buildFocusedHistory,
@@ -295,6 +300,7 @@ interface ReplyJob {
   repliedMessageId?: number;
   triggerReason: string;
   forced: boolean;
+  groupChatBusy: boolean;
   createdAt: number;
   contextSummary: string;
   contextMessages: ChatMessage[];
@@ -713,6 +719,7 @@ function makeStyleCheckJob(text: string, forceVoice: boolean = false): ReplyJob 
     isReplyToBot: false,
     triggerReason: 'style-check',
     forced: true,
+    groupChatBusy: false,
     createdAt: now,
     contextSummary: '',
     contextMessages: [],
@@ -3129,6 +3136,7 @@ export const aiChatPlugin: Plugin = {
       repliedMessageId: Number.isFinite(repliedMessageId) ? repliedMessageId : undefined,
       triggerReason,
       forced: trigger.forced,
+      groupChatBusy,
       createdAt: Date.now(),
       contextSummary: snapshotSummary,
       contextMessages: [...snapshotMessages],
@@ -3407,7 +3415,23 @@ export const aiChatPlugin: Plugin = {
 
         // ===== 构建发给API的消息 =====
         // 注意：history是除当前消息外的历史（当前已经append了，需要排除最后一条）
-        const sendLimit = Math.max(8, config.context_send_messages || 25);
+        const preliminaryGovernance = config.conversation_governance_enabled !== false
+          ? buildConversationGovernanceDecision(config, {
+            userId: job.userId,
+            repliedMessageId: job.repliedMessageId,
+            effectiveText: job.effectiveText,
+            hasImages: job.hasImages,
+            hasRecords: job.hasRecords,
+            contextMessages: job.contextMessages,
+            forced: job.forced,
+            groupChatBusy: job.groupChatBusy,
+            hasCurrentRealtimeData: false,
+            recordTranscriptText,
+            searchUsed: !!searchInfo,
+            knowledgeTopic: hasKnowledgeTopic,
+          })
+          : null;
+        const sendLimit = Math.max(8, preliminaryGovernance?.memory.shortTermMessages ?? config.context_send_messages ?? 25);
         const focusedHistory = buildFocusedHistory(job, sendLimit);
         const history = focusedHistory.history;
         const systemPrompt = buildSystemPrompt(config);
@@ -3422,7 +3446,7 @@ export const aiChatPlugin: Plugin = {
         if (config.enable_memory_retrieval !== false && memoryQuery && memoryQuery.length >= 4) {
           try {
             const minSimilarity = config.memory_min_similarity ?? 0.18;
-            const topK = config.memory_top_k ?? 4;
+            const topK = preliminaryGovernance?.memory.longTermTopK ?? config.memory_top_k ?? 4;
             const recent = cm.retrieveSimilar(
               job.sessionId,
               memoryQuery,
@@ -3442,7 +3466,7 @@ export const aiChatPlugin: Plugin = {
             const useful = truthRisk.kept
               .slice(0, Math.max(0, topK));
             if (useful.length > 0 || memoryFiltered > 0) {
-              const budget = Math.max(0, config.memory_inject_max_chars ?? cm.getMemoryInjectMaxChars());
+              const budget = Math.max(0, preliminaryGovernance?.memory.longTermChars ?? config.memory_inject_max_chars ?? cm.getMemoryInjectMaxChars());
               if (budget > 0) {
                 const lines: string[] = [];
                 let used = 0;
@@ -3486,7 +3510,26 @@ export const aiChatPlugin: Plugin = {
           memoryFiltered,
         };
         const styleScene = buildStyleSceneDecision(job, recordTranscriptText, csRealtimeIntent, hasCurrentRealtimeData);
-        const styleSceneInfo = formatStyleScenePrompt(styleScene, hasCurrentRealtimeData, job);
+        const governance = config.conversation_governance_enabled !== false
+          ? buildConversationGovernanceDecision(config, {
+            userId: job.userId,
+            repliedMessageId: job.repliedMessageId,
+            effectiveText: job.effectiveText,
+            hasImages: job.hasImages,
+            hasRecords: job.hasRecords,
+            contextMessages: job.contextMessages,
+            forced: job.forced,
+            groupChatBusy: job.groupChatBusy,
+            hasCurrentRealtimeData,
+            recordTranscriptText,
+            searchUsed: !!searchInfo,
+            knowledgeTopic: hasKnowledgeTopic,
+          })
+          : null;
+        const styleSceneInfo = [
+          formatStyleScenePrompt(styleScene, hasCurrentRealtimeData, job),
+          governance ? formatConversationGovernancePrompt(governance) : '',
+        ].filter(Boolean).join('\n\n');
         const apiMessages = buildApiMessages({
           systemPrompt,
           summary: job.contextSummary,
@@ -3511,6 +3554,8 @@ export const aiChatPlugin: Plugin = {
           searchEvidence,
           realtimeFreshness,
           realtimeStaleEvidence,
+          governanceDecision: governance ? formatConversationGovernanceTrace(governance) : undefined,
+          governanceHints: governance?.hints,
           styleScene: styleScene.scene,
           styleSceneAction: styleScene.action,
           styleSceneSignals: styleScene.signals,

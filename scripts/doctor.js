@@ -290,6 +290,11 @@ function checkConfig(config, example) {
   if (Number(ai.trigger_probability ?? 0) <= 0.01) risk.push(`trigger_probability=${ai.trigger_probability} 过低，普通聊天会像没响应；建议同步到 ${exampleAi.trigger_probability ?? 0.08}`);
   if (Number(ai.related_reply_probability ?? 0) <= 0.2) risk.push(`related_reply_probability=${ai.related_reply_probability} 过低，CS/知识话题普通消息会很少接；建议同步到 ${exampleAi.related_reply_probability ?? 0.65}`);
   if (Number(ai.passive_random_min_chars ?? 0) >= 12) risk.push(`passive_random_min_chars=${ai.passive_random_min_chars} 偏高，短句聊天容易被过滤；建议同步到 ${exampleAi.passive_random_min_chars ?? 4}`);
+  if (ai.conversation_governance_enabled === false) risk.push('conversation_governance_enabled=false，回复会少一层接话/记忆/多模态治理');
+  if (ai.memory_layering_enabled === false) risk.push('memory_layering_enabled=false，长期记忆和短期上下文会更容易互相抢权');
+  if (ai.fact_freshness_strict === false) risk.push('fact_freshness_strict=false，实时事实边界会更松');
+  if (ai.multimodal_grounding_strict === false) risk.push('multimodal_grounding_strict=false，识图/听写更容易说过头');
+  if (Number(ai.conversation_busy_max_sentences ?? 1) < 1 || Number(ai.conversation_busy_max_sentences ?? 1) > 4) risk.push(`conversation_busy_max_sentences=${ai.conversation_busy_max_sentences} 不在建议范围 1-4`);
 
   const currentKeys = new Set(Object.keys(ai));
   const missingKeys = Object.keys(exampleAi).filter((key) => !currentKeys.has(key));

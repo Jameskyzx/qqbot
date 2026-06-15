@@ -17,6 +17,7 @@ RUN_API_TEST="${WANJIER_UPDATE_API_TEST:-1}"
 RUN_DAILY_IMAGE_AUDIT="${WANJIER_UPDATE_DAILY_IMAGE_AUDIT:-1}"
 STRICT_DAILY_IMAGES="${WANJIER_DAILY_IMAGE_AUDIT_STRICT:-0}"
 WRITE_DAILY_IMAGE_TEMPLATE="${WANJIER_UPDATE_DAILY_IMAGE_TEMPLATE:-1}"
+RUN_MAINTAINABILITY="${WANJIER_UPDATE_MAINTAINABILITY:-1}"
 for arg in "$@"; do
   case "$arg" in
     --hard|--force)
@@ -50,8 +51,14 @@ for arg in "$@"; do
     --no-image-template)
       WRITE_DAILY_IMAGE_TEMPLATE="0"
       ;;
+    --maintainability)
+      RUN_MAINTAINABILITY="1"
+      ;;
+    --no-maintainability)
+      RUN_MAINTAINABILITY="0"
+      ;;
     -h|--help)
-      echo "用法: bash scripts/update.sh [--hard] [--smoke|--no-smoke] [--api-test|--no-api-test] [--image-audit|--no-image-audit] [--strict-images] [--image-template|--no-image-template]"
+      echo "用法: bash scripts/update.sh [--hard] [--smoke|--no-smoke] [--api-test|--no-api-test] [--image-audit|--no-image-audit] [--strict-images] [--image-template|--no-image-template] [--maintainability|--no-maintainability]"
       echo "  默认: 安全 ff-only 拉取，不覆盖本地改动"
       echo "  --hard: 备份配置后强制 reset 到 origin/main，用于 VPS 明确对齐远程"
       echo "  --no-api-test: 跳过真实远端接口探针，只做本地构建/doctor/smoke"
@@ -74,6 +81,7 @@ echo "完整smoke: $RUN_SMOKE"
 echo "真实接口探针: $RUN_API_TEST"
 echo "每日图片审计: $RUN_DAILY_IMAGE_AUDIT strict=$STRICT_DAILY_IMAGES"
 echo "每日待补模板: $WRITE_DAILY_IMAGE_TEMPLATE"
+echo "维护性巡检: $RUN_MAINTAINABILITY"
 echo "目标分支: origin/main"
 echo "当前目录: $ROOT_DIR"
 echo "更新前提交: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -191,6 +199,11 @@ npm ci
 
 echo "[6/9] 构建与自检..."
 npm run build
+if [ "$RUN_MAINTAINABILITY" = "1" ]; then
+  npm run maintainability
+else
+  echo "  跳过维护性巡检（如需检查，运行 bash scripts/update.sh --maintainability）"
+fi
 if [ "$RUN_API_TEST" = "1" ]; then
   assert_chat_api_ready
 else

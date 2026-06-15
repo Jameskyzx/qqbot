@@ -51,6 +51,8 @@
 - `/scene [场景词]` 从主库抽取场景卡，适合把长切片学习结果转成“触发 -> 反应 -> 判断 -> 短句 -> 禁用边界”结构。
 - 长段逐字稿只允许管理员放进 `knowledge/inbox/`，并确认来源合法后人工提交。
 - 运行回复时禁止暴露“知识库/临场笔记/模板”等内部词。
+- 新增的对话治理层会在回复前先决定接话形态、记忆预算和多模态边界，相关开关是 `conversation_governance_enabled`、`conversation_busy_max_sentences`、`conversation_clarify_ambiguous`、`multimodal_grounding_strict`、`fact_freshness_strict` 和 `memory_layering_enabled`。
+- 这层治理不会替代现有的证据 guard，只是把“怎么回、回多长、先说什么”提前定住，方便长期维护和后续继续拆分 `ai-chat.ts`。
 
 ## CS 实时数据
 

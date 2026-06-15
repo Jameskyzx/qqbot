@@ -131,9 +131,19 @@ function buildRecommendations(files) {
         level: 'medium',
         file: aiChat.rel,
         reason: `${aiChat.lines} lines，仍是核心协作热点`,
-        action: '下一轮可拆 reply trace/media orchestration/realtime evidence helpers。',
+        action: '下一轮优先拆 conversation governance、reply trace、media orchestration 和 realtime evidence helpers。',
       });
     }
+  }
+
+  const configFile = files.find((file) => file.rel === 'src/config.ts');
+  if (configFile) {
+    recommendations.push({
+      level: 'info',
+      file: configFile.rel,
+      reason: '配置归一化已承载大量运行参数',
+      action: '继续按“对话治理 / 多模态 / 运维 / 记忆”分组维护默认值和校验规则，避免单表无限膨胀。',
+    });
   }
 
   return recommendations;

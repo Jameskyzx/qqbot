@@ -45,6 +45,7 @@ const aiMediaStatus = require('../dist/plugins/ai-media-status');
 const aiMediaTrace = require('../dist/plugins/ai-media-trace');
 const aiMediaWarmup = require('../dist/plugins/ai-media-warmup');
 const aiHumanDelay = require('../dist/plugins/ai-human-delay');
+const aiConversationGovernance = require('../dist/plugins/ai-conversation-governance');
 const aiMemoryUtils = require('../dist/plugins/ai-memory-utils');
 const aiPromptBuilders = require('../dist/plugins/ai-prompt-builders');
 const aiReplyCacheDiagnostics = require('../dist/plugins/ai-reply-cache-diagnostics');
@@ -192,6 +193,48 @@ async function testAiEvidenceHelpers() {
   assert.ok(pack.includes('[实时事实参考]'), 'AI realtime reference pack should render marker');
   assert.ok(pack.includes('stale/旧缓存'), 'AI realtime reference pack should warn about stale evidence');
   assert.ok(pack.includes('miss/无快照'), 'AI realtime reference pack should warn about missing snapshots');
+}
+
+async function testAiConversationGovernanceHelpers() {
+  const config = readConfig().ai;
+  const baseJob = {
+    userId: 123,
+    effectiveText: 'donk 今天 rating 怎么样',
+    hasImages: false,
+    hasRecords: false,
+    contextMessages: [
+      { role: 'user', content: '[mid=1 uid=123] A: 昨天聊过donk' },
+      { role: 'assistant', content: '得看当前数据' },
+    ],
+    forced: true,
+    groupChatBusy: false,
+    hasCurrentRealtimeData: false,
+    recordTranscriptText: '',
+    searchUsed: false,
+    knowledgeTopic: true,
+  };
+  const decision = aiConversationGovernance.buildConversationGovernanceDecision(config, baseJob);
+  assert.strictEqual(decision.mode, 'fact_check', 'governance should detect realtime fact-check mode');
+  assert.ok(decision.hints.some((line) => line.includes('fresh')), 'governance should carry freshness boundary hint');
+  const prompt = aiConversationGovernance.formatConversationGovernancePrompt(decision);
+  assert.ok(prompt.includes('[回复策略]'), 'governance prompt should include strategy marker');
+  assert.ok(prompt.includes('记忆分层'), 'governance prompt should include memory layering budget');
+
+  const mediaDecision = aiConversationGovernance.buildConversationGovernanceDecision(config, {
+    ...baseJob,
+    effectiveText: '看下这图',
+    hasImages: true,
+    knowledgeTopic: false,
+  });
+  assert.strictEqual(mediaDecision.mode, 'multimodal_ground', 'governance should ground image inputs');
+
+  const vague = aiConversationGovernance.buildConversationGovernanceDecision(config, {
+    ...baseJob,
+    effectiveText: '这咋了？',
+    hasCurrentRealtimeData: false,
+    knowledgeTopic: false,
+  });
+  assert.strictEqual(vague.shouldAskClarifyingQuestion, true, 'governance should ask for clarification on vague short questions');
 }
 
 async function testAiMessageBuilderHelpers() {
@@ -1911,6 +1954,12 @@ async function testConfig() {
   assert.strictEqual(normalizeConfig({ ...JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'config.example.json'), 'utf-8')), web_admin_port: 6099 }).web_admin_port, 6099);
   assert.strictEqual(config.login_check_interval_seconds, 30);
   assert.strictEqual(config.login_check_api_timeout_ms, 8000);
+  assert.strictEqual(config.ai.conversation_governance_enabled, true);
+  assert.strictEqual(config.ai.conversation_busy_max_sentences, 1);
+  assert.strictEqual(config.ai.conversation_clarify_ambiguous, true);
+  assert.strictEqual(config.ai.multimodal_grounding_strict, true);
+  assert.strictEqual(config.ai.fact_freshness_strict, true);
+  assert.strictEqual(config.ai.memory_layering_enabled, true);
   assert.strictEqual(config.ai.trigger_probability, 0.12);
   assert.strictEqual(config.ai.passive_random_min_chars, 4);
   assert.strictEqual(config.ai.passive_random_allow_numeric, false);
@@ -9902,6 +9951,7 @@ async function main() {
   await testLoggerSerialization();
   await testLlmApiDefaults();
   await testAiEvidenceHelpers();
+  await testAiConversationGovernanceHelpers();
   await testAiMessageBuilderHelpers();
   await testAiKnowledgeRouteHelpers();
   await testAiKnowledgeDiagnosticsHelpers();

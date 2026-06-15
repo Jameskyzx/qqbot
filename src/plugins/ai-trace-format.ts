@@ -49,6 +49,8 @@ export interface ReplyTrace {
   knowledgeFreshnessIssues?: string[];
   userProfileInjected?: boolean;
   userProfileChars?: number;
+  governanceDecision?: string;
+  governanceHints?: string[];
   styleScene?: string;
   styleSceneAction?: string;
   styleSceneSignals?: string[];
@@ -157,6 +159,10 @@ export function buildEvidenceLedger(trace: ReplyTrace): string[] {
     ledger.push(`画像=个性化${trace.userProfileChars || 0}字/非事实`);
   }
 
+  if (trace.governanceDecision) {
+    ledger.push(`策略=${trace.governanceDecision.slice(0, 36)}`);
+  }
+
   if (trace.hasImages) {
     ledger.push(trace.visionPayload
       ? `识图=已传图${trace.visionImages || 0}/${trace.imageInputCount || trace.visionImages || 0}${trace.visionTruncated ? '/截断' : ''}`
@@ -209,6 +215,7 @@ export function formatReplyTrace(trace: ReplyTrace | null): string {
     `增强: 知识${trace.knowledgeInjected ? `${trace.knowledgeChars}字` : '未注入'}${trace.knowledgeTopic ? '/话题命中' : ''} 搜索${trace.searchUsed ? `${trace.searchChars}字` : '未用'} 识图${formatVisionTrace(trace)}`,
     formatVisionCacheEvidence(trace) ? `识图缓存: ${formatVisionCacheEvidence(trace)}` : '',
     `画像: ${trace.userProfileInjected ? `已注入${trace.userProfileChars || 0}字` : '未注入'}`,
+    trace.governanceDecision ? `策略: ${trace.governanceDecision}${trace.governanceHints?.length ? ` | ${compactTraceList(trace.governanceHints, 4)}` : ''}` : '',
     evidenceLedger.length ? `证据账本: ${compactTraceList(evidenceLedger, 10)}` : '',
     `证据: 实时意图${trace.realtimeIntent ? '有' : '无'} 实时数据${trace.realtimeDataAvailable ? '有' : '无'}${trace.evidenceSummary?.length ? ` | ${compactTraceList(trace.evidenceSummary)}` : ''}`,
     trace.realtimeFreshness?.length ? `实时新鲜度: ${compactTraceList(trace.realtimeFreshness, 5)}${trace.realtimeStaleEvidence ? ' / 含stale' : ''}` : '',
@@ -340,6 +347,7 @@ export function cloneReplyTrace(trace: ReplyTrace): ReplyTrace {
     knowledgeTitles: [...trace.knowledgeTitles],
     knowledgeLanes: trace.knowledgeLanes ? [...trace.knowledgeLanes] : undefined,
     knowledgeFreshnessIssues: trace.knowledgeFreshnessIssues ? [...trace.knowledgeFreshnessIssues] : undefined,
+    governanceHints: trace.governanceHints ? [...trace.governanceHints] : undefined,
     styleSceneSignals: trace.styleSceneSignals ? [...trace.styleSceneSignals] : undefined,
     qualityIssues: trace.qualityIssues ? [...trace.qualityIssues] : undefined,
     evidenceSummary: trace.evidenceSummary ? [...trace.evidenceSummary] : undefined,

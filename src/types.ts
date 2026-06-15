@@ -49,6 +49,18 @@ export interface AIConfig {
   max_context_messages: number;
   /** 每次发给模型的最近消息条数 */
   context_send_messages?: number;
+  /** 是否启用对话治理策略层：控制接话形态、记忆预算和多模态边界 */
+  conversation_governance_enabled?: boolean;
+  /** 繁忙群聊中普通主动接话的最大句数 */
+  conversation_busy_max_sentences?: number;
+  /** 模糊短问句是否优先反问澄清 */
+  conversation_clarify_ambiguous?: boolean;
+  /** 多模态回复是否强制先落到真实可见/可听内容 */
+  multimodal_grounding_strict?: boolean;
+  /** 事实类回复是否强制输出 fresh/stale/miss 边界 */
+  fact_freshness_strict?: boolean;
+  /** 记忆分层策略 */
+  memory_layering_enabled?: boolean;
   /** 单次回复最大 token 数 */
   max_tokens: number;
   /** 温度 */
