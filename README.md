@@ -203,8 +203,8 @@ pm2 restart wanjier --update-env
 {
   "config_version": 20260609,
   "ai": {
-    "api_url": "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
-    "api_key": "在这里填入你的API密钥",
+    "api_url": "https://api.example.com/v1/chat/completions",
+    "api_key": "YOUR_API_KEY_HERE",
     "model": "mimo-v2.5-pro",
     "vision_model": "mimo-v2.5-pro",
     "active_preset": "wanjier",

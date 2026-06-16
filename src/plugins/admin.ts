@@ -51,6 +51,8 @@ function isMaintCommand(command: string | null): boolean {
   return command === 'maint' || command === 'maintenance' || command === '维护';
 }
 
+type AiTunableKey = keyof BotConfig['ai'];
+
 function formatLoginTime(timestamp: number): string {
   if (!timestamp) return '无';
   return new Date(timestamp).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
@@ -1303,7 +1305,7 @@ export const adminPlugin: Plugin = {
       }
       const sub = (ctx.args[0] || '').toLowerCase();
       const valStr = (ctx.args[1] || '').trim();
-      const tunables: Record<string, { key: string; min: number; max: number; desc: string }> = {
+      const tunables: Record<string, { key: AiTunableKey; min: number; max: number; desc: string }> = {
         trigger: { key: 'trigger_probability', min: 0, max: 1, desc: '随机插话概率' },
         related: { key: 'related_reply_probability', min: 0, max: 1, desc: '相关话题接话概率' },
         tts: { key: 'tts_probability', min: 0, max: 1, desc: '语音回复概率' },
@@ -1317,7 +1319,7 @@ export const adminPlugin: Plugin = {
       if (!sub || sub === 'help' || sub === '?') {
         const lines = ['快速调参 /tune <项> <值>'];
         for (const [name, info] of Object.entries(tunables)) {
-          const cur = (config.ai as any)[info.key];
+          const cur = config.ai[info.key];
           lines.push(`  /tune ${name} ${info.min}~${info.max}  当前=${cur}  ${info.desc}`);
         }
         lines.push('', '改完会自动写回 config.json，不需要 /reload');
@@ -1332,7 +1334,7 @@ export const adminPlugin: Plugin = {
       }
 
       if (!valStr) {
-        const cur = (config.ai as any)[tunable.key];
+        const cur = config.ai[tunable.key];
         ctx.reply(`${tunable.desc} (${tunable.key}): 当前=${cur}\n设置: /tune ${sub} <${tunable.min}~${tunable.max}>`);
         return true;
       }
@@ -1347,11 +1349,12 @@ export const adminPlugin: Plugin = {
         const finalVal = tunable.key === 'max_tokens' || tunable.key === 'passive_random_min_chars' || tunable.key === 'cooldown_seconds'
           ? Math.floor(numVal)
           : numVal;
-        // 写 config.json
-        const { updateConfigFile } = require('../config');
-        const newConfig = updateConfigFile((raw: any) => {
-          if (!raw.ai) raw.ai = {};
-          raw.ai[tunable.key] = finalVal;
+        const newConfig = updateConfigFile((raw) => {
+          const rawAi = raw.ai && typeof raw.ai === 'object' && !Array.isArray(raw.ai)
+            ? raw.ai as Record<string, unknown>
+            : {};
+          raw.ai = rawAi;
+          rawAi[tunable.key] = finalVal;
         });
         ctx.bot.updateConfig(newConfig);
         ctx.reply(`✅ ${tunable.desc} 已改为 ${finalVal}\n已写入 config.json，立即生效`);

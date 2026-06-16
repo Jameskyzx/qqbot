@@ -95,11 +95,11 @@ import {
   extractVisionCheckSources,
   traceWarmupSources,
 } from './ai-media-sources';
-import {
-  formatReplyCachePoolStatusPanel,
-  formatReplyCachePreflightPanel,
-  type ReplyCachePreflightPanelItem,
-} from './ai-reply-cache-diagnostics';
+export {
+  formatReplyCachePoolStatus,
+  formatReplyCachePreflight,
+  pruneExpiredReplyCacheForMaintenance,
+} from './ai-reply-cache-admin';
 import {
   clearReplyDedupeSession,
   clearReplyDedupeState,
@@ -113,14 +113,11 @@ import {
   deleteCachedReply,
   getCachedReply,
   getInFlightReply,
-  getReplyCachePoolSnapshot,
   getReplyCacheStats,
   inspectReplyCacheKey,
   isReplyReusableForCache,
   makeReplyCacheKey,
-  makeStableKnowledgeSignature,
   normalizeCacheText,
-  pruneExpiredReplyCache,
   pruneReplyCache,
   recordReplyCacheMiss,
   recordReplyCachePolicy,
@@ -138,15 +135,15 @@ import {
   looksLikeInactiveActivationReply,
 } from './ai-reply-fallback';
 import {
-  buildKnowledgeFreshnessRuntimeBoundary,
-  buildKnowledgeRouteDiagnostics,
   formatKnowledgeFreshnessIssueList,
   formatKnowledgeFreshnessTraceItems,
   formatKnowledgeLaneSummary,
-  formatKnowledgeRoutePreviewPanel,
-  selectTopicKnowledgeByLanes,
-  type KnowledgeRoutePreview,
 } from './ai-knowledge-route';
+import {
+  buildKnowledgeRoutePreview,
+  formatKnowledgeRoutePreview,
+} from './ai-knowledge-route-runtime';
+import { runKnowledgeRefresh } from './ai-knowledge-refresh-runtime';
 import {
   formatKnowledgeCandidateAdvice,
   formatKnowledgeFreshnessReport,
@@ -173,37 +170,25 @@ import {
   getKnowledgeKeywords,
   getKnowledgeStats,
   importKnowledgeUrlCandidate,
-  extractKnowledgeTitles,
-  KnowledgeCandidate,
   KnowledgeFreshnessIssue,
-  KnowledgeSource,
   auditKnowledge,
-  autoCommitKnowledgeCandidate,
   describeKnowledgeCandidateQuality,
   getLastKnowledgeAudit,
-  filterDueKnowledgeSources,
-  findKnowledgeFreshnessIssuesForTitles,
   getRandomKnowledgeLine,
   isKnowledgeAutoEnabled,
   isKnowledgeTopic,
-  knowledgeSourceEvidenceHint,
   listKnowledgeBatches,
   listKnowledgeCandidates,
-  loadKnowledgeSources,
-  markKnowledgeSourceRefreshed,
-  markKnowledgeAutoRefresh,
   pruneKnowledgeAutoLog,
   previewInboxCandidates,
   previewKnowledgeCandidate,
   rollbackKnowledgeBatch,
   searchKnowledge,
-  selectKnowledge,
-  selectStyleKnowledge,
   setKnowledgeAutoEnabled,
 } from './knowledge-base';
 import { closeKnowledgeDb } from './knowledge-db';
-import { loadContext, writeSession, deleteSession, markDirty, setFlushHandler, getDirtySessions, listAllSessions, clearDirtySession, flushNow } from './context-store';
-import { clearSessionIndex, getEmbeddingStats, MemorySearchResult } from './embedding-store';
+import { flushNow } from './context-store';
+import { getEmbeddingStats, type MemorySearchResult } from './embedding-store';
 import { ChatMessage, MessageContent, LLMCaller, callLLM as defaultCallLLM } from './llm-api';
 import { ContextManager, SessionContext } from './ai-context';
 import {
@@ -249,7 +234,6 @@ import {
   formatStyleScenePrompt,
 } from './ai-style-scene';
 import {
-  buildRuntimeKnowledgeInfo,
   buildSystemPrompt,
   buildTargetText,
 } from './ai-prompt-builders';
@@ -265,6 +249,17 @@ import {
   formatMemoryAge,
   normalizeMemoryDuplicateText,
 } from './ai-memory-utils';
+import {
+  clearAiSessionMemory as clearAiSessionMemoryRuntime,
+  dropAiSessionMemoryByQuery as dropAiSessionMemoryByQueryRuntime,
+  dropAiSessionMemoryByUser as dropAiSessionMemoryByUserRuntime,
+  getMemoryDiagnostics as getMemoryDiagnosticsRuntime,
+  getRecentSessionMemory as getRecentSessionMemoryRuntime,
+  inspectAiSessionMemoryByUser as inspectAiSessionMemoryByUserRuntime,
+  searchSessionMemory as searchSessionMemoryRuntime,
+  trimAiSessionMemory as trimAiSessionMemoryRuntime,
+  type MemoryRuntime,
+} from './ai-memory-runtime';
 import { parseStickerMarkers } from './sticker-pack';
 import { buildThanks as buildGiftThanks, formatGiftThanksPreview, formatGiftThanksRecent, formatGiftThanksStatus, formatGiftThanksTrace, getGiftThanksStats, warmGiftThanksVoice } from './gift-thanks';
 import { buildUserProfileRuntimeHint, handleUserProfileCommand } from './user-profile';
@@ -304,6 +299,11 @@ interface ReplyJob {
   createdAt: number;
   contextSummary: string;
   contextMessages: ChatMessage[];
+}
+
+function markMemoryMutated(sessionId: string): void {
+  clearReplyDedupeSession(sessionId);
+  lastReplyAt.delete(sessionId);
 }
 
 // ============ 上下文管理器 已迁移到 ./ai-context.ts ============
@@ -826,172 +826,6 @@ function guardMultimodalPerceptionForJob(
   return { text: guarded.text, reason: guarded.reason };
 }
 
-function buildKnowledgeRoutePreview(
-  config: AIConfig,
-  text: string,
-  options: { triggerReason?: string; hasImages?: boolean; hasRecords?: boolean; searchInfo?: string; recordTranscriptText?: string } = {},
-): KnowledgeRoutePreview {
-  const rawQueryText = text || '';
-  const queryText = normalizeCacheText(rawQueryText) || rawQueryText.trim();
-  const recordTranscriptText = options.recordTranscriptText || '';
-  const searchInfo = options.searchInfo || '';
-  const searchableText = queryText || recordTranscriptText || '';
-  const topicQuery = [
-    queryText,
-    recordTranscriptText,
-    searchInfo,
-    ...getKnowledgeKeywords().filter((keyword) => searchableText.toLowerCase().includes(keyword.toLowerCase())),
-  ].join('\n');
-  const styleQuery = [
-    '直播语态 回复铁律 真人化 非公式化 口癖调度 反应强度 上下文定位',
-    options.triggerReason || '',
-    options.hasImages ? '识图 图片 场景' : '',
-    options.hasRecords ? '语音 听写 场景' : '',
-    queryText,
-  ].filter(Boolean).join('\n');
-  const hasKnowledgeTopic = isKnowledgeTopic(topicQuery);
-  const budget = config.knowledge_max_chars || 1800;
-  const styleBudget = Math.max(600, Math.floor(budget * (hasKnowledgeTopic ? 0.35 : 0.75)));
-  const topicBudget = Math.max(600, budget - styleBudget);
-  const styleKnowledge = config.knowledge_force_style === false
-    ? selectKnowledge(styleQuery, styleBudget)
-    : (selectKnowledge(styleQuery, styleBudget) || selectStyleKnowledge(styleBudget));
-  const topicSelection = selectTopicKnowledgeByLanes(topicQuery, topicBudget, hasKnowledgeTopic);
-  const topicKnowledge = topicSelection.topicKnowledge;
-  const job = makeStyleCheckJob(queryText || '知识路由预检');
-  job.triggerReason = options.triggerReason || 'kb-route';
-  job.hasImages = options.hasImages === true;
-  job.hasRecords = options.hasRecords === true;
-  job.imageInputCount = job.hasImages ? 1 : 0;
-  job.recordUrls = job.hasRecords ? ['record'] : [];
-  const titles = [
-    ...extractKnowledgeTitles(styleKnowledge, 4),
-    ...extractKnowledgeTitles(topicKnowledge, 4),
-  ].filter((title, index, all) => all.indexOf(title) === index).slice(0, 6);
-  const freshnessIssues = findKnowledgeFreshnessIssuesForTitles(titles, 6);
-  const freshnessBoundary = buildKnowledgeFreshnessRuntimeBoundary(freshnessIssues, queryText || topicQuery, hasKnowledgeTopic);
-  const knowledgeInfo = buildRuntimeKnowledgeInfo(styleKnowledge, topicKnowledge, job, hasKnowledgeTopic, budget, freshnessBoundary);
-  const signature = makeStableKnowledgeSignature(styleKnowledge, topicKnowledge, titles);
-  return {
-    query: queryText,
-    styleQuery,
-    topicQuery,
-    hasKnowledgeTopic,
-    budget,
-    styleBudget,
-    topicBudget,
-    styleKnowledge,
-    topicKnowledge,
-    knowledgeInfo,
-    titles,
-    lanes: topicSelection.lanes,
-    signature,
-    freshnessIssues,
-    freshnessBoundary,
-  };
-}
-
-function formatKnowledgeRoutePreview(config: AIConfig, text: string): string {
-  const clean = (text || '').trim();
-  const route = buildKnowledgeRoutePreview(config, clean, { triggerReason: 'kb-route' });
-  const diagnostic = buildKnowledgeRouteDiagnostics(config, route);
-  return formatKnowledgeRoutePreviewPanel(clean, route, diagnostic);
-}
-
-function buildReplyCachePreflightItem(config: AIConfig, input: string): ReplyCachePreflightPanelItem {
-  const clean = (input || '').trim();
-  const normalized = normalizeCacheText(clean);
-  const job = makeStyleCheckJob(clean || '缓存预检');
-  job.sessionId = 'cache_check';
-  job.senderName = 'cache-check';
-  job.command = null;
-  job.triggerReason = 'cache-check';
-  job.forced = false;
-  const csTopic = detectCsTopicQuery(clean);
-  const realtimeIntent = csTopic.needsMatches || csTopic.needsRanking || csTopic.needsResults;
-  const searchWouldRun = shouldSearch(config, clean);
-  const stableTactical = isStableCsTacticalQuery(clean);
-  const styleScene = buildStyleSceneDecision(job, '', realtimeIntent, false);
-  const timeSensitive = /(?:今天|今日|现在|当前|此刻|此时|目前|今晚|今早|今夜|刚才|几号|几点|几月|星期|周[一二三四五六日天])/.test(clean);
-  const knowledgeRoute = config.enable_knowledge !== false
-    ? buildKnowledgeRoutePreview(config, clean, { triggerReason: 'cache-check' })
-    : null;
-  const policy = buildReplyCachePolicy(config, job, styleScene, searchWouldRun ? '[dry-run-search]' : '', timeSensitive, false);
-  const key = policy.enabled
-    ? makeReplyCacheKey(config, clean, knowledgeRoute?.signature || '', policy.scope)
-    : '';
-  const keyState = inspectReplyCacheKey(key).keyState;
-  const advice: string[] = [];
-  if (policy.enabled) {
-    advice.push(`这类普通主动接话可复用 ${policy.ttlSeconds}s；实际 @/回复/私聊/命令仍会按 forced 旁路`);
-  } else if (policy.reason === 'realtime') {
-    advice.push(searchWouldRun
-      ? '这条预计会走联网/实时增强，所以不缓存；事实类问题这是正确行为'
-      : '风格场景需要实时边界，不能复用旧回答');
-  } else if (policy.reason === 'time-sensitive') {
-    advice.push('包含时间敏感词，答案会随时间变化，不缓存');
-  } else if (policy.reason.startsWith('scene:')) {
-    advice.push('高上下文/身份/礼物/纠偏等场景不缓存，避免复读或冒充风险');
-  } else if (policy.reason === 'disabled') {
-    advice.push('ai_reply_cache_seconds <= 0，回复缓存关闭');
-  } else {
-    advice.push(`当前策略旁路: ${policy.reason}`);
-  }
-  if (stableTactical) {
-    advice.push('已识别为稳定 CS 战术讨论，不触发联网搜索，适合短 TTL 缓存');
-  } else if (searchWouldRun) {
-    advice.push('如果这其实只是打法常识，减少“最新/现在/排名/比分”等实时词可提高缓存命中');
-  }
-  if (normalized && normalized !== clean.toLowerCase()) {
-    advice.push('已归一化开头称呼、全角/半角或重复标点，低风险自然变体更容易命中同 key');
-  }
-  if (knowledgeRoute && knowledgeRoute.titles.length === 0 && config.knowledge_force_style !== false) {
-    advice.push('知识分区无命中时仍会尝试语态素材；可用 /kb route 看详细召回');
-  }
-
-  return {
-    input: clean,
-    normalized,
-    scene: styleScene,
-    policy,
-    key,
-    keyState,
-    searchWouldRun,
-    stableTactical,
-    timeSensitive,
-    knowledgeTitles: knowledgeRoute?.titles || [],
-    knowledgeSignature: knowledgeRoute?.signature || '',
-    advice: [...new Set(advice)].slice(0, 5),
-  };
-}
-
-export function formatReplyCachePreflight(config: AIConfig, input: string): string {
-  const clean = (input || '').trim();
-  const parts = clean
-    .split(/\s+\|\|\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .slice(0, 2);
-  const items = (parts.length > 0 ? parts : [clean]).map((part) => buildReplyCachePreflightItem(config, part));
-  return formatReplyCachePreflightPanel(clean, items);
-}
-
-export function formatReplyCachePoolStatus(config: AIConfig): string {
-  const configuredTtl = Math.max(0, Math.floor(config.ai_reply_cache_seconds ?? 0));
-  return formatReplyCachePoolStatusPanel(getReplyCachePoolSnapshot(configuredTtl, 8));
-}
-
-export function pruneExpiredReplyCacheForMaintenance(now: number = Date.now()): {
-  before: number;
-  fresh: number;
-  expired: number;
-  removed: number;
-  after: number;
-  inFlight: number;
-} {
-  return pruneExpiredReplyCache(now);
-}
-
 async function handleKnowledgeCommand(ctx: PluginContext, config: AIConfig): Promise<boolean> {
   if (ctx.command !== 'kb') return false;
 
@@ -1479,14 +1313,6 @@ const recentVoiceTraces: VoiceTrace[] = [];
 let lastReplyTrace: ReplyTrace | null = null;
 let lastVoiceTrace: VoiceTrace | null = null;
 let aiRuntimeGeneration = 1;
-const knowledgeRefreshQueries = [
-  '玩机器 Machine 6657 经典语录 切片 CS2 解说',
-  '玩机器 6657 斗鱼 礼物 感谢 老板大气',
-  '玩机器 6657 直播间 烂梗 弹幕 sb6657',
-  '玩机器 Machine 萌娘百科 6657 CSGO 解说',
-  'HLTV top 20 players 2025 ZywOo donk ropz m0NESY sh1ro NiKo',
-  'CS2 2026 team ranking Vitality NAVI Spirit MOUZ G2 Falcons FaZe',
-];
 let knowledgeAutoTimer: NodeJS.Timeout | null = null;
 let knowledgeAutoRunning = false;
 let knowledgeAutoConfig: AIConfig | null = null;
@@ -1515,16 +1341,10 @@ function getContextManager(config: AIConfig): ContextManager {
   return contextManager;
 }
 
-function makeFallbackKnowledgeSources(): KnowledgeSource[] {
-  return knowledgeRefreshQueries.map((query, index) => ({
-    id: `fallback-${index + 1}`,
-    query,
-    sourceType: /HLTV|ranking|team/i.test(query) ? 'public_fact' : 'public_summary',
-    trusted: !/礼物|感谢/.test(query),
-    autoCommitEligible: !/礼物|感谢|切片|语录/.test(query),
-    intervalMinutes: 720,
-  }));
-}
+const memoryRuntime: MemoryRuntime = {
+  getContextManager,
+  onMemoryMutated: markMemoryMutated,
+};
 
 // formatTime, previewText 已迁移到 ./reply-postprocess；trace格式化在 ./ai-trace-format
 
@@ -1776,141 +1596,6 @@ function makeDirectVoiceReplyTrace(
     replyLength: text.length,
     error,
   };
-}
-
-function chooseRefreshSources(config: AIConfig, queryOverride: string, autoRun: boolean): KnowledgeSource[] {
-  if (queryOverride.trim()) {
-    return [{
-      id: 'manual-query',
-      query: queryOverride.trim(),
-      sourceType: /HLTV|Liquipedia|排名|阵容|转会|赛程|比分/i.test(queryOverride) ? 'public_fact' : 'public_summary',
-      trusted: false,
-      autoCommitEligible: false,
-      intervalMinutes: 720,
-    }];
-  }
-
-  const configured = loadKnowledgeSources();
-  const sources = configured.length > 0 ? configured : makeFallbackKnowledgeSources();
-  const limit = autoRun
-    ? (config.knowledge_auto_batch_max_sources || 4)
-    : (config.knowledge_expansion_batch_max_sources || config.knowledge_manual_batch_max_sources || 12);
-  return autoRun
-    ? filterDueKnowledgeSources(sources, limit)
-    : sources.slice(0, limit);
-}
-
-function summarizeRefreshResult(
-  batchId: string,
-  searched: number,
-  candidates: number,
-  committed: number,
-  pending: KnowledgeCandidate[],
-  failed: string[],
-  auditIssues: number,
-  autoRun: boolean,
-): string {
-  return [
-    autoRun ? '知识库自动刷新完成' : '知识库刷新完成',
-    `批次: ${batchId}`,
-    `搜索源: ${searched}`,
-    `候选: ${candidates}`,
-    `自动写入: ${committed}`,
-    `待确认: ${pending.length}`,
-    `失败: ${failed.length}`,
-    `审计问题: ${auditIssues}`,
-    ...pending.slice(0, 5).map((item) => `候选 ${item.id}: ${item.title} (${item.risk}/${item.confidence}) 质量闸${describeKnowledgeCandidateQuality(item)}；${formatKnowledgeCandidateAdvice(item, 120)}`),
-    ...failed.slice(0, 3).map((item) => `失败: ${item}`),
-  ].join('\n');
-}
-
-async function runKnowledgeRefresh(
-  config: AIConfig,
-  queryOverride: string = '',
-  autoRun: boolean = false,
-  aggressiveOverride: boolean = false,
-): Promise<string> {
-  if (config.knowledge_update_mode === 'static') {
-    return '知识库现在是 static 模式，只查不写候选。';
-  }
-  if (autoRun && (config.knowledge_auto_update === false || !isKnowledgeAutoEnabled())) {
-    return '知识库自动更新当前关闭。';
-  }
-
-  const sources = chooseRefreshSources(config, queryOverride, autoRun);
-  if (sources.length === 0) {
-    markKnowledgeAutoRefresh();
-    const audit = auditKnowledge();
-    return [
-      autoRun ? '知识库自动刷新跳过' : '知识库刷新跳过',
-      '原因: 没有到期来源',
-      `审计问题: ${audit.issues.length}`,
-    ].join('\n');
-  }
-  const timeoutMs = config.knowledge_source_timeout_ms || config.search_timeout_ms || 1800;
-  const cacheSeconds = config.search_cache_seconds ?? 300;
-  const aggressive = aggressiveOverride || config.knowledge_aggressive_auto_commit !== false;
-  const batchId = `${autoRun ? 'auto' : 'manual'}_${Date.now().toString(36)}`;
-  const pending: KnowledgeCandidate[] = [];
-  const failed: string[] = [];
-  let searched = 0;
-  let candidates = 0;
-  let committed = 0;
-
-  for (const source of sources) {
-    try {
-      searched++;
-      const result = await webSearch(source.query, timeoutMs, cacheSeconds, config.search_negative_cache_seconds ?? 60);
-      if (!result) {
-        failed.push(`${source.id}: 无搜索结果`);
-        continue;
-      }
-
-      const expansionEnabled = config.knowledge_expansion_enabled !== false;
-      const sourceTypeWritable = source.sourceType === 'public_fact' || source.sourceType === 'public_summary' || source.sourceType === 'style_template';
-      const trustedSummaryEligible = aggressive && source.trusted && source.sourceType === 'public_summary';
-      const manualAggressiveEligible = aggressiveOverride && sourceTypeWritable;
-      const autoCommitEligible = Boolean(
-        expansionEnabled &&
-        config.knowledge_auto_commit_public_facts !== false &&
-        (
-          (source.autoCommitEligible && source.sourceType === 'public_fact') ||
-          (source.autoCommitEligible && trustedSummaryEligible) ||
-          manualAggressiveEligible
-        ),
-      );
-      const sourceHint = knowledgeSourceEvidenceHint(source.id);
-      const candidate = previewKnowledgeCandidate(source.query, result, `refresh:${source.id}${sourceHint ? ` ${sourceHint}` : ''}`, {
-        sourceType: source.sourceType,
-        confidence: source.trusted ? 'high' : 'medium',
-        autoCommitEligible,
-        risk: 'review',
-      });
-      candidates++;
-
-      const wasEligible = candidate.autoCommitEligible;
-      const action = autoCommitKnowledgeCandidate(candidate, {
-        batchId,
-        maxBlockChars: config.knowledge_auto_max_block_chars || 1200,
-      });
-      if (action === 'committed') {
-        committed++;
-      } else if (candidate.status === 'dropped' && wasEligible) {
-        // 重复内容已被去重丢弃，不算待确认。
-      } else {
-        pending.push(candidate);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      failed.push(`${source.id}: ${message.slice(0, 80)}`);
-    } finally {
-      if (autoRun) markKnowledgeSourceRefreshed(source.id);
-    }
-  }
-
-  markKnowledgeAutoRefresh();
-  const audit = auditKnowledge();
-  return summarizeRefreshResult(batchId, searched, candidates, committed, pending, failed, audit.issues.length, autoRun);
 }
 
 function ensureKnowledgeAutoTimer(config: AIConfig): void {
@@ -2347,13 +2032,7 @@ export function getMemoryDiagnostics(config: AIConfig, sessionId: string): {
   embeddings: ReturnType<typeof getEmbeddingStats>;
   injectMaxChars: number;
 } {
-  const cm = getContextManager(config);
-  return {
-    enabled: cm.isMemoryEnabled(),
-    session: cm.getSessionMeta(sessionId),
-    embeddings: getEmbeddingStats(),
-    injectMaxChars: cm.getMemoryInjectMaxChars(),
-  };
+  return getMemoryDiagnosticsRuntime(memoryRuntime, config, sessionId);
 }
 
 export function searchSessionMemory(
@@ -2362,13 +2041,7 @@ export function searchSessionMemory(
   query: string,
   topK?: number,
 ): MemorySearchResult[] {
-  const cm = getContextManager(config);
-  return cm.retrieveSimilar(
-    sessionId,
-    query,
-    topK ?? config.memory_top_k ?? 4,
-    config.memory_min_similarity ?? 0.15,
-  );
+  return searchSessionMemoryRuntime(memoryRuntime, config, sessionId, query, topK);
 }
 
 export function getRecentSessionMemory(
@@ -2379,25 +2052,11 @@ export function getRecentSessionMemory(
   context: Array<{ role: string; text: string }>;
   indexed: Array<{ role: 'user' | 'assistant'; text: string; ts: number }>;
 } {
-  const cm = getContextManager(config);
-  return {
-    context: cm.getRecentMessages(sessionId, limit).map((message) => ({
-      role: message.role,
-      text: typeof message.content === 'string' ? message.content : '',
-    })),
-    indexed: cm.getRecentIndexedMessages(sessionId, limit),
-  };
+  return getRecentSessionMemoryRuntime(memoryRuntime, config, sessionId, limit);
 }
 
 export function clearAiSessionMemory(sessionId: string): void {
-  if (contextManager) {
-    contextManager.clearSession(sessionId);
-  } else {
-    deleteSession(sessionId);
-    clearSessionIndex(sessionId);
-  }
-  clearReplyDedupeSession(sessionId);
-  lastReplyAt.delete(sessionId);
+  clearAiSessionMemoryRuntime(sessionId, contextManager, markMemoryMutated);
 }
 
 export function trimAiSessionMemory(
@@ -2412,11 +2071,7 @@ export function trimAiSessionMemory(
   indexBefore: number;
   indexAfter: number;
 } {
-  const cm = getContextManager(config);
-  const result = cm.trimSession(sessionId, keepMessages);
-  clearReplyDedupeSession(sessionId);
-  lastReplyAt.delete(sessionId);
-  return result;
+  return trimAiSessionMemoryRuntime(memoryRuntime, config, sessionId, keepMessages);
 }
 
 export function dropAiSessionMemoryByQuery(
@@ -2435,13 +2090,7 @@ export function dropAiSessionMemoryByQuery(
   indexRemoved: number;
   samples: Array<{ role: string; text: string; ts?: number }>;
 } {
-  const cm = getContextManager(config);
-  const result = cm.dropSessionMemoryByQuery(sessionId, query);
-  if (result.contextRemoved > 0 || result.indexRemoved > 0 || result.summaryDropped) {
-    clearReplyDedupeSession(sessionId);
-    lastReplyAt.delete(sessionId);
-  }
-  return result;
+  return dropAiSessionMemoryByQueryRuntime(memoryRuntime, config, sessionId, query);
 }
 
 export function inspectAiSessionMemoryByUser(
@@ -2456,8 +2105,7 @@ export function inspectAiSessionMemoryByUser(
   indexMatched: number;
   samples: Array<{ role: string; text: string; ts?: number }>;
 } {
-  const cm = getContextManager(config);
-  return cm.inspectSessionMemoryByUser(sessionId, userId);
+  return inspectAiSessionMemoryByUserRuntime(memoryRuntime, config, sessionId, userId);
 }
 
 export function dropAiSessionMemoryByUser(
@@ -2476,13 +2124,7 @@ export function dropAiSessionMemoryByUser(
   indexRemoved: number;
   samples: Array<{ role: string; text: string; ts?: number }>;
 } {
-  const cm = getContextManager(config);
-  const result = cm.dropSessionMemoryByUser(sessionId, userId);
-  if (result.contextRemoved > 0 || result.indexRemoved > 0 || result.summaryDropped) {
-    clearReplyDedupeSession(sessionId);
-    lastReplyAt.delete(sessionId);
-  }
-  return result;
+  return dropAiSessionMemoryByUserRuntime(memoryRuntime, config, sessionId, userId);
 }
 
 export const aiChatPlugin: Plugin = {

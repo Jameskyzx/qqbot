@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { URL } from 'url';
 import { Bot } from './bot';
-import { CONFIG_PATH, loadConfig, normalizeConfig } from './config';
+import { CONFIG_PATH, normalizeConfig } from './config';
 import { writeJsonFileAtomic } from './plugins/runtime-storage';
 import { getCacheStats as getImageCacheStats } from './plugins/image-cache';
 import { getSearchStats } from './plugins/web-search';
@@ -38,6 +38,33 @@ const log = createLogger('Web');
 
 let server: http.Server | null = null;
 
+type PlainObject = Record<string, unknown>;
+
+interface WebStatusSnapshot {
+  process: {
+    heapMB: number;
+    rssMB: number;
+    startedAt: number;
+    pid: number;
+  };
+  runtime: ReturnType<Bot['getRuntimeStats']>;
+  ai: ReturnType<typeof getAiChatStats>;
+  imageCache: ReturnType<typeof getImageCacheStats>;
+  searchCache: ReturnType<typeof getSearchStats>;
+  voice: ReturnType<typeof getVoiceStats>;
+  stt: ReturnType<typeof getSttStats>;
+  knowledge: ReturnType<typeof getKnowledgeStats>;
+  embedding: ReturnType<typeof getEmbeddingStats>;
+  hltv: ReturnType<typeof getHltvStats>;
+}
+
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+};
+
 function getAdminToken(): string {
   return (process.env.WANJIER_ADMIN_TOKEN || '').trim();
 }
@@ -68,12 +95,27 @@ function checkReadAuth(req: http.IncomingMessage): boolean {
   return isReadOnlyPublic() || checkAuth(req);
 }
 
+function isObject(value: unknown): value is PlainObject {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function sendJson(res: http.ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, {
+    ...SECURITY_HEADERS,
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify(data, null, 2));
+}
+
+function sendHtml(res: http.ServerResponse, status: number, html: string): void {
+  res.writeHead(status, {
+    ...SECURITY_HEADERS,
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+  });
+  res.end(html);
 }
 
 function readBody(req: http.IncomingMessage, maxBytes: number = 256 * 1024): Promise<string> {
@@ -112,14 +154,44 @@ function tailLog(filename: string, maxLines: number = 200): string {
   }
 }
 
-function maskConfig(config: any): any {
-  if (!config || typeof config !== 'object') return config;
-  const masked = JSON.parse(JSON.stringify(config));
-  if (masked.ai && typeof masked.ai.api_key === 'string') {
-    const k = masked.ai.api_key;
-    masked.ai.api_key = k.length > 8 ? k.slice(0, 4) + '...' + k.slice(-4) : '***';
+function readRawConfig(): PlainObject {
+  const parsed = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) as unknown;
+  if (!isObject(parsed)) {
+    throw new Error('配置文件必须是 JSON 对象');
+  }
+  return parsed;
+}
+
+function maskConfig(config: unknown): unknown {
+  if (!isObject(config)) return config;
+  const masked = JSON.parse(JSON.stringify(config)) as unknown;
+  if (!isObject(masked)) return config;
+  const ai = masked.ai;
+  if (isObject(ai) && typeof ai.api_key === 'string') {
+    const k = ai.api_key;
+    ai.api_key = k.length > 8 ? `${k.slice(0, 4)}...${k.slice(-4)}` : '***';
   }
   return masked;
+}
+
+function looksMaskedSecret(value: string): boolean {
+  return value === '***' || /^[^.\s]{1,8}\.\.\.[^.\s]{1,8}$/.test(value);
+}
+
+function preserveMaskedApiKey(nextConfig: PlainObject): void {
+  const nextAi = nextConfig.ai;
+  if (!isObject(nextAi) || typeof nextAi.api_key !== 'string' || !looksMaskedSecret(nextAi.api_key)) {
+    return;
+  }
+  try {
+    const existing = readRawConfig();
+    const existingAi = existing.ai;
+    if (isObject(existingAi) && typeof existingAi.api_key === 'string' && existingAi.api_key.trim()) {
+      nextAi.api_key = existingAi.api_key;
+    }
+  } catch {
+    // If the existing file cannot be read, validation below will surface the useful error.
+  }
 }
 
 function buildDashboardHtml(): string {
@@ -233,17 +305,21 @@ async function refresh() {
     const data = await api('/api/status');
     renderStatus(data);
   } catch (err) {
-    document.getElementById('status-cards').innerHTML = '<div class="card err">加载失败: ' + err.message + '</div>';
+    document.getElementById('status-cards').innerHTML = '<div class="card err">加载失败: ' + esc(err.message) + '</div>';
   }
 }
 
-function row(key, val, cls = '') {
-  return '<div class="row"><span class="key">' + key + '</span><span class="val ' + cls + '">' + val + '</span></div>';
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function row(key, val, cls = '', raw = false) {
+  return '<div class="row"><span class="key">' + esc(key) + '</span><span class="val ' + esc(cls) + '">' + (raw ? val : esc(val)) + '</span></div>';
 }
 
 function renderStatus(data) {
   if (!data || data.error) {
-    document.getElementById('status-cards').innerHTML = '<div class="card err">' + (data ? data.error : '无数据') + '</div>';
+    document.getElementById('status-cards').innerHTML = '<div class="card err">' + esc(data ? data.error : '无数据') + '</div>';
     return;
   }
   const r = data.runtime || {};
@@ -263,7 +339,7 @@ function renderStatus(data) {
   const html = [
     '<div class="card">' +
       '<h2>🤖 Bot 连接</h2>' +
-      row('状态', '<span class="status-dot ' + (r.connected ? 'ok' : 'err') + '"></span>' + (r.connected ? '已连接' : '未连接'), r.connected ? 'ok' : 'err') +
+      row('状态', '<span class="status-dot ' + (r.connected ? 'ok' : 'err') + '"></span>' + (r.connected ? '已连接' : '未连接'), r.connected ? 'ok' : 'err', true) +
       row('WebSocket', r.wsUrl || '-') +
       row('登录', loginState, r.lastLoginOk ? 'ok' : 'err') +
       row('检查时间', loginCheckedAt + (r.loginCheckInFlight ? ' (进行中)' : '')) +
@@ -364,7 +440,7 @@ setInterval(refresh, 15000);
 </html>`;
 }
 
-function gatherStatus(bot: Bot): any {
+function gatherStatus(bot: Bot): WebStatusSnapshot {
   const config = bot.getConfig();
   const ai = config.ai;
   const mem = process.memoryUsage();
@@ -413,8 +489,7 @@ export function startWebServer(bot: Bot, port: number): void {
       const pathname = url.pathname;
 
       if (req.method === 'GET' && pathname === '/') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-        res.end(buildDashboardHtml());
+        sendHtml(res, 200, buildDashboardHtml());
         return;
       }
 
@@ -448,8 +523,7 @@ export function startWebServer(bot: Bot, port: number): void {
           return;
         }
         try {
-          const config = loadConfig();
-          sendJson(res, 200, maskConfig(config));
+          sendJson(res, 200, maskConfig(readRawConfig()));
         } catch (err) {
           sendJson(res, 500, { error: err instanceof Error ? err.message : 'load failed' });
         }
@@ -463,26 +537,19 @@ export function startWebServer(bot: Bot, port: number): void {
         }
         try {
           const body = await readBody(req);
-          const newConfig = JSON.parse(body);
+          const parsedConfig = JSON.parse(body) as unknown;
           // 简单验证
-          if (!newConfig || typeof newConfig !== 'object' || !newConfig.ai) {
+          if (!isObject(parsedConfig) || !parsedConfig.ai) {
             sendJson(res, 400, { error: '配置格式无效' });
             return;
           }
-          // 备份当前 config
+          preserveMaskedApiKey(parsedConfig);
+          normalizeConfig(parsedConfig);
           const backup = `${CONFIG_PATH}.bak.${Date.now()}`;
           if (fs.existsSync(CONFIG_PATH)) {
             fs.copyFileSync(CONFIG_PATH, backup);
           }
-          // 如果 api_key 是脱敏值，使用现有的
-          try {
-            const existing = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-            if (newConfig.ai && typeof newConfig.ai.api_key === 'string' && newConfig.ai.api_key.includes('...')) {
-              newConfig.ai.api_key = existing.ai?.api_key || newConfig.ai.api_key;
-            }
-          } catch { /* */ }
-          normalizeConfig(newConfig);
-          writeJsonFileAtomic(CONFIG_PATH, newConfig);
+          writeJsonFileAtomic(CONFIG_PATH, parsedConfig);
           sendJson(res, 200, { ok: true, backup });
         } catch (err) {
           sendJson(res, 400, { error: err instanceof Error ? err.message : 'invalid' });

@@ -1392,7 +1392,7 @@ function scoreSection(section: KnowledgeSection, text: string): number {
   if (/team|队伍|navi|g2|vitality|spirit|faze|mouz/i.test(text) && /队伍/.test(section.title)) score += 8;
   if (/cs2|csgo|major|比赛|赛事/i.test(text) && /CS2|赛事|解说/.test(section.title)) score += 6;
   if (/知识库强制注入|回复铁律|真人化|非公式化|直播语态|口癖调度|反应强度|活人感|低攻击|去口癖/.test(text) && /回复铁律|直播语态|真人化|非公式化|去口癖|口癖|反应强度|拟态执行|知识命中优先级|低攻击|活人感/.test(section.title)) score += 16;
-  if (/每日|今日|抽|签位|csplayer|csteam|csmap|csweapon|csrole|csloadout/i.test(text) && /每日 CS|抽签功能|每日CS/.test(section.title)) score += 12;
+  if (/每日|今日|抽|签位|csplayer|csteam|csmap|csweapon|csrole|csloadout|cseco|cscall|csreview|经济局|指挥口令|复盘切片/i.test(text) && /每日 CS|抽签功能|每日CS/.test(section.title)) score += 12;
   if (/戳一戳|poke|让人不禁|黄河凌汛|太行山积雪/.test(text) && /戳一戳|短语锚点|公开索引/.test(section.title)) score += 12;
   if (/来源|索引/.test(section.title)) score -= 8;
   if (section.title === '知识库') score -= 6;

@@ -29,6 +29,9 @@ export type DailyCardImageKind =
   | 'utility'
   | 'tactic'
   | 'clutch'
+  | 'economy'
+  | 'shotcall'
+  | 'review'
   | 'knife'
   | 'mokoko'
   | 'genshin'
@@ -38,7 +41,11 @@ export type DailyCardImageKind =
   | 'duel'
   | 'quiz'
   | 'training'
-  | 'daily';
+  | 'daily'
+  | 'movie'
+  | 'music'
+  | 'history'
+  | 'science';
 
 const GLYPHS: Record<string, string[]> = {
   'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
@@ -127,6 +134,9 @@ function kindHue(kind: DailyCardImageKind, seed: string): number {
     utility: 32,
     tactic: 116,
     clutch: 352,
+    economy: 54,
+    shotcall: 132,
+    review: 206,
     knife: 260,
     mokoko: 330,
     genshin: 198,
@@ -136,13 +146,17 @@ function kindHue(kind: DailyCardImageKind, seed: string): number {
     duel: 8,
     quiz: 214,
     training: 96,
+    movie: 276,
+    music: 162,
+    history: 38,
+    science: 220,
   };
   return (overrides[kind] ?? base) + (base % 18) - 9;
 }
 
 function palette(seed: string, kind: DailyCardImageKind): { bg1: Rgb; bg2: Rgb; accent: Rgb; accent2: Rgb; text: Rgb; muted: Rgb; deep: Rgb; panel: Rgb } {
   const h = ((kindHue(kind, seed) % 360) + 360) % 360;
-  const warmKinds = new Set<DailyCardImageKind>(['weapon', 'skin', 'knife', 'duel', 'fact', 'book']);
+  const warmKinds = new Set<DailyCardImageKind>(['weapon', 'skin', 'knife', 'duel', 'fact', 'book', 'economy', 'movie']);
   const satBoost = warmKinds.has(kind) ? 0.08 : 0;
   return {
     bg1: hslToRgb((h + 214) % 360, 0.30 + satBoost, 0.10),
@@ -162,6 +176,48 @@ function mix(a: Rgb, b: Rgb, t: number): Rgb {
     g: Math.round(a.g + (b.g - a.g) * t),
     b: Math.round(a.b + (b.b - a.b) * t),
   };
+}
+
+/** 绘制放射状光晕圆，多层叠加营造发光质感 */
+function drawGlowCircle(buf: Buffer, cx: number, cy: number, radius: number, color: Rgb, intensity = 180): void {
+  for (let r = radius + 10; r >= radius; r -= 2) {
+    const a = Math.round(intensity * (r - radius) / 10 * 0.5);
+    if (a > 0) fillCircle(buf, cx, cy, r, color, a);
+  }
+  fillCircle(buf, cx, cy, radius, color, intensity);
+}
+
+/** 绘制发光矩形边框（三层叠加：外晕、中晕、主边） */
+function drawGlowRect(buf: Buffer, x: number, y: number, w: number, h: number, color: Rgb, thickness = 2): void {
+  strokeRect(buf, x - 4, y - 4, w + 8, h + 8, color, 18, 1);
+  strokeRect(buf, x - 2, y - 2, w + 4, h + 4, color, 52, 1);
+  strokeRect(buf, x, y, w, h, color, 220, thickness);
+}
+
+/** 绘制十字星光（皮肤/刀卡用） */
+function drawSparkle(buf: Buffer, cx: number, cy: number, size: number, color: Rgb, alpha: number): void {
+  drawLine(buf, cx - size, cy, cx + size, cy, color, alpha, 2);
+  drawLine(buf, cx, cy - size, cx, cy + size, color, alpha, 2);
+  const d = Math.round(size * 0.65);
+  drawLine(buf, cx - d, cy - d, cx + d, cy + d, color, Math.round(alpha * 0.55), 1);
+  drawLine(buf, cx + d, cy - d, cx - d, cy + d, color, Math.round(alpha * 0.55), 1);
+}
+
+/** 在面板四角绘制L形装饰（强化设计感） */
+function drawCornerMarks(buf: Buffer, x: number, y: number, w: number, h: number, color: Rgb, len = 14, alpha = 210): void {
+  const t = 3;
+  // 左上
+  fillRect(buf, x, y, len, t, color, alpha);
+  fillRect(buf, x, y, t, len, color, alpha);
+  // 右上
+  fillRect(buf, x + w - len, y, len, t, color, alpha);
+  fillRect(buf, x + w - t, y, t, len, color, alpha);
+  // 左下
+  fillRect(buf, x, y + h - t, len, t, color, alpha);
+  fillRect(buf, x, y + h - len, t, len, color, alpha);
+  // 右下
+  fillRect(buf, x + w - len, y + h - t, len, t, color, alpha);
+  fillRect(buf, x + w - t, y + h - len, t, len, color, alpha);
 }
 
 function setPixel(buf: Buffer, x: number, y: number, color: Rgb, alpha: number = 255): void {
@@ -342,32 +398,61 @@ function drawBackground(rgba: Buffer, colors: ReturnType<typeof palette>, seed: 
   const hash = hashCode(seed);
   for (let y = 0; y < HEIGHT; y++) {
     for (let x = 0; x < WIDTH; x++) {
-      const t = (x / WIDTH) * 0.55 + (y / HEIGHT) * 0.45;
+      const t = (x / WIDTH) * 0.52 + (y / HEIGHT) * 0.48;
       const base = mix(colors.bg1, colors.bg2, t);
-      const grain = ((x * 13 + y * 17 + hash) % 29) / 29;
-      const shaded = mix(base, colors.deep, Math.min(0.42, Math.hypot((x - 470) / WIDTH, (y - 250) / HEIGHT) * 0.5));
-      setPixel(rgba, x, y, mix(shaded, colors.accent, grain * 0.035));
+      // 放射状暗角：以偏右偏上为亮点
+      const vx = (x - 460) / (WIDTH * 0.68);
+      const vy = (y - 220) / (HEIGHT * 0.72);
+      const vignette = Math.min(1, vx * vx * 0.85 + vy * vy);
+      const shaded = mix(base, colors.deep, Math.min(0.55, vignette * 0.52));
+      // 细腻噪声颗粒
+      const grain = ((x * 13 + y * 17 + hash) % 31) / 31;
+      setPixel(rgba, x, y, mix(shaded, colors.accent, grain * 0.030));
     }
   }
-  fillTriangle(rgba, 570, 0, 900, 0, 900, 250, colors.accent, 28);
-  fillTriangle(rgba, 0, 500, 0, 310, 330, 500, colors.accent2, 22);
-  for (let i = 0; i < 8; i++) {
-    const y = 52 + i * 54 + (hash % 17);
-    drawLine(rgba, 450, y, 900, y - 92, i % 2 ? colors.accent : colors.accent2, 32, 2);
+  // 右上角与左下角三角装饰
+  fillTriangle(rgba, 580, 0, 900, 0, 900, 260, colors.accent, 30);
+  fillTriangle(rgba, 0, 500, 0, 320, 340, 500, colors.accent2, 24);
+  // 左上角小三角
+  fillTriangle(rgba, 0, 0, 110, 0, 0, 72, colors.accent2, 18);
+  // 斜向装饰线（右侧面板区域）
+  for (let i = 0; i < 9; i++) {
+    const lineY = 48 + i * 54 + (hash % 19);
+    const alpha = 24 + (i % 3) * 7;
+    drawLine(rgba, 462, lineY, 900, lineY - 90, i % 2 ? colors.accent : colors.accent2, alpha, 2);
+  }
+  // 底部散点粒子
+  for (let i = 0; i < 7; i++) {
+    const px = 520 + ((hash + i * 67) % 330);
+    const py = 452 + (i % 3) * 10;
+    fillCircle(rgba, px, py, 2 + (i % 3), i % 2 ? colors.accent : colors.accent2, 110);
   }
 }
 
 function drawTopBars(rgba: Buffer, colors: ReturnType<typeof palette>): void {
   fillRect(rgba, 0, 0, WIDTH, 10, colors.accent);
   fillRect(rgba, 0, HEIGHT - 10, WIDTH, 10, colors.accent2);
-  fillRect(rgba, 0, 10, WIDTH, 2, colors.text, 45);
-  fillRect(rgba, 0, HEIGHT - 12, WIDTH, 2, colors.text, 35);
+  fillRect(rgba, 0, 10, WIDTH, 2, colors.text, 50);
+  fillRect(rgba, 0, HEIGHT - 12, WIDTH, 2, colors.text, 40);
+  // 顶栏内侧细高光
+  fillRect(rgba, 0, 9, WIDTH, 1, colors.accent2, 80);
+  fillRect(rgba, 0, HEIGHT - 11, WIDTH, 1, colors.accent, 70);
 }
 
 function drawArtPanel(rgba: Buffer, colors: ReturnType<typeof palette>): void {
+  // 外发光层（两层叠加）
+  fillRect(rgba, 481, 51, 356, 366, colors.accent, 22);
+  fillRect(rgba, 482, 52, 354, 364, colors.accent, 38);
+  // 主面板
   fillRect(rgba, 484, 54, 350, 360, colors.panel, 96);
-  strokeRect(rgba, 484, 54, 350, 360, colors.text, 24, 2);
+  // 双边框：外细框 + 内主框
+  strokeRect(rgba, 484, 54, 350, 360, colors.text, 22, 1);
+  strokeRect(rgba, 485, 55, 348, 358, colors.accent, 115, 2);
+  // 内容区底色
   fillRect(rgba, 506, 78, 306, 312, colors.deep, 42);
+  // 内边框左上高光
+  fillRect(rgba, 506, 78, 306, 1, colors.text, 28);
+  fillRect(rgba, 506, 78, 1, 312, colors.text, 22);
 }
 
 function drawMapArt(rgba: Buffer, colors: ReturnType<typeof palette>, seed: string): void {
@@ -404,9 +489,46 @@ function drawWeaponArt(rgba: Buffer, colors: ReturnType<typeof palette>, seed: s
   fillDiamond(rgba, 668, y + 14, 34, 18, trim, skin ? 175 : 70);
   if (skin) {
     for (let x = 496; x < 720; x += 44) drawLine(rgba, x, y - 12, x + 38, y + 38, colors.deep, 95, 4);
+    // 皮肤卡专属：星光粒子
+    const hash = hashCode(seed);
+    for (let i = 0; i < 9; i++) {
+      const sx = 510 + ((hash + i * 53) % 280);
+      const sy = 88 + ((hash >> 2) + i * 37) % 268;
+      const sz = 5 + (i % 3) * 4;
+      drawSparkle(rgba, sx, sy, sz, i % 2 ? colors.accent : colors.text, 120 + (i % 3) * 22);
+    }
   }
   drawLine(rgba, 480, y + 70, 812, y - 70, colors.text, 45, 1);
   for (let x = 468; x < 824; x += 36) fillRect(rgba, x, y + 58, 18, 2, trim, 170);
+}
+
+function drawKnifeArt(rgba: Buffer, colors: ReturnType<typeof palette>, seed: string): void {
+  drawArtPanel(rgba, colors);
+  const hash = hashCode(seed);
+  const cy = 234 + (hash % 20) - 10;
+  // 刀刃主体
+  fillTriangle(rgba, 490, cy - 16, 790, cy - 4, 490, cy + 16, colors.accent, 220);
+  // 刀背线
+  drawLine(rgba, 490, cy - 16, 790, cy - 4, colors.text, 90, 2);
+  // 护手
+  fillRect(rgba, 484, cy - 28, 14, 56, colors.muted, 200);
+  fillRect(rgba, 478, cy - 20, 12, 40, colors.accent2, 180);
+  // 刀柄
+  fillRect(rgba, 456, cy - 14, 32, 28, colors.panel, 220);
+  strokeRect(rgba, 456, cy - 14, 32, 28, colors.accent2, 140, 2);
+  for (let i = 0; i < 4; i++) fillRect(rgba, 460, cy - 10 + i * 7, 24, 3, colors.muted, 150);
+  // 发光轮廓
+  drawLine(rgba, 490, cy + 16, 790, cy - 4, colors.accent2, 100, 2);
+  // 星光粒子
+  for (let i = 0; i < 7; i++) {
+    const sx = 510 + ((hash + i * 71) % 270);
+    const sy = 90 + ((hash >> 3) + i * 41) % 280;
+    const sz = 4 + (i % 3) * 3;
+    drawSparkle(rgba, sx, sy, sz, i % 2 ? colors.accent : colors.accent2, 100 + (i % 3) * 25);
+  }
+  // 光芒扫线
+  drawLine(rgba, 560, cy - 16, 760, cy - 40, colors.text, 55, 1);
+  drawLine(rgba, 620, cy - 12, 780, cy - 28, colors.text, 35, 1);
 }
 
 function drawTeamArt(rgba: Buffer, colors: ReturnType<typeof palette>, seed: string): void {
@@ -499,6 +621,84 @@ function drawRoleArt(rgba: Buffer, colors: ReturnType<typeof palette>, seed: str
   drawText(rgba, 'POS', 612, 204, 8, colors.text);
 }
 
+function drawEconomyArt(rgba: Buffer, colors: ReturnType<typeof palette>, seed: string): void {
+  drawArtPanel(rgba, colors);
+  const hash = hashCode(seed);
+  fillRect(rgba, 538, 112, 266, 226, colors.panel, 172);
+  strokeRect(rgba, 538, 112, 266, 226, colors.accent, 120, 3);
+  const rows = ['BUY', 'SAVE', 'ECO'];
+  for (let i = 0; i < rows.length; i++) {
+    const y = 142 + i * 62;
+    const width = 96 + ((hash >> (i * 3)) % 86);
+    fillRect(rgba, 570, y + 8, 186, 20, colors.deep, 155);
+    fillRect(rgba, 570, y + 8, width, 20, i === 1 ? colors.accent2 : colors.accent, 205);
+    drawText(rgba, rows[i], 584, y - 10, 5, colors.text);
+    fillCircle(rgba, 770, y + 18, 18, colors.accent2, 150);
+    fillCircle(rgba, 770, y + 18, 11, colors.deep, 170);
+  }
+  for (let i = 0; i < 7; i++) {
+    const x = 552 + i * 34;
+    const y = 348 - (i % 3) * 16;
+    fillCircle(rgba, x, y, 15, i % 2 ? colors.accent : colors.accent2, 132);
+    fillCircle(rgba, x, y, 8, colors.deep, 90);
+  }
+}
+
+function drawShotcallArt(rgba: Buffer, colors: ReturnType<typeof palette>, seed: string): void {
+  drawArtPanel(rgba, colors);
+  const hash = hashCode(seed);
+  const nodes = [
+    [564, 152, 'A'],
+    [696, 112, 'B'],
+    [784, 214, 'X'],
+    [700, 338, 'C'],
+    [546, 292, 'D'],
+  ] as const;
+  for (let i = 0; i < nodes.length; i++) {
+    const [x0, y0] = nodes[i];
+    const [x1, y1] = nodes[(i + 1 + (hash % 2)) % nodes.length];
+    drawLine(rgba, x0, y0, x1, y1, i % 2 ? colors.accent2 : colors.accent, 138, 4);
+    const angle = Math.atan2(y1 - y0, x1 - x0);
+    fillTriangle(
+      rgba,
+      x1,
+      y1,
+      x1 - Math.cos(angle - 0.55) * 18,
+      y1 - Math.sin(angle - 0.55) * 18,
+      x1 - Math.cos(angle + 0.55) * 18,
+      y1 - Math.sin(angle + 0.55) * 18,
+      i % 2 ? colors.accent2 : colors.accent,
+      142,
+    );
+  }
+  for (const [x, y, label] of nodes) {
+    fillCircle(rgba, x, y, 24, colors.deep, 210);
+    fillCircle(rgba, x, y, 16, colors.accent, 165);
+    drawText(rgba, label, x - 12, y - 16, 5, colors.text);
+  }
+  fillRect(rgba, 588, 374, 172, 24, colors.deep, 145);
+  drawText(rgba, 'CALL', 618, 368, 5, colors.accent2);
+}
+
+function drawReviewArt(rgba: Buffer, colors: ReturnType<typeof palette>, seed: string): void {
+  drawArtPanel(rgba, colors);
+  const hash = hashCode(seed);
+  fillRect(rgba, 528, 112, 280, 172, colors.deep, 126);
+  strokeRect(rgba, 528, 112, 280, 172, colors.accent2, 98, 3);
+  drawText(rgba, 'VOD', 584, 150, 10, colors.text);
+  drawLine(rgba, 554, 328, 790, 328, colors.muted, 120, 5);
+  for (let i = 0; i < 6; i++) {
+    const x = 558 + i * 46;
+    const high = i === hash % 6;
+    fillCircle(rgba, x, 328, high ? 15 : 9, high ? colors.accent : colors.accent2, high ? 230 : 150);
+    drawLine(rgba, x, 328, x, 294 - (i % 2) * 34, high ? colors.accent : colors.muted, high ? 128 : 70, 2);
+  }
+  const cursor = 558 + (hash % 6) * 46;
+  fillTriangle(rgba, cursor - 12, 360, cursor + 12, 360, cursor, 338, colors.accent, 210);
+  fillRect(rgba, 548, 380, 230, 18, colors.panel, 150);
+  fillRect(rgba, 548, 380, 72 + (hash % 128), 18, colors.accent2, 170);
+}
+
 function drawBookArt(rgba: Buffer, colors: ReturnType<typeof palette>, kind: DailyCardImageKind): void {
   drawArtPanel(rgba, colors);
   const paper = kind === 'poem' ? { r: 232, g: 236, b: 214 } : { r: 226, g: 218, b: 198 };
@@ -552,8 +752,10 @@ function drawDailyArt(rgba: Buffer, colors: ReturnType<typeof palette>, kind: Da
       drawMapArt(rgba, colors, seed);
       break;
     case 'weapon':
-    case 'knife':
       drawWeaponArt(rgba, colors, seed);
+      break;
+    case 'knife':
+      drawKnifeArt(rgba, colors, seed);
       break;
     case 'skin':
       drawWeaponArt(rgba, colors, seed, true);
@@ -575,12 +777,25 @@ function drawDailyArt(rgba: Buffer, colors: ReturnType<typeof palette>, kind: Da
     case 'quiz':
       drawTacticArt(rgba, colors, seed);
       break;
+    case 'economy':
+      drawEconomyArt(rgba, colors, seed);
+      break;
+    case 'shotcall':
+      drawShotcallArt(rgba, colors, seed);
+      break;
+    case 'review':
+      drawReviewArt(rgba, colors, seed);
+      break;
     case 'role':
       drawRoleArt(rgba, colors, seed);
       break;
     case 'book':
     case 'poem':
     case 'fact':
+    case 'movie':
+    case 'music':
+    case 'history':
+    case 'science':
       drawBookArt(rgba, colors, kind);
       break;
     case 'mokoko':
@@ -603,10 +818,20 @@ export function buildDailyCardImageDataUrl(options: DailyCardImageOptions): stri
 
   drawBackground(rgba, colors, `${options.seed}:${options.label}`);
   drawTopBars(rgba, colors);
+
+  // 左侧文字面板
   fillRect(rgba, 48, 54, 390, 360, colors.panel, 188);
-  strokeRect(rgba, 48, 54, 390, 360, colors.accent, 90, 3);
+  strokeRect(rgba, 48, 54, 390, 360, colors.accent, 95, 3);
   fillRect(rgba, 70, 76, 346, 316, colors.deep, 95);
+  // 左面板内边框高光
+  fillRect(rgba, 70, 76, 346, 1, colors.text, 25);
+  fillRect(rgba, 70, 76, 1, 316, colors.text, 20);
+
   drawDailyArt(rgba, colors, kind, `${options.seed}:${options.label}`);
+
+  // 四角装饰标记
+  drawCornerMarks(rgba, 48, 54, 390, 360, colors.accent2, 14, 200);
+  drawCornerMarks(rgba, 484, 54, 350, 360, colors.accent, 12, 185);
 
   const title = displayText(options.title || 'DAILY CS', 'DAILY CS');
   drawText(rgba, title, 76, 84, fitScale(title, 320, 5, 3), colors.muted);
@@ -623,15 +848,28 @@ export function buildDailyCardImageDataUrl(options: DailyCardImageOptions): stri
 
   if (options.score) {
     const scoreText = displayText(options.score, 'SCORE');
+    // 分数前绘制小装饰线
+    fillRect(rgba, 76, 338, 30, 2, colors.accent2, 180);
     drawText(rgba, scoreText, 76, 346, fitScale(scoreText, 330, 5, 3), colors.accent2);
   }
-  drawText(rgba, displayText(options.footer || 'WANJIER DAILY', 'WANJIER DAILY'), 76, 438, 4, colors.muted);
 
+  // 底部页脚区：分隔线 + 文字
+  fillRect(rgba, 70, 424, 346, 1, colors.muted, 70);
+  drawText(rgba, displayText(options.footer || 'WANJIER DAILY', 'WANJIER DAILY'), 76, 434, 4, colors.muted);
+
+  // 右侧面板散点装饰（更丰富：矩形 + 圆点混合）
   const hash = hashCode(`${options.seed}:${options.label}`);
-  for (let i = 0; i < 18; i++) {
-    const x = 478 + ((hash + i * 37) % 350);
-    const y = 66 + ((hash >> 3) + i * 53) % 360;
-    fillRect(rgba, x, y, 16 + (i % 3) * 8, 3, i % 2 ? colors.accent : colors.accent2, 165);
+  for (let i = 0; i < 20; i++) {
+    const x = 490 + ((hash + i * 37) % 336);
+    const y = 68 + ((hash >> 3) + i * 51) % 348;
+    if (i % 4 === 0) {
+      // 小圆点
+      fillCircle(rgba, x, y, 3 + (i % 3), i % 2 ? colors.accent : colors.accent2, 130);
+    } else {
+      const w = 10 + (i % 4) * 7;
+      const h = i % 6 === 0 ? w : 3;
+      fillRect(rgba, x, y, w, h, i % 3 === 0 ? colors.accent : (i % 3 === 1 ? colors.accent2 : colors.muted), 145 + (i % 3) * 12);
+    }
   }
 
   const png = encodePng(rgba);

@@ -22,6 +22,7 @@ const { registerGiftThanksListener, __test: giftThanksTest } = require('../dist/
 const { registerPokeListener, __test: pokeTest } = require('../dist/plugins/poke');
 const { repeaterPlugin } = require('../dist/plugins/repeater');
 const { funPlugin, __test: funTest } = require('../dist/plugins/fun');
+const dailyImageMatching = require('../dist/plugins/daily-image-matching');
 const { stickersPlugin, getStickerStats, __test: stickerTest } = require('../dist/plugins/stickers');
 const replyPostprocess = require('../dist/plugins/reply-postprocess');
 const { adminPlugin } = require('../dist/plugins/admin');
@@ -39,6 +40,9 @@ const aiEvidence = require('../dist/plugins/ai-evidence');
 const aiMessageBuilders = require('../dist/plugins/ai-message-builders');
 const aiKnowledgeDiagnostics = require('../dist/plugins/ai-knowledge-diagnostics');
 const aiKnowledgeRoute = require('../dist/plugins/ai-knowledge-route');
+const aiKnowledgeRouteRuntime = require('../dist/plugins/ai-knowledge-route-runtime');
+const aiKnowledgeRefreshRuntime = require('../dist/plugins/ai-knowledge-refresh-runtime');
+const aiMemoryRuntime = require('../dist/plugins/ai-memory-runtime');
 const aiMediaPreflight = require('../dist/plugins/ai-media-preflight');
 const aiMediaSources = require('../dist/plugins/ai-media-sources');
 const aiMediaStatus = require('../dist/plugins/ai-media-status');
@@ -49,6 +53,7 @@ const aiConversationGovernance = require('../dist/plugins/ai-conversation-govern
 const aiMemoryUtils = require('../dist/plugins/ai-memory-utils');
 const aiPromptBuilders = require('../dist/plugins/ai-prompt-builders');
 const aiReplyCacheDiagnostics = require('../dist/plugins/ai-reply-cache-diagnostics');
+const aiReplyCacheAdmin = require('../dist/plugins/ai-reply-cache-admin');
 const aiReplyCacheRuntime = require('../dist/plugins/ai-reply-cache-runtime');
 const aiReplyDedupe = require('../dist/plugins/ai-reply-dedupe');
 const aiReplyFallback = require('../dist/plugins/ai-reply-fallback');
@@ -60,6 +65,7 @@ const aiTraceFormat = require('../dist/plugins/ai-trace-format');
 const aiTriggerPolicy = require('../dist/plugins/ai-trigger-policy');
 const aiVoiceCacheWarm = require('../dist/plugins/ai-voice-cache-warm');
 const aiVoiceDiagnostics = require('../dist/plugins/ai-voice-diagnostics');
+const csTrainingRuntime = require('../dist/plugins/cs-training-runtime');
 const { parseLocalCommand } = require('../dist/plugins/local-command');
 const sanitize = require('../dist/message-sanitize');
 
@@ -347,6 +353,45 @@ async function testAiKnowledgeRouteHelpers() {
   assert.ok(panel.includes('公开事实仍要看来源和实时证据'), 'knowledge route panel should keep public-fact boundary');
 }
 
+async function testAiKnowledgeRouteRuntimeHelpers() {
+  const config = readConfig().ai;
+  const panel = aiKnowledgeRouteRuntime.formatKnowledgeRoutePreview(config, 'Spirit 最新阵容怎么看');
+  assert.ok(panel.includes('知识路由预检'), 'knowledge route runtime should render preview panel');
+  assert.ok(panel.includes('实时证据') || panel.includes('时效风险') || panel.includes('话题命中'), 'knowledge route runtime should include diagnostics');
+}
+
+async function testAiKnowledgeRefreshRuntimeHelpers() {
+  const config = readConfig().ai;
+  const fallback = aiKnowledgeRefreshRuntime.makeFallbackKnowledgeSources();
+  assert.ok(fallback.length >= 4, 'knowledge refresh runtime should provide fallback sources');
+  assert.ok(fallback.some((source) => source.sourceType === 'public_fact'), 'knowledge refresh fallback should include public fact sources');
+
+  const manual = aiKnowledgeRefreshRuntime.chooseRefreshSources(config, 'HLTV Spirit 最新阵容', false);
+  assert.strictEqual(manual.length, 1, 'knowledge refresh manual query should produce one synthetic source');
+  assert.strictEqual(manual[0].id, 'manual-query', 'knowledge refresh manual query should use stable source id');
+  assert.strictEqual(manual[0].sourceType, 'public_fact', 'knowledge refresh manual factual query should be public_fact');
+
+  const summary = aiKnowledgeRefreshRuntime.summarizeRefreshResult(
+    'manual_smoke',
+    2,
+    1,
+    0,
+    [],
+    ['source-a: timeout', 'source-b: no result'],
+    3,
+    false,
+  );
+  assert.ok(summary.includes('知识库刷新完成'), 'knowledge refresh runtime should render manual summary title');
+  assert.ok(summary.includes('失败: 2'), 'knowledge refresh runtime should count failures');
+  assert.ok(summary.includes('审计问题: 3'), 'knowledge refresh runtime should include audit issue count');
+
+  const staticReply = await aiKnowledgeRefreshRuntime.runKnowledgeRefresh({
+    ...config,
+    knowledge_update_mode: 'static',
+  }, '不会联网的静态测试', false);
+  assert.ok(staticReply.includes('static 模式'), 'knowledge refresh runtime should short-circuit static mode without search');
+}
+
 async function testAiKnowledgeDiagnosticsHelpers() {
   const resultsPanel = aiKnowledgeDiagnostics.formatKnowledgeResults([
     { title: 'T', score: 1, excerpt: 'E' },
@@ -626,6 +671,19 @@ async function testAiReplyCacheDiagnosticsHelpers() {
   assert.ok(pool.includes('has-expired') || pool.includes('near-capacity'), 'reply cache pool should expose cache health status');
   assert.ok(pool.includes('旁路很多'), 'reply cache pool should explain high bypass count as truth-preserving');
   assert.ok(pool.includes('回复缓存只给普通主动接话用'), 'reply cache pool should include cache boundary');
+}
+
+async function testAiReplyCacheAdminHelpers() {
+  const config = readConfig().ai;
+  const preflight = aiReplyCacheAdmin.formatReplyCachePreflight(config, '这个残局怎么打 || 今天比分多少');
+  assert.ok(preflight.includes('回复缓存预检'), 'reply cache admin should render preflight panel');
+  assert.ok(preflight.includes('残局') || preflight.includes('比分'), 'reply cache admin should include split inputs');
+
+  const pool = aiReplyCacheAdmin.formatReplyCachePoolStatus(config);
+  assert.ok(pool.includes('回复缓存池状态'), 'reply cache admin should render pool status');
+
+  const summary = aiReplyCacheAdmin.pruneExpiredReplyCacheForMaintenance(Date.now());
+  assert.ok(typeof summary.before === 'number', 'reply cache admin should return maintenance summary');
 }
 
 async function testAiReplyCacheRuntimeHelpers() {
@@ -1787,6 +1845,65 @@ async function testAiMemoryUtilsHelpers() {
   );
 }
 
+async function testAiMemoryRuntimeHelpers() {
+  const calls = [];
+  const fakeContextManager = {
+    isMemoryEnabled: () => true,
+    getSessionMeta: (sessionId) => {
+      calls.push(`meta:${sessionId}`);
+      return { summaryChars: 3, messages: 2, lastActiveTime: 123, loaded: true };
+    },
+    getMemoryInjectMaxChars: () => 456,
+    retrieveSimilar: (sessionId, query, topK, minSimilarity) => {
+      calls.push(`search:${sessionId}:${query}:${topK}:${minSimilarity}`);
+      return [{ role: 'user', text: '相似记忆', ts: 1, similarity: 0.8, score: 0.9, recencyBoost: 0.1, ageSeconds: 2 }];
+    },
+    getRecentMessages: () => [{ role: 'user', content: '最近上下文' }],
+    getRecentIndexedMessages: () => [{ role: 'assistant', text: '最近索引', ts: 2 }],
+    trimSession: () => ({ contextBefore: 5, contextAfter: 2, summaryBeforeChars: 8, summaryAfterChars: 0, indexBefore: 5, indexAfter: 2 }),
+    dropSessionMemoryByQuery: (_sessionId, query) => ({
+      contextBefore: 2,
+      contextAfter: query ? 1 : 2,
+      contextRemoved: query ? 1 : 0,
+      summaryBeforeChars: 4,
+      summaryAfterChars: query ? 0 : 4,
+      summaryDropped: !!query,
+      indexBefore: 2,
+      indexAfter: query ? 1 : 2,
+      indexRemoved: query ? 1 : 0,
+      samples: [],
+    }),
+    inspectSessionMemoryByUser: (_sessionId, userId) => ({ contextTotal: 2, contextMatched: 1, summaryChars: 0, indexTotal: 2, indexMatched: 1, samples: [{ role: 'user', text: `uid=${userId}` }] }),
+    dropSessionMemoryByUser: () => ({ contextBefore: 2, contextAfter: 1, contextRemoved: 1, summaryBeforeChars: 4, summaryAfterChars: 0, summaryDropped: true, indexBefore: 2, indexAfter: 1, indexRemoved: 1, samples: [] }),
+  };
+  const mutated = [];
+  const runtime = {
+    getContextManager: () => fakeContextManager,
+    onMemoryMutated: (sessionId) => mutated.push(sessionId),
+  };
+  const config = readConfig().ai;
+
+  const diagnostics = aiMemoryRuntime.getMemoryDiagnostics(runtime, config, 'group_smoke');
+  assert.strictEqual(diagnostics.enabled, true, 'memory runtime should expose enabled state');
+  assert.strictEqual(diagnostics.session.messages, 2, 'memory runtime should expose session metadata');
+  assert.strictEqual(diagnostics.injectMaxChars, 456, 'memory runtime should expose inject char limit');
+
+  const hits = aiMemoryRuntime.searchSessionMemory(runtime, config, 'group_smoke', 'NAVI', 3);
+  assert.strictEqual(hits[0].text, '相似记忆', 'memory runtime should proxy semantic search results');
+  assert.ok(calls.some((item) => item.includes('search:group_smoke:NAVI:3')), 'memory runtime should pass explicit topK');
+
+  const recent = aiMemoryRuntime.getRecentSessionMemory(runtime, config, 'group_smoke', 2);
+  assert.strictEqual(recent.context[0].text, '最近上下文', 'memory runtime should expose recent context');
+  assert.strictEqual(recent.indexed[0].text, '最近索引', 'memory runtime should expose recent indexed messages');
+
+  aiMemoryRuntime.trimAiSessionMemory(runtime, config, 'group_smoke', 2);
+  aiMemoryRuntime.dropAiSessionMemoryByQuery(runtime, config, 'group_smoke', 'NAVI');
+  aiMemoryRuntime.dropAiSessionMemoryByUser(runtime, config, 'group_smoke', 42);
+  assert.deepStrictEqual(mutated, ['group_smoke', 'group_smoke', 'group_smoke'], 'memory runtime should call mutation hook for destructive operations');
+  const inspected = aiMemoryRuntime.inspectAiSessionMemoryByUser(runtime, config, 'group_smoke', 42);
+  assert.strictEqual(inspected.samples[0].text, 'uid=42', 'memory runtime should proxy per-user inspection');
+}
+
 async function testLocalCommandParser() {
   assert.deepStrictEqual(
     parseLocalCommand(`"${process.execPath}" "scripts/smoke.js" --flag`),
@@ -1954,6 +2071,35 @@ async function testConfig() {
   assert.strictEqual(normalizeConfig({ ...JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'config.example.json'), 'utf-8')), web_admin_port: 6099 }).web_admin_port, 6099);
   assert.strictEqual(config.login_check_interval_seconds, 30);
   assert.strictEqual(config.login_check_api_timeout_ms, 8000);
+  assert.deepStrictEqual(config.bot_pool, []);
+  assert.strictEqual(config.bot_pool_failover_seconds, 30);
+  const pooledConfig = normalizeConfig({
+    ...JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'config.example.json'), 'utf-8')),
+    bot_pool: [
+      { ws_url: 'ws://127.0.0.1:3012', priority: 2, name: 'backup' },
+      { ws_url: 'ws://127.0.0.1:3011', priority: 1, qq: 123456789 },
+    ],
+    bot_pool_failover_seconds: 7,
+  });
+  assert.deepStrictEqual(pooledConfig.bot_pool.map((item) => item.ws_url), ['ws://127.0.0.1:3012', 'ws://127.0.0.1:3011']);
+  assert.strictEqual(pooledConfig.bot_pool_failover_seconds, 7);
+  assert.throws(
+    () => normalizeConfig({
+      ...JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'config.example.json'), 'utf-8')),
+      bot_pool: [{ ws_url: 'http://127.0.0.1:3011' }],
+    }),
+    /bot_pool\[0\]\.ws_url 只支持/,
+  );
+  const pooledBot = new Bot(pooledConfig);
+  assert.deepStrictEqual(pooledBot.getRuntimeStats().poolUrls, ['ws://127.0.0.1:3011', 'ws://127.0.0.1:3012']);
+  assert.strictEqual(pooledBot.getRuntimeStats().wsUrl, 'ws://127.0.0.1:3011');
+  pooledBot.updateConfig({
+    ws_url: 'ws://127.0.0.1:3020',
+    bot_pool: [{ ws_url: 'ws://127.0.0.1:3021', priority: 1 }],
+    bot_pool_failover_seconds: 9,
+  });
+  assert.deepStrictEqual(pooledBot.getRuntimeStats().poolUrls, ['ws://127.0.0.1:3021']);
+  assert.strictEqual(pooledBot.getRuntimeStats().wsUrl, 'ws://127.0.0.1:3021');
   assert.strictEqual(config.ai.conversation_governance_enabled, true);
   assert.strictEqual(config.ai.conversation_busy_max_sentences, 1);
   assert.strictEqual(config.ai.conversation_clarify_ambiguous, true);
@@ -2052,6 +2198,17 @@ async function testWebAdminSecurity() {
   const oldToken = process.env.WANJIER_ADMIN_TOKEN;
   const oldHost = process.env.WANJIER_WEB_ADMIN_HOST;
   const oldPublic = process.env.WANJIER_WEB_ADMIN_READONLY_PUBLIC;
+  const rootDir = path.resolve(__dirname, '..');
+  const configPath = path.resolve(__dirname, '..', 'config.json');
+  const configExisted = fs.existsSync(configPath);
+  const originalConfig = configExisted ? fs.readFileSync(configPath) : null;
+  const existingBackups = new Set(
+    fs.readdirSync(rootDir).filter((name) => name.startsWith('config.json.bak.')),
+  );
+  const rawConfig = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'config.example.json'), 'utf-8'));
+  rawConfig.ai.api_key = 'sk-original-web-admin-key-1234567890';
+  rawConfig.bot_pool = [{ ws_url: 'ws://127.0.0.1:3010', priority: 1, name: 'primary' }];
+  fs.writeFileSync(configPath, `${JSON.stringify(rawConfig, null, 2)}\n`);
   const port = await getFreePort();
   const bot = new Bot(readConfig());
   try {
@@ -2083,6 +2240,25 @@ async function testWebAdminSecurity() {
     assert.ok(status.runtime, 'web admin status should return runtime data after auth');
 
     res = await fetch(`http://127.0.0.1:${port}/api/config`, {
+      headers: { 'X-Admin-Token': 'smoke-admin-token-123456' },
+    });
+    assert.strictEqual(res.status, 200, 'web admin config should be readable after auth');
+    const maskedConfig = await res.json();
+    assert.deepStrictEqual(maskedConfig.bot_pool, rawConfig.bot_pool, 'web admin config should return raw bot_pool fields');
+    assert.strictEqual(maskedConfig.ai.api_key, 'sk-o...7890', 'web admin config should mask api_key');
+    maskedConfig.bot_name = 'smoke-web-admin';
+
+    res = await fetch(`http://127.0.0.1:${port}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': 'smoke-admin-token-123456' },
+      body: JSON.stringify(maskedConfig),
+    });
+    assert.strictEqual(res.status, 200, 'web admin config save should preserve masked secrets and raw fields');
+    const savedRaw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    assert.strictEqual(savedRaw.ai.api_key, 'sk-original-web-admin-key-1234567890', 'masked api_key should not be written back literally');
+    assert.deepStrictEqual(savedRaw.bot_pool, rawConfig.bot_pool, 'web admin save should preserve raw bot_pool fields');
+
+    res = await fetch(`http://127.0.0.1:${port}/api/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Admin-Token': 'smoke-admin-token-123456' },
       body: JSON.stringify({ ai: {} }),
@@ -2097,6 +2273,13 @@ async function testWebAdminSecurity() {
     else delete process.env.WANJIER_WEB_ADMIN_HOST;
     if (typeof oldPublic === 'string') process.env.WANJIER_WEB_ADMIN_READONLY_PUBLIC = oldPublic;
     else delete process.env.WANJIER_WEB_ADMIN_READONLY_PUBLIC;
+    if (configExisted) fs.writeFileSync(configPath, originalConfig);
+    else if (fs.existsSync(configPath)) fs.unlinkSync(configPath);
+    for (const name of fs.readdirSync(rootDir).filter((item) => item.startsWith('config.json.bak.'))) {
+      if (!existingBackups.has(name)) {
+        fs.unlinkSync(path.join(rootDir, name));
+      }
+    }
   }
 }
 
@@ -7171,6 +7354,7 @@ async function testFunCsPlayer() {
   const playerManifestPath = path.resolve(__dirname, '..', 'data', `daily-player-images-smoke-${Date.now()}.json`);
   const genshinManifestPath = path.resolve(__dirname, '..', 'data', `genshin-character-images-smoke-${Date.now()}.json`);
   const dailyBeautyManifestPath = path.resolve(__dirname, '..', 'data', `daily-beauty-images-smoke-${Date.now()}.json`);
+  const localPackDir = path.resolve(__dirname, '..', 'data', `daily-image-pack-smoke-${Date.now()}`);
   const sent = [];
   const bot = {
     getConfig: () => config,
@@ -7371,6 +7555,23 @@ async function testFunCsPlayer() {
     assert.strictEqual(imageTargets.length, funTest.dailyBeautyAuditRows().length, 'daily image target export should match audit rows');
     assert.ok(imageTargets.some((item) => item.kind === 'mokoko' && item.fields.characterKey === 'tomori'), 'daily image targets should expose mokoko character keys');
     assert.ok(imageTargets.some((item) => item.kind === 'skin' && item.fields.weapon && item.fields.skin), 'daily image targets should expose weapon+skin fields');
+    assert.ok(imageTargets.some((item) => item.kind === 'economy' && item.fields.key === 'full-eco'), 'daily image targets should expose economy metadata targets');
+    assert.ok(imageTargets.some((item) => item.kind === 'shotcall' && item.fields.key === 'default-split-call'), 'daily image targets should expose shotcall metadata targets');
+    assert.ok(imageTargets.some((item) => item.kind === 'review' && item.fields.key === 'first-death-review'), 'daily image targets should expose review metadata targets');
+    assert.strictEqual(dailyImageMatching.dailyImageSlug('AWP | Dragon Lore'), 'awp-dragon-lore', 'daily image slug should normalize separators');
+    assert.ok(dailyImageMatching.dailyImageSlugCandidates(['AWP | Dragon Lore']).includes('awpdragonlore'), 'daily image slug candidates should include dense aliases');
+    const sortedBeauty = dailyImageMatching.preferBeautyManifestImages([
+      { title: 'headshot profile', url: 'a.jpg' },
+      { title: 'keyvisual wallpaper', url: 'b.jpg' },
+    ]);
+    assert.strictEqual(sortedBeauty[0].url, 'b.jpg', 'daily image matching should prefer visual artwork over headshots');
+    assert.strictEqual(dailyImageMatching.uniqueManifestCardsByUrl([{ url: 'a.jpg' }, { url: 'a.jpg' }, { url: 'b.jpg' }]).length, 2, 'daily image matching should de-duplicate URLs');
+    fs.mkdirSync(path.join(localPackDir, 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(localPackDir, 'nested', 'one.png'), Buffer.from([1, 2, 3]));
+    fs.writeFileSync(path.join(localPackDir, 'ignore.txt'), 'x');
+    const localPackCards = dailyImageMatching.dailyLocalPackCardsFromDirs('team', 'NAVI', [localPackDir]);
+    assert.strictEqual(localPackCards.length, 1, 'daily image local pack scanner should include image files only');
+    assert.strictEqual(localPackCards[0].kind, 'team', 'daily image local pack scanner should keep kind metadata');
     const bestdoriCandidates = await funTest.buildCharacterImageCandidates(
       funTest.dailyCharacters.find((item) => item.key === 'tomori'),
       61,
@@ -7491,6 +7692,12 @@ async function testFunCsPlayer() {
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天丢什么道具', 'utility'), true, 'fuzzy daily utility should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天打什么战术', 'tactic'), true, 'fuzzy daily tactic should trigger');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今天残局怎么打', 'clutch'), true, 'fuzzy daily clutch should trigger');
+    assert.strictEqual(funTest.isDailyCardRequest(null, '今日经济局', 'economy'), true, 'fuzzy daily economy should trigger');
+    assert.strictEqual(funTest.isDailyCardRequest(null, '今日指挥口令', 'shotcall'), true, 'fuzzy daily shotcall should trigger');
+    assert.strictEqual(funTest.isDailyCardRequest(null, '每日复盘切片', 'review'), true, 'fuzzy daily review should trigger');
+    assert.strictEqual(funTest.isDailyCardRequest('cseco', '/cseco', 'economy'), true, '/cseco should trigger daily economy');
+    assert.strictEqual(funTest.isDailyCardRequest('cscall', '/cscall', 'shotcall'), true, '/cscall should trigger daily shotcall');
+    assert.strictEqual(funTest.isDailyCardRequest('csreview', '/csreview', 'review'), true, '/csreview should trigger daily review');
     assert.strictEqual(funTest.isDailyCardRequest(null, '今日cs', 'loadout'), true, 'short daily CS text should trigger loadout');
     assert.strictEqual(funTest.isCsTrainingRequest(null, '今天怎么练枪'), true, 'fuzzy daily CS training should trigger');
     assert.strictEqual(funTest.isCsTrainingRequest(null, '训练语音'), false, 'voice training should not be hijacked by CS training');
@@ -7529,6 +7736,18 @@ async function testFunCsPlayer() {
     assert.ok(firstText(duelMessage).includes('每日决战紫禁之巅'), 'daily duel builder should include title');
     assert.ok(firstText(duelMessage).includes('你：'), 'daily duel builder should include user weapon');
     assert.ok(duelMessage.some((seg) => seg.type === 'image'), 'daily duel builder should include image');
+    const economyCard = funTest.dailyCardFor('cseconomy', 61, 6657, funTest.csEconomies);
+    const economyMessage = await funTest.buildDailyCardMessage(61, economyCard, funTest.dailyScoreForKind('cseconomy', 61, 6657), false, 'economy', 6657);
+    assert.ok(firstText(economyMessage).includes('今日CS经济局'), 'daily economy builder should include title');
+    assert.ok(economyMessage.some((seg) => seg.type === 'image'), 'daily economy builder should include image');
+    const shotcallCard = funTest.dailyCardFor('csshotcall', 61, 6657, funTest.csShotcalls);
+    const shotcallMessage = await funTest.buildDailyCardMessage(61, shotcallCard, funTest.dailyScoreForKind('csshotcall', 61, 6657), false, 'shotcall', 6657);
+    assert.ok(firstText(shotcallMessage).includes('今日CS指挥口令'), 'daily shotcall builder should include title');
+    assert.ok(shotcallMessage.some((seg) => seg.type === 'image'), 'daily shotcall builder should include image');
+    const reviewCard = funTest.dailyCardFor('csreview', 61, 6657, funTest.csReviews);
+    const reviewMessage = await funTest.buildDailyCardMessage(61, reviewCard, funTest.dailyScoreForKind('csreview', 61, 6657), false, 'review', 6657);
+    assert.ok(firstText(reviewMessage).includes('今日CS复盘切片'), 'daily review builder should include title');
+    assert.ok(reviewMessage.some((seg) => seg.type === 'image'), 'daily review builder should include image');
     const parsedTraining = funTest.parseTrainingLogInput(['35', 'Mirage', 'AK', '急停']);
     assert.strictEqual(parsedTraining.area, 'aim', 'training log parser should infer aim practice');
     assert.strictEqual(parsedTraining.minutes, 35, 'training log parser should extract minutes');
@@ -7841,6 +8060,21 @@ async function testFunCsPlayer() {
   handler.handleEvent(makePlainEvent(644, 100, '/csimage test mokoko'));
   await waitFor(() => sent.length === 45, 'daily image mokoko probe command');
   assert.ok(firstText(sent[44].message).includes('CS真实图片测试'), '/csimage test mokoko should probe image candidates');
+
+  handler.handleEvent(makePlainEvent(645, 101, '/cseco'));
+  await waitFor(() => sent.length === 46, 'daily economy command');
+  assert.ok(firstText(sent[45].message).includes('今日CS经济局'), 'daily economy command should include title');
+  assert.ok(sent[45].message.some((seg) => seg.type === 'image'), 'daily economy command should include image');
+
+  handler.handleEvent(makePlainEvent(646, 102, '今日指挥口令'));
+  await waitFor(() => sent.length === 47, 'daily shotcall fuzzy');
+  assert.ok(firstText(sent[46].message).includes('今日CS指挥口令'), 'daily shotcall fuzzy should include title');
+  assert.ok(sent[46].message.some((seg) => seg.type === 'image'), 'daily shotcall fuzzy should include image');
+
+  handler.handleEvent(makePlainEvent(647, 103, '每日复盘切片'));
+  await waitFor(() => sent.length === 48, 'daily review fuzzy');
+  assert.ok(firstText(sent[47].message).includes('今日CS复盘切片'), 'daily review fuzzy should include title');
+  assert.ok(sent[47].message.some((seg) => seg.type === 'image'), 'daily review fuzzy should include image');
   } finally {
     funTest.__setImageResolverForTests();
     funTest.__setImageSourceResolversForTests();
@@ -7856,6 +8090,7 @@ async function testFunCsPlayer() {
     if (fs.existsSync(playerManifestPath)) fs.unlinkSync(playerManifestPath);
     if (fs.existsSync(genshinManifestPath)) fs.unlinkSync(genshinManifestPath);
     if (fs.existsSync(dailyBeautyManifestPath)) fs.unlinkSync(dailyBeautyManifestPath);
+    if (fs.existsSync(localPackDir)) fs.rmSync(localPackDir, { recursive: true, force: true });
   }
 }
 
@@ -9947,6 +10182,30 @@ async function testCrossGroupAiConcurrency() {
   }
 }
 
+async function testCsTrainingRuntimeHelpers() {
+  const parsed = csTrainingRuntime.parseTrainingLogInput(['35', 'Mirage', 'AK', '急停']);
+  assert.strictEqual(parsed.area, 'aim', 'training runtime should infer aim practice');
+  assert.strictEqual(parsed.minutes, 35, 'training runtime should extract minutes');
+  assert.strictEqual(parsed.map, 'Mirage', 'training runtime should extract map');
+  assert.strictEqual(parsed.weapon, 'AK-47', 'training runtime should extract weapon');
+
+  const weaknesses = csTrainingRuntime.detectTrainingWeaknesses('Mirage 死亡8次，补枪距离太远，烟闪忘了');
+  assert.ok(weaknesses.includes('death'), 'training runtime should detect death issues');
+  assert.ok(weaknesses.includes('trade'), 'training runtime should detect trade issues');
+  assert.ok(weaknesses.includes('utility'), 'training runtime should detect utility issues');
+
+  const analysis = csTrainingRuntime.analyzeTrainingLogInput(['Mirage', '死亡8次，补枪距离太远，烟闪忘了']);
+  assert.ok(analysis, 'training runtime should analyze free-form logs');
+  const panel = csTrainingRuntime.formatCsTrainingAnalysis(analysis);
+  assert.ok(panel.includes('CS训练日志分析'), 'training runtime should render analysis title');
+  assert.ok(panel.includes('真话边界'), 'training runtime should keep analysis boundary');
+  assert.ok(panel.includes('/cstrain log'), 'training runtime should suggest writable log command');
+
+  const emptyStats = csTrainingRuntime.formatCsTrainingStats('group', 9999991, 9999992);
+  assert.ok(emptyStats.includes('近14天还没有记录'), 'training runtime should render empty stats state');
+  assert.ok(csTrainingRuntime.trainingCommandUsage().includes('/cstrain analyze'), 'training runtime should expose command usage');
+}
+
 async function main() {
   await testLoggerSerialization();
   await testLlmApiDefaults();
@@ -9954,10 +10213,13 @@ async function main() {
   await testAiConversationGovernanceHelpers();
   await testAiMessageBuilderHelpers();
   await testAiKnowledgeRouteHelpers();
+  await testAiKnowledgeRouteRuntimeHelpers();
+  await testAiKnowledgeRefreshRuntimeHelpers();
   await testAiKnowledgeDiagnosticsHelpers();
   await testAiStyleSceneHelpers();
   await testAiStylePreflightHelpers();
   await testAiReplyCacheDiagnosticsHelpers();
+  await testAiReplyCacheAdminHelpers();
   await testAiReplyCacheRuntimeHelpers();
   await testAiReplyFallbackHelpers();
   await testAiTriggerPolicyHelpers();
@@ -9974,6 +10236,7 @@ async function main() {
   await testAiPromptBuilderHelpers();
   await testAiHumanDelayHelpers();
   await testAiMemoryUtilsHelpers();
+  await testAiMemoryRuntimeHelpers();
   await testLocalCommandParser();
   await testOutgoingSanitize();
   await testBotMediaBatching();
@@ -10033,6 +10296,7 @@ async function main() {
   await testStickersPlugin();
   await testHelpTopicDiscoverability();
   await testDailyPulsePlugin();
+  await testCsTrainingRuntimeHelpers();
   await testFunCsPlayer();
   await testCsPluginAndGiftThanks();
   await testCsReportPlugin();

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { AIConfig, BotConfig, PresetConfig } from './types';
+import { AIConfig, BotConfig, BotPoolEntry, PresetConfig } from './types';
 import { createLogger } from './logger';
 import { writeJsonFileAtomic } from './plugins/runtime-storage';
 
@@ -231,6 +231,45 @@ function asStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function validateWebSocketUrl(value: string, label: string): string {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(value);
+  } catch {
+    throw new Error(`${label} 不是合法 URL: ${value}`);
+  }
+  if (parsedUrl.protocol !== 'ws:' && parsedUrl.protocol !== 'wss:') {
+    throw new Error(`${label} 只支持 ws:// 或 wss://`);
+  }
+  return value;
+}
+
+function normalizeBotPool(value: unknown): BotPoolEntry[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  if (value.length === 0) return [];
+
+  return value.map((item, index): BotPoolEntry => {
+    if (!isObject(item)) {
+      throw new Error(`bot_pool[${index}] 必须是对象`);
+    }
+
+    const wsUrl = asString(item.ws_url, '');
+    if (!wsUrl) {
+      throw new Error(`bot_pool[${index}] 缺少 ws_url`);
+    }
+
+    const qq = Math.floor(asNumber(item.qq, 0, 0, Number.MAX_SAFE_INTEGER)) || undefined;
+    const priority = Math.floor(asNumber(item.priority, 99, 1, 999));
+    const name = asString(item.name, '');
+    return {
+      ws_url: validateWebSocketUrl(wsUrl, `bot_pool[${index}].ws_url`),
+      ...(qq ? { qq } : {}),
+      priority,
+      ...(name ? { name } : {}),
+    };
+  });
+}
+
 function normalizePresets(value: unknown): Record<string, PresetConfig> {
   if (!isObject(value)) return {};
 
@@ -414,15 +453,7 @@ export function normalizeConfig(value: unknown): BotConfig {
     throw new Error('缺少 ws_url');
   }
 
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(wsUrl);
-  } catch {
-    throw new Error(`ws_url 不是合法 URL: ${wsUrl}`);
-  }
-  if (parsedUrl.protocol !== 'ws:' && parsedUrl.protocol !== 'wss:') {
-    throw new Error('ws_url 只支持 ws:// 或 wss://');
-  }
+  validateWebSocketUrl(wsUrl, 'ws_url');
 
   const commandPrefix = asString(value.command_prefix, '/');
   if (commandPrefix.length > 8) {
@@ -439,6 +470,8 @@ export function normalizeConfig(value: unknown): BotConfig {
   return {
     config_version: Math.floor(asNumber(value.config_version, 0, 0, Number.MAX_SAFE_INTEGER)) || undefined,
     ws_url: wsUrl,
+    bot_pool: normalizeBotPool(value.bot_pool),
+    bot_pool_failover_seconds: Math.floor(asNumber(value.bot_pool_failover_seconds, 30, 1, 3600)),
     web_admin_port: Math.floor(asNumber(value.web_admin_port, 0, 0, 65535)) || undefined,
     login_check_interval_seconds: Math.floor(asNumber(value.login_check_interval_seconds, 60, 0, 3600)),
     login_check_api_timeout_ms: Math.floor(asNumber(value.login_check_api_timeout_ms, 5000, 1000, 60000)),
@@ -492,10 +525,19 @@ function mergeMissingFields(raw: PlainObject, normalized: BotConfig): PlainObjec
   const result: PlainObject = { ...raw };
 
   // 顶级字段
-  const topFields = ['config_version', 'web_admin_port', 'login_check_interval_seconds', 'login_check_api_timeout_ms', 'bot_name', 'command_prefix'] as const;
+  const topFields = [
+    'config_version',
+    'bot_pool',
+    'bot_pool_failover_seconds',
+    'web_admin_port',
+    'login_check_interval_seconds',
+    'login_check_api_timeout_ms',
+    'bot_name',
+    'command_prefix',
+  ] as const;
   for (const key of topFields) {
     if (!(key in result) && normalized[key as keyof BotConfig] !== undefined) {
-      result[key] = normalized[key as keyof BotConfig] as any;
+      result[key] = normalized[key as keyof BotConfig];
     }
   }
 
@@ -506,7 +548,7 @@ function mergeMissingFields(raw: PlainObject, normalized: BotConfig): PlainObjec
     for (const [key, value] of Object.entries(normalized.ai)) {
       if (key === 'presets' || key === 'api_key') continue; // 这些不动
       if (!(key in mergedAi) && value !== undefined && value !== null) {
-        mergedAi[key] = value as any;
+        mergedAi[key] = value;
       }
     }
     result.ai = mergedAi;

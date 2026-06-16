@@ -22,6 +22,18 @@ type LoginInfoResponse = {
   };
 };
 
+type OneBotApiResponse<TData extends Record<string, unknown> = Record<string, unknown>> = {
+  retcode?: number;
+  status?: string;
+  message?: string;
+  wording?: string;
+  data?: TData;
+};
+
+type SendMessageData = {
+  message_id?: number | string;
+};
+
 function readyStateName(state: number | undefined): string {
   switch (state) {
     case WebSocket.CONNECTING: return 'connecting';
@@ -45,6 +57,7 @@ export class Bot {
   private currentPoolIdx: number = 0;
   /** 当前激活的 ws_url - 实际连接的 */
   private currentWsUrl: string;
+  private botPoolFailoverSeconds = 30;
   private readonly startedAt = Date.now();
   private readonly minReconnectInterval = 1000;
   private readonly maxReconnectInterval = 60000;
@@ -95,14 +108,26 @@ export class Bot {
 
   constructor(config: BotConfig) {
     this.config = config;
-    // 构建 ws_url 池：优先 bot_pool（按 priority 排序），fallback 到 ws_url
-    if (config.bot_pool && config.bot_pool.length > 0) {
-      const sorted = [...config.bot_pool].sort((a, b) => (a.priority || 99) - (b.priority || 99));
-      this.wsUrlPool = sorted.map((e) => e.ws_url).filter(Boolean);
+    this.syncPoolFromConfig(true);
+    this.currentWsUrl = this.wsUrlPool[0];
+  }
+
+  private syncPoolFromConfig(initial = false): void {
+    const sortedPool = this.config.bot_pool && this.config.bot_pool.length > 0
+      ? [...this.config.bot_pool].sort((a, b) => (a.priority || 99) - (b.priority || 99))
+      : [];
+    const nextPool = sortedPool.map((entry) => entry.ws_url).filter(Boolean);
+    this.wsUrlPool = nextPool.length > 0 ? nextPool : [this.config.ws_url];
+    this.botPoolFailoverSeconds = Math.max(1, Math.min(Math.floor(Number(this.config.bot_pool_failover_seconds || 30)), 3600));
+
+    if (initial) return;
+    const currentIdx = this.wsUrlPool.indexOf(this.currentWsUrl);
+    if (currentIdx >= 0) {
+      this.currentPoolIdx = currentIdx;
+      return;
     }
-    if (this.wsUrlPool.length === 0) {
-      this.wsUrlPool = [config.ws_url];
-    }
+
+    this.currentPoolIdx = 0;
     this.currentWsUrl = this.wsUrlPool[0];
   }
 
@@ -201,7 +226,7 @@ export class Bot {
       this.markLoginDisconnected(`WebSocket 已断开 code=${code}${reason.length > 0 ? ` reason=${reason.toString()}` : ''}`);
       const connectedForMs = this.lastConnectedAt > 0 ? this.lastDisconnectedAt - this.lastConnectedAt : 0;
       const framesDuringConnection = this.framesReceived - this.framesAtConnectionOpen;
-      const earlyDisconnect = code === 1006 && connectedForMs < 10000 && framesDuringConnection <= 1;
+      const earlyDisconnect = code === 1006 && connectedForMs < this.botPoolFailoverSeconds * 1000 && framesDuringConnection <= 1;
       if (earlyDisconnect) {
         this.consecutiveEarlyDisconnects++;
         if (this.consecutiveEarlyDisconnects >= 3) {
@@ -436,14 +461,15 @@ export class Bot {
     return this.callApiAsync('send_group_msg', {
       group_id: groupId,
       message: msg,
-    }, this.sendTimeoutMs(msg)).then((res: any) => {
-      if (typeof res?.retcode === 'number' && res.retcode !== 0) {
+    }, this.sendTimeoutMs(msg)).then((res) => {
+      const response = res as OneBotApiResponse<SendMessageData>;
+      if (typeof response.retcode === 'number' && response.retcode !== 0) {
         this.groupSendFailures++;
-        log.error(`发送群消息失败: 群${groupId} ${this.describeMessage(msg)} retcode=${res.retcode} ${res.message || res.wording || ''}`);
+        log.error(`发送群消息失败: 群${groupId} ${this.describeMessage(msg)} retcode=${response.retcode} ${response.message || response.wording || ''}`);
         return false;
       }
 
-      const msgId = res?.data?.message_id;
+      const msgId = response.data?.message_id;
       if (msgId && onMessageId) {
         onMessageId(Number(msgId));
       }
@@ -491,14 +517,15 @@ export class Bot {
     return this.callApiAsync('send_private_msg', {
       user_id: userId,
       message: msg,
-    }, this.sendTimeoutMs(msg)).then((res: any) => {
-      if (typeof res?.retcode === 'number' && res.retcode !== 0) {
+    }, this.sendTimeoutMs(msg)).then((res) => {
+      const response = res as OneBotApiResponse<SendMessageData>;
+      if (typeof response.retcode === 'number' && response.retcode !== 0) {
         this.privateSendFailures++;
-        log.error(`发送私聊消息失败: QQ${userId} ${this.describeMessage(msg)} retcode=${res.retcode} ${res.message || res.wording || ''}`);
+        log.error(`发送私聊消息失败: QQ${userId} ${this.describeMessage(msg)} retcode=${response.retcode} ${response.message || response.wording || ''}`);
         return false;
       }
 
-      const msgId = res?.data?.message_id;
+      const msgId = response.data?.message_id;
       if (msgId && onMessageId) {
         onMessageId(Number(msgId));
       }
@@ -652,6 +679,7 @@ export class Bot {
   /** 更新配置 */
   updateConfig(config: Partial<BotConfig>): void {
     Object.assign(this.config, config);
+    this.syncPoolFromConfig();
     this.ensureLoginCheckTimer();
   }
 

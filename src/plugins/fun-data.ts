@@ -156,6 +156,49 @@ csPlayers.push(
   { nick: 'zont1x', name: 'Myroslav Plakhotia', team: 'Team Spirit', role: 'Rifler / Anchor', note: '年轻锚点签，今天别急着前压，包点站住就是价值。', image: 'https://liquipedia.net/commons/images/5/58/Zont1x_at_BLAST_Bounty_Winter_2026.jpg', imageSource: 'liquipedia', aliases: ['zontix'] },
 );
 
+csPlayers.push(
+  { nick: 'degster', name: 'Peter Rothmann', team: '9INE / OG 语境', role: 'AWPer', note: '丹麦狙签，节奏感强，今天别乱动架点时机。', image: 'https://liquipedia.net/commons/images/7/7d/Degster_at_IEM_Katowice_2024.jpg', imageSource: 'liquipedia' },
+  { nick: 'nexa', name: 'Nemanja Isaković', team: 'G2 / OG 语境', role: 'IGL', note: '指挥签，经验到位，今天暂停后第一回合要有结果。', image: 'https://liquipedia.net/commons/images/8/8e/Nexa_at_IEM_Katowice_2024.jpg', imageSource: 'liquipedia' },
+  { nick: 'hunter-g2', name: 'Nemanja Kovač', team: 'G2 语境', role: 'Rifler', note: '老大哥步枪签，今天别急着证明，关键枪稳住就行。', image: 'https://liquipedia.net/commons/images/5/52/HuNter-_at_Stake_Ranked_Episode_1.jpg', imageSource: 'liquipedia', aliases: ['hunter'] },
+  { nick: 'fer', name: 'Fernando Alvarenga', team: 'FURIA 历史 / 巴西CS语境', role: 'Entry / Rifler', note: '巴西侵略性签，今天快节奏没问题，但别提速过早。', image: 'https://liquipedia.net/commons/images/f/f2/Fer_at_ESL_One_Cologne_2019.jpg', imageSource: 'liquipedia' },
+  { nick: 'YEKINDAR', name: 'Mareks Gaļinskis', team: 'Liquid / Spirit 语境', role: 'Entry / Rifler', note: '主动性拉满签，今天闯得可以，但别让队友接不住。', image: 'https://liquipedia.net/commons/images/0/0b/YEKINDAR_at_IEM_Cologne_2024.jpg', imageSource: 'liquipedia', aliases: ['yekindar'] },
+  { nick: 'Ax1Le', name: 'Sergei Rykhtorov', team: 'Team Spirit', role: 'Rifler', note: 'Spirit步枪签，高强度对枪不怵，今天正面别软。', image: 'https://liquipedia.net/commons/images/d/d2/Ax1Le_at_IEM_Dallas_2024.jpg', imageSource: 'liquipedia', aliases: ['ax1le'] },
+  { nick: 'chopper', name: 'Leonid Vishnyakov', team: 'Team Spirit', role: 'IGL', note: 'Spirit指挥签，今天靠纪律和道具，不是靠爆发。', image: 'https://liquipedia.net/commons/images/8/87/Chopper_at_IEM_Dallas_2024.jpg', imageSource: 'liquipedia' },
+  { nick: 'skullz', name: 'Felipe Medeiros', team: 'FURIA', role: 'Rifler / Entry', note: 'FURIA破口签，死也要把信息带回来。', image: 'https://liquipedia.net/commons/images/5/53/Skullz_at_BLAST_Open_Spring_2026.jpg', imageSource: 'liquipedia' },
+  { nick: 'FalleN', name: 'Gabriel Toledo', team: 'FURIA / 传奇语境', role: 'AWPer / IGL', note: '老将传奇签，经验和个人能力都在，今天别低估他。', image: 'https://liquipedia.net/commons/images/7/77/FalleN_at_BLAST_Open_Spring_2026.jpg', imageSource: 'liquipedia', aliases: ['fallen'] },
+  { nick: 'chelo', name: 'Marcelo Cespedes', team: 'FURIA', role: 'Rifler', note: 'FURIA体系枪签，今天做好脏活，数据不好看不要紧。', image: 'https://liquipedia.net/commons/images/f/fb/Chelo_at_BLAST_Open_Spring_2026.jpg', imageSource: 'liquipedia' },
+  { nick: 'JDC', name: 'Joel Emmermacher', team: 'Astralis', role: 'Rifler', note: '丹麦体系步枪签，纪律优先，今天补枪距离要拉到位。', image: 'https://liquipedia.net/commons/images/e/e6/Jdc_at_IEM_Katowice_2025.jpg', imageSource: 'liquipedia' },
+  { nick: 'TeSeS', name: 'René Rønnow Tchoubigui', team: 'Astralis / HEROIC 语境', role: 'Rifler', note: '丹麦步枪签，今天稳住节奏，道具和补枪一起到。', image: 'https://liquipedia.net/commons/images/2/26/TeSeS_at_IEM_Katowice_2025.jpg', imageSource: 'liquipedia' },
+  { nick: 'Brollan', name: 'Ludvig Brolin', team: 'Falcons / NIP 语境', role: 'Rifler', note: '北欧步枪签，爆发力强，今天第一枪打对了剩下好说。', image: 'https://liquipedia.net/commons/images/8/8f/Brollan_at_IEM_Katowice_2024.jpg', imageSource: 'liquipedia' },
+  { nick: 'ropz-faze', name: 'Robin Kool', team: 'FaZe', role: 'Lurker / Rifler', note: '自由人签，今天不急，等timing，一出手就要有东西。', image: 'https://liquipedia.net/commons/images/f/f4/Ropz_at_BLAST_Open_Spring_2026.jpg', imageSource: 'liquipedia' },
+  { nick: 'Hobbit', name: 'Abay Khassenov', team: 'Falcons / G2 历史', role: 'Rifler', note: '哈萨克斯坦步枪签，稳定是他的基本面，今天也别急。', image: 'https://liquipedia.net/commons/images/2/22/Hobbit_at_IEM_Dallas_2024.jpg', imageSource: 'liquipedia' },
+);
+
+dailyFacts.push(
+  { key: 'saltwater-taffy', title: '每日冷知识', name: '盐水太妃糖不含盐水', subtitle: '食品 / 命名', body: '英语里的"saltwater taffy"名字来源不太确定，它并不是真的用大量盐水做的，更多是地名传说。', advice: '今天看名字别想当然，背后可能是另一回事。', line: '有些名字只是名字，别认真往字面解。', scoreLabel: '新鲜度' },
+  { key: 'coral-bleach', title: '每日冷知识', name: '珊瑚白化不等于死亡', subtitle: '海洋 / 生态', body: '珊瑚变白是因为失去共生藻，但若温度恢复较快，珊瑚可能重新与藻类共生并恢复颜色。', advice: '今天看见颜色褪掉的东西，先别急着放弃。', line: '白了不一定死了，可能只是状态不好。', scoreLabel: '新鲜度' },
+  { key: 'maglev-record', title: '每日冷知识', name: '磁悬浮列车速度纪录很高', subtitle: '工程 / 交通', body: '磁悬浮车辆实验速度已超过600km/h，靠电磁力悬浮和推进，减少摩擦是关键。', advice: '今天把阻力减少一点，速度会自己上来。', line: '快不是拼命推，是减阻。', scoreLabel: '新鲜度' },
+  { key: 'yawn-contagious', title: '每日冷知识', name: '打哈欠会传染', subtitle: '行为 / 神经', body: '看到别人打哈欠，或者读到"打哈欠"，很多人会跟着做，与镜像神经元和社交同步有关。', advice: '今天别让别人的情绪带着你走，保持自己节奏。', line: '打哈欠这事，连说一次都会传染。', scoreLabel: '新鲜度' },
+  { key: 'saturn-float', title: '每日冷知识', name: '土星密度比水还小', subtitle: '天文 / 行星', body: '土星平均密度约0.69g/cm³，理论上如果有足够大的水池，土星能漂浮。', advice: '今天别被外表的体量唬住，密度更重要。', line: '最大的星，不一定最重。', scoreLabel: '新鲜度' },
+  { key: 'fingerprint-twins', title: '每日冷知识', name: '同卵双胞胎指纹不同', subtitle: '遗传 / 身份', body: '同卵双胞胎共享DNA，但指纹在胎儿发育时受到随机物理因素影响，所以各不相同。', advice: '今天环境的细节会塑造出差异，不要忽略过程。', line: 'DNA一样，指纹还是不同。环境真的有效。', scoreLabel: '新鲜度' },
+  { key: 'honey-bee-miles', title: '每日冷知识', name: '蜜蜂一生只采约一茶匙蜂蜜', subtitle: '生物 / 劳动', body: '工蜂一生大约飞行800公里，采集的花蜜最终只能做成约一茶匙蜂蜜。', advice: '今天小的积累需要很长时间，但那是真实代价。', line: '一茶匙蜂蜜，背后是800公里飞行。', scoreLabel: '新鲜度' },
+  { key: 'sneeze-speed', title: '每日冷知识', name: '喷嚏速度很快但数据夸大了', subtitle: '生理 / 速度', body: '喷嚏射流速度通常在30-50m/s左右，早期报道的"160km/h"数据被广泛质疑，实际较低。', advice: '今天遇到令人印象深刻的数字，不妨先核查来源。', line: '好的数字要有出处，没出处的传了也没用。', scoreLabel: '新鲜度' },
+  { key: 'tree-rings-climate', title: '每日冷知识', name: '树木年轮记录气候', subtitle: '地质 / 古气候', body: '年轮宽窄对应当年生长条件，利用长寿树木可以重建数百年甚至数千年的气候历史。', advice: '今天自己留下的痕迹，也在记录着环境。', line: '树比人更会写日记，不说话但很诚实。', scoreLabel: '新鲜度' },
+  { key: 'airport-code', title: '每日冷知识', name: '机场代码有历史遗留原因', subtitle: '航空 / 命名', body: '一些机场IATA代码看起来和城市名无关，因为早期代码由气象站命名，后来延续下来。', advice: '今天遇到奇怪规则，很可能有历史原因。', line: '有些命名逻辑早就不在了，名字却还活着。', scoreLabel: '新鲜度' },
+);
+
+dailyPoems.push(
+  { key: 'wang-an-shi-plum', title: '每日古诗词', name: '王安石《梅花》', subtitle: '宋诗 / 冬梅', body: '遥知不是雪，为有暗香来。', advice: '今天有时不用大声，香气会自己到。', line: '真正的存在，不需要被看见也能被感知。', scoreLabel: '诗意值' },
+  { key: 'tao-yuan-ming-drink', title: '每日古诗词', name: '陶渊明《饮酒》', subtitle: '晋诗 / 归隐', body: '采菊东篱下，悠然见南山。', advice: '今天找一个不被打扰的地方，哪怕五分钟。', line: '悠然是一种姿态，不是一种条件。', scoreLabel: '诗意值' },
+  { key: 'han-yu-early-spring', title: '每日古诗词', name: '韩愈《早春》', subtitle: '唐诗 / 早春', body: '草色遥看近却无。', advice: '今天期待的东西远看有，近看没有，不要气馁。', line: '有时候近看才是错的，退一步更清楚。', scoreLabel: '诗意值' },
+  { key: 'su-dong-po-red-cliff', title: '每日古诗词', name: '苏轼《赤壁赋》', subtitle: '宋文 / 哲理', body: '逝者如斯，而未尝往也；盈虚者如彼，而卒莫消长也。', advice: '今天别纠结流逝，本质没有消失只是换了形式。', line: '东坡说变化，最终说的是不变。', scoreLabel: '诗意值' },
+  { key: 'zhang-ruoxu', title: '每日古诗词', name: '张若虚《春江花月夜》', subtitle: '唐诗 / 月夜', body: '江畔何人初见月，江月何年初照人。', advice: '今天遇到宏大问题，先接受它，再慢慢看。', line: '有些问题不是没有答案，是答案本来就是"不知道"。', scoreLabel: '诗意值' },
+  { key: 'li-bai-toast', title: '每日古诗词', name: '李白《将进酒》', subtitle: '唐诗 / 豪情', body: '天生我材必有用，千金散尽还复来。', advice: '今天别嫌自己不够用，先把手上的事做好。', line: '气场这东西，有时候是说给自己听的。', scoreLabel: '诗意值' },
+  { key: 'wang-changling-border2', title: '每日古诗词', name: '王昌龄《从军行》', subtitle: '唐诗 / 边塞', body: '黄沙百战穿金甲，不破楼兰终不还。', advice: '今天定个不回头的目标，认真走一段。', line: '不是每条路都短，能走完的才叫走过。', scoreLabel: '诗意值' },
+  { key: 'li-qingzhao-river', title: '每日古诗词', name: '李清照《武陵春》', subtitle: '宋词 / 愁绪', body: '只恐双溪舴艋舟，载不动、许多愁。', advice: '今天情绪很重，找个出口说一说，别全压着。', line: '愁这个东西，李清照连重量都算出来了。', scoreLabel: '诗意值' },
+);
+
+
 export const csTeams: DailyCard[] = [
   {
     key: 'vitality',
@@ -325,6 +368,33 @@ export const csClutches: DailyCard[] = [
   { key: 'postplant', title: '今日CS残局', name: '下包后防守', subtitle: '交叉枪线 / 时间压力', scoreLabel: '残局指数', advice: '站位拉开，别全看一个方向，听拆包再给压力。', avoid: '别包都下了还主动送出去帮对面提速。', line: '下包后签就是别急，时间是你队友。', fandomFile: 'De_anubis_cs2.png' },
   { key: 'eco-clutch', title: '今日CS残局', name: 'ECO偷回合', subtitle: '短枪和道具 / 抓对面大意', scoreLabel: '残局指数', advice: '靠近点、叠人、骗道具，别和长枪正常对枪。', avoid: '别拿小枪打远点还说差一点。', line: 'ECO签最会骗人，但真骗到就是血赚。', fandomFile: 'CS2_MAC-10_Inventory.png' },
   { key: 'awp-save', title: '今日CS残局', name: '大狙残局', subtitle: '高价值武器 / 站位选择', scoreLabel: '残局指数', advice: '有机会就打一枪换位，没机会就把狙带走。', avoid: '别为了镜头把全队最贵的枪送了。', line: '狙残局签挺帅，但帅之前先别空。', fandomFile: 'CS2_AWP_Inventory.png' },
+];
+
+export const csEconomies: DailyCard[] = [
+  { key: 'full-eco', title: '今日CS经济局', name: '纯ECO攒钱', subtitle: '放弃本回合幻想 / 给下一把买满', scoreLabel: '经济纪律', advice: '目标不是奇迹翻盘，是集中掉枪、埋包或保住下一回合关键钱线。', avoid: '别五个人各买一把小枪，把下一回合也一起买没了。', line: '纯ECO签不好看，但会过日子的队伍才有后劲。', fandomFile: 'CS2_Glock-18_Inventory.png' },
+  { key: 'force-buy', title: '今日CS经济局', name: '强起抢节奏', subtitle: '短枪甲道具 / 近点交叉', scoreLabel: '经济纪律', advice: '强起就打近点、叠人和爆发，不要拿差枪去远点拼公平对枪。', avoid: '别嘴上说强起，实际五个人分散找手感。', line: '强起签可以燃，但它不是无脑起。', fandomFile: 'CS2_Desert_Eagle_Inventory.png' },
+  { key: 'half-buy', title: '今日CS经济局', name: '半起控上限', subtitle: '留底钱 / 小枪找掉枪', scoreLabel: '经济纪律', advice: '买到不破坏下回合长枪局的程度，能捡就捡，没机会就别继续加码。', avoid: '别看队友买了两颗雷，你也上头补成全起。', line: '半起签考验自制力，最怕半着半着变捐款。', fandomFile: 'CS2_P250_Inventory.png' },
+  { key: 'bonus-round', title: '今日CS经济局', name: '奖励局保滚雪球', subtitle: '用上回合枪 / 换经济优势', scoreLabel: '经济纪律', advice: '奖励局别急着全换长枪，靠站位和道具把便宜枪打出价值。', avoid: '别为了体面全换枪，赢了手枪却没滚起雪球。', line: '奖励局签就是算账，账算清楚才是真优势。', fandomFile: 'CS2_MP9_Inventory.png' },
+  { key: 'hero-rifle', title: '今日CS经济局', name: '英雄步枪', subtitle: '一把长枪带四把小枪 / 信息围绕核心', scoreLabel: '经济纪律', advice: '长枪别第一个送，小枪围绕它补枪、拉枪线、捡枪再转节奏。', avoid: '别英雄枪还没开火，队友先把地图送干净。', line: '英雄枪签很帅，但英雄也需要队友递梯子。', fandomFile: 'CS2_AK-47_Inventory.png' },
+  { key: 'anti-eco', title: '今日CS经济局', name: '反ECO稳收', subtitle: '防短枪偷人 / 不给掉枪', scoreLabel: '经济纪律', advice: '用道具清近点，拉开距离打，不给对面捡第一把长枪的机会。', avoid: '别优势枪械局主动钻烟送节目效果。', line: '反ECO签最怕轻敌，输一次整张图都疼。', fandomFile: 'CS2_M4A1-S_Inventory.png' },
+];
+
+export const csShotcalls: DailyCard[] = [
+  { key: 'default-split-call', title: '今日CS指挥口令', name: '默认转夹击', subtitle: '先控图 / 后同步收口', scoreLabel: '指挥清晰度', advice: '开局只给两件事：谁拿信息，谁保补枪。拿到空间后再喊提速点。', avoid: '别一上来喊一堆路线，队友只记住了“自由发挥”。', line: '好口令不是长，是所有人知道下一步。', fandomFile: 'De_mirage_cs2.png' },
+  { key: 'late-exec-call', title: '今日CS指挥口令', name: '晚点爆弹', subtitle: '压时间 / 道具同步 / 一波进点', scoreLabel: '指挥清晰度', advice: '提前报秒数和道具顺序，最后十秒只保留最短口令，别临门改计划。', avoid: '别时间剩二十秒还在问“打哪”。', line: '晚爆签拼的是整齐，不是嗓门。', fandomFile: 'Smokegrenadehud_csgo.png' },
+  { key: 'fake-rotate-call', title: '今日CS指挥口令', name: '假打骗转', subtitle: '声音给足 / 真转要快', scoreLabel: '指挥清晰度', advice: '假点给烟火脚步，转点人提前靠位，听到回防信息就立刻收口。', avoid: '别假打假到自己也信了，包还在原点发呆。', line: '假打签要骗对面，不是骗队友。', fandomFile: 'Flashbanghud_csgo.png' },
+  { key: 'contact-pop-call', title: '今日CS指挥口令', name: '静音接触后提速', subtitle: '少脚步 / 第一枪后全跟', scoreLabel: '指挥清晰度', advice: '摸到位之前安静，第一枪或第一颗闪就是全队开关，补枪别断。', avoid: '别接触到脸上还没人敢按W。', line: '接触签就是一口气，犹豫就漏气。', fandomFile: 'CS2_AK-47_Inventory.png' },
+  { key: 'retake-pack-call', title: '今日CS指挥口令', name: '回防集合令', subtitle: '等人 / 切空间 / 一起清点', scoreLabel: '指挥清晰度', advice: '先喊集合点和第一颗道具，人数齐了再清，不要三个人分三批送。', avoid: '别刚到包点外就各自干拉找英雄镜头。', line: '回防口令越短，队友越可能真听懂。', fandomFile: 'Defuserhud_csgo.png' },
+  { key: 'timeout-reset-call', title: '今日CS指挥口令', name: '暂停重置', subtitle: '断连败 / 明确下一回合目标', scoreLabel: '指挥清晰度', advice: '暂停只解决一个问题：下一回合怎么拿首个空间或首个信息。', avoid: '别暂停开成情绪大会，回来还是没人知道买什么。', line: '暂停签不是休息，是把乱局按回流程。', fandomFile: 'CS2_Clipboard.png' },
+];
+
+export const csReviews: DailyCard[] = [
+  { key: 'first-death-review', title: '今日CS复盘切片', name: '首死复盘', subtitle: '谁先掉 / 为什么没人补', scoreLabel: '复盘价值', advice: '只看首死前十秒：信息够不够、道具有没有、补枪距离是不是断了。', avoid: '别只骂枪法，很多首死其实是队形问题。', line: '首死切片最诚实，借口会被时间轴拆穿。', fandomFile: 'CS2_AK-47_Inventory.png' },
+  { key: 'utility-timing-review', title: '今日CS复盘切片', name: '道具时机复盘', subtitle: '烟闪火有没有服务进点', scoreLabel: '复盘价值', advice: '把道具落点和队友出手时间对齐，看是道具早了、人慢了，还是目的错了。', avoid: '别只说“我烟会丢”，会丢不等于丢得对。', line: '道具复盘一开，谁在空交一眼就清楚。', fandomFile: 'Smokegrenadehud_csgo.png' },
+  { key: 'trade-spacing-review', title: '今日CS复盘切片', name: '补枪距离复盘', subtitle: '第一身位和第二身位有没有脱节', scoreLabel: '复盘价值', advice: '暂停在第一枪响的瞬间，看第二个人能不能一秒内补到枪线。', avoid: '别把“没办法补”说成“差一点”。', line: '补枪签很残酷，距离一远就只剩观战。', fandomFile: 'Flashbanghud_csgo.png' },
+  { key: 'postplant-review', title: '今日CS复盘切片', name: '下包后站位复盘', subtitle: '时间优势 / 交叉枪线 / 别主动送', scoreLabel: '复盘价值', advice: '看下包后三十秒：谁该藏、谁该看拆、谁不该出去找人。', avoid: '别包一下就全员热血，主动把时间优势送回去。', line: '下包后复盘最能治上头。', fandomFile: 'De_anubis_cs2.png' },
+  { key: 'retake-path-review', title: '今日CS复盘切片', name: '回防路线复盘', subtitle: '集合点 / 道具切割 / 清点顺序', scoreLabel: '复盘价值', advice: '标出三个人进点路线，看是不是同一个窄口排队，还是有人负责切枪线。', avoid: '别人数优势还一个门一个门送进去。', line: '回防复盘看纪律，纪律没有就别怪残局难。', fandomFile: 'Defuserhud_csgo.png' },
+  { key: 'economy-swing-review', title: '今日CS复盘切片', name: '经济转折复盘', subtitle: '掉枪 / 保枪 / 强起连锁', scoreLabel: '复盘价值', advice: '找到比分转折前后的两回合，看是掉枪太多、强起失败，还是保枪判断错。', avoid: '别只复盘输的枪，经济崩经常从赢的回合开始。', line: '经济复盘不热闹，但它决定后面有没有枪玩。', fandomFile: 'CS2_MP9_Inventory.png' },
 ];
 
 csTeams.push(
@@ -845,6 +915,108 @@ dailyPoems.push(
   { key: 'ma-zhiyuan', title: '每日古诗词', name: '马致远《天净沙》', subtitle: '元曲 / 秋思', body: '夕阳西下，断肠人在天涯。', advice: '今天想家就承认，不必假装很潇洒。', line: '天涯两个字，最会让人安静。', scoreLabel: '诗意值' },
   { key: 'yu-qian', title: '每日古诗词', name: '于谦《石灰吟》', subtitle: '明诗 / 气节', body: '粉骨碎身浑不怕，要留清白在人间。', advice: '今天守住原则，别为了省事把底线卖了。', line: '清白两个字，很硬。', scoreLabel: '诗意值' },
 );
+
+export const dailyMovieQuotes: DailyTextCard[] = [
+  { key: 'ip-man-wing-chun', title: '今日影视台词', name: '《叶问》', subtitle: '动作 / 气节', body: '我要打十个。', advice: '今天自信可以，但先热身。', line: '这句话轻，但气场很重。', scoreLabel: '共鸣度' },
+  { key: 'ne-zha-fate', title: '今日影视台词', name: '《哪吒之魔童降世》', subtitle: '动画 / 命运', body: '我命由我不由天。', advice: '今天被说不行，就多做一次试试。', line: '说这句话之前，得先炼三年丹。', scoreLabel: '共鸣度' },
+  { key: 'wandering-earth', title: '今日影视台词', name: '《流浪地球》', subtitle: '科幻 / 希望', body: '无论最终结果如何，请记住，希望是我们回家的方向。', advice: '今天事情不顺也别断希望，方向先别丢。', line: '带着地球走，也是一种不放弃。', scoreLabel: '共鸣度' },
+  { key: 'crazy-stone', title: '今日影视台词', name: '《疯狂的石头》', subtitle: '喜剧 / 命运', body: '别跟我谈钱，谈钱伤感情。', advice: '今天利益讲清楚反而不伤感情，前提是要讲。', line: '这句台词最能反客为主。', scoreLabel: '共鸣度' },
+  { key: 'long-way-home', title: '今日影视台词', name: '《漫长的季节》', subtitle: '剧集 / 放下', body: '往前看，别回头。', advice: '今天允许自己结案，往前走。', line: '有些结局需要自己宣布。', scoreLabel: '共鸣度' },
+  { key: 'hidden-blade', title: '今日影视台词', name: '《无名》', subtitle: '谍战 / 信念', body: '每一个人都有自己要守护的东西。', advice: '今天想清楚自己守的是什么，再决定用多大力气。', line: '守护的方向对了，消耗才有意义。', scoreLabel: '共鸣度' },
+  { key: 'better-days', title: '今日影视台词', name: '《少年的你》', subtitle: '青春 / 守护', body: '你保护世界，我保护你。', advice: '今天看见需要帮助的人，别假装没看见。', line: '这句话轻，但扛着很重的东西。', scoreLabel: '共鸣度' },
+  { key: 'detective-dee', title: '今日影视台词', name: '《大明王朝1566》', subtitle: '历史剧 / 清醒', body: '这世上没有救世主，有的只是不得不担的责任。', advice: '今天别等有人出来扛，自己先动一下。', line: '等救世主，经常等到天黑。', scoreLabel: '共鸣度' },
+  { key: 'farewell-concubine', title: '今日影视台词', name: '《霸王别姬》', subtitle: '文艺 / 执着', body: '说的是一辈子，差一年、一个月、一天、一个时辰，都不算一辈子。', advice: '今天要承诺，就说实的，说不到就别说一辈子。', line: '一辈子的重量，在细节里。', scoreLabel: '共鸣度' },
+  { key: 'red-cliff', title: '今日影视台词', name: '《赤壁》', subtitle: '历史 / 胆气', body: '万事俱备，只欠东风。', advice: '今天差的那阵风，可能只是你还没开口。', line: '东风不自来，得等人借。', scoreLabel: '共鸣度' },
+  { key: 'my-people', title: '今日影视台词', name: '《我的团长我的团》', subtitle: '战争剧 / 信念', body: '没有人天生就能死得其所，死的时候找得到地方就够了。', advice: '今天把能做的做到位，不必追求每件事都完美。', line: '把该做的做了，就算找到地方了。', scoreLabel: '共鸣度' },
+  { key: 'nacf-light', title: '今日影视台词', name: '《中国合伙人》', subtitle: '励志 / 成长', body: '改变不了世界，就改变自己。', advice: '今天先把能改的那部分改了。', line: '从自己开始，边界才会慢慢往外推。', scoreLabel: '共鸣度' },
+  { key: 'alive-zhang', title: '今日影视台词', name: '《活着》', subtitle: '文艺 / 韧性', body: '人是为了活着本身而活着的，不是为了活着之外的任何事物而活着。', advice: '今天别把活着的意义复杂化，先把今天过好。', line: '活着这件事，本身就够沉。', scoreLabel: '共鸣度' },
+  { key: 'summer-bubble', title: '今日影视台词', name: '《夏日大作战》', subtitle: '动画 / 家庭', body: '家人的力量，是最难被打败的东西。', advice: '今天遇到难事，试试找家人或最近的人说一声。', line: '不是一个人的故事，才更能接住意外。', scoreLabel: '共鸣度' },
+  { key: 'spirited-away', title: '今日影视台词', name: '《千与千寻》', subtitle: '动画 / 成长', body: '不管前方的路有多苦，只要走的方向是对的，都比站在原地更接近幸福。', advice: '今天走一步，哪怕步子小。', line: '方向这件事，一旦对了，很多东西会跟上来。', scoreLabel: '共鸣度' },
+  { key: 'your-name', title: '今日影视台词', name: '《你的名字》', subtitle: '动画 / 相遇', body: '我在寻找一个人，寻找那个我心中重要到不行的人。', advice: '今天想起谁，去联系一下。', line: '很多缘分是主动找来的。', scoreLabel: '共鸣度' },
+  { key: 'princess-mononoke', title: '今日影视台词', name: '《幽灵公主》', subtitle: '动画 / 共存', body: '即使如此，仍要活下去。', advice: '今天不管多乱，先让自己活得清醒一点。', line: '即使如此，是一种很高级的态度。', scoreLabel: '共鸣度' },
+  { key: 'howl-moving', title: '今日影视台词', name: '《哈尔的移动城堡》', subtitle: '动画 / 勇气', body: '有些事现在不做，就永远不会做了。', advice: '今天有想做的，先动一步。', line: '拖延最喜欢待在"以后再说"里。', scoreLabel: '共鸣度' },
+  { key: 'eva-rebuild', title: '今日影视台词', name: '《新世纪福音战士》', subtitle: '动画 / 羁绊', body: '逃避虽然可耻，但有用。', advice: '今天撤退也没关系，先搞清楚再回来。', line: '有时候退一步，不是认输，是重新选位。', scoreLabel: '共鸣度' },
+  { key: 'mushi-shi', title: '今日影视台词', name: '《虫师》', subtitle: '动画 / 存在', body: '活着就是这件事情本身的意义。', advice: '今天轻一点，不必给每件事安上大意义。', line: '虫师说话慢，但每句都扎。', scoreLabel: '共鸣度' },
+];
+
+export const dailyMusicFacts: DailyTextCard[] = [
+  { key: 'beethoven-deaf', title: '今日音乐知识', name: '贝多芬失聪后的创作', subtitle: '古典 / 意志', body: '贝多芬在严重失聪后仍完成了《第九交响曲》，据说他通过咬住钢琴感受共鸣来感知音律。', advice: '今天遇到障碍，看看能不能换一个感知方式。', line: '听不见，但也挡不住。', scoreLabel: '共鸣度' },
+  { key: 'mozart-memory', title: '今日音乐知识', name: '莫扎特超强听觉记忆', subtitle: '古典 / 天赋', body: '据记载，莫扎特14岁时听了一遍格雷戈里奥·阿莱格里的弥撒曲，便凭记忆完整记录了下来。', advice: '今天认真听一件事，别一边听一边刷手机。', line: '注意力是有限资源，别乱消耗。', scoreLabel: '共鸣度' },
+  { key: 'happy-birthday-copyright', title: '今日音乐知识', name: '生日歌版权历史', subtitle: '版权 / 冷知识', body: '《生日快乐歌》长期存在版权争议，经过诉讼，2016年被美国法院判定进入公共领域。', advice: '今天了解一下版权常识，用前先想想权属。', line: '一首歌唱了多少年，官司也打了多少年。', scoreLabel: '共鸣度' },
+  { key: 'guitar-strings', title: '今日音乐知识', name: '吉他弦的张力', subtitle: '乐器 / 材料', body: '标准调弦的电吉他六根弦总张力约40-50千克，好的琴颈设计才能长期扛住这个应力。', advice: '今天扛压力时，看看自己的结构够不够稳。', line: '能承受才叫在弦上。', scoreLabel: '共鸣度' },
+  { key: 'absolute-pitch', title: '今日音乐知识', name: '绝对音感的分布', subtitle: '感知 / 神经科学', body: '绝对音感在普通人群中比较罕见，但在从小开始专业音乐训练的群体中出现率更高。', advice: '今天别羡慕天赋，看看早期训练留下了什么。', line: '有些能力是习惯先到，意识后到的。', scoreLabel: '共鸣度' },
+  { key: 'tuning-440hz', title: '今日音乐知识', name: 'A4=440Hz是如何定下来的', subtitle: '标准 / 协作', body: '440Hz作为国际标准音高是1939年经国际会议确定的，在此之前各地乐团音高不统一，合作起来会有困难。', advice: '今天团队协作，先对齐一个基准，省得各自跑偏。', line: '没有共同音高，乐团会很难听。', scoreLabel: '共鸣度' },
+  { key: 'vinyl-warmth', title: '今日音乐知识', name: '黑胶的"温暖感"从何而来', subtitle: '音频 / 感知', body: '黑胶唱片的模拟特性和非线性失真在某些频段会产生特定泛音，很多人感知为更"温暖"的音色。', advice: '今天听点不完美的声音，反而可能更有质感。', line: '完美的格式，不一定出最有温度的声音。', scoreLabel: '共鸣度' },
+  { key: 'music-brainwave', title: '今日音乐知识', name: '音乐影响大脑活动', subtitle: '神经科学 / 感知', body: '研究表明节奏、旋律等音乐元素会激活大脑多个区域，包括奖励、记忆和运动相关区域。', advice: '今天学习前播一首让你集中的曲子，不是玄学。', line: '音乐不只在耳朵里，它同时在好几个地方。', scoreLabel: '共鸣度' },
+  { key: 'opera-bel-canto', title: '今日音乐知识', name: '美声唱法的共鸣腔', subtitle: '声乐 / 技术', body: '美声唱法利用头腔、胸腔等共鸣腔放大声音，训练有素的歌手不用麦克风就能盖过管弦乐团。', advice: '今天让自己的表达找到共鸣，别光靠音量。', line: '真正的穿透力，来自共鸣，不来自喊。', scoreLabel: '共鸣度' },
+  { key: 'silence-4min', title: '今日音乐知识', name: '约翰·凯奇的《4分33秒》', subtitle: '先锋 / 概念', body: '《4分33秒》要求演奏者在全程保持沉默，让听众感知周围环境音作为音乐本身。', advice: '今天安静几分钟，听听身边的声音。', line: '先锋艺术最擅长提问，最不擅长让人舒服。', scoreLabel: '共鸣度' },
+  { key: 'improvisation-jazz', title: '今日音乐知识', name: '爵士乐的即兴结构', subtitle: '爵士 / 创作', body: '爵士即兴不是乱弹，它建立在和弦走向、调式和乐手间的对话之上，即兴的是旋律，不是结构。', advice: '今天灵活发挥也要有底层逻辑，别把即兴当随便。', line: '最自由的表达，背后藏着最扎实的规则。', scoreLabel: '共鸣度' },
+  { key: 'chinese-pentatonic', title: '今日音乐知识', name: '五声调式与中国音乐', subtitle: '中国音乐 / 理论', body: '宫商角徵羽五声调式是中国传统音乐的基础，其结构与西方七声音阶不同，听感上有独特的开放性。', advice: '今天听首国风曲子，听听那个开阔感。', line: '五个音，有时比七个音更空旷。', scoreLabel: '共鸣度' },
+  { key: 'drummer-metronome', title: '今日音乐知识', name: '鼓手和节拍器的关系', subtitle: '节奏 / 训练', body: '职业鼓手既要能完美跟节拍器，也要能在演出时让节奏"呼吸"、微微摇摆，两者都是能力。', advice: '今天的工作既要守规范，也要给它一点活气。', line: '死准和活准，都是准，方向不一样。', scoreLabel: '共鸣度' },
+  { key: 'earworm', title: '今日音乐知识', name: '脑海中挥不去的旋律', subtitle: '认知 / 神经科学', body: '耳虫（earworm）是大脑对不完整音乐模式的自动补完反应，越短越重复的旋律越容易触发。', advice: '今天注意自己脑子里在循环什么，可能反映了你在想什么。', line: '大脑的播放列表，不是随机的。', scoreLabel: '共鸣度' },
+  { key: 'music-therapy', title: '今日音乐知识', name: '音乐治疗的实证应用', subtitle: '医学 / 应用', body: '音乐治疗在疼痛管理、焦虑缓解和某些神经康复场景中有经过研究支持的效果。', advice: '今天状态不好时，别只刷手机，先换一首歌。', line: '音乐不是万能药，但它真的有用。', scoreLabel: '共鸣度' },
+  { key: 'perfect-fifth', title: '今日音乐知识', name: '纯五度与泛音列', subtitle: '乐理 / 物理', body: '纯五度是自然泛音列中最早出现的音程之一，这就是为什么它听起来格外协和，几乎所有文化的音乐里都有它。', advice: '今天找那个合得来的人或事，别只找差距。', line: '协和不是妥协，是频率刚好合上了。', scoreLabel: '共鸣度' },
+  { key: 'bach-fugue', title: '今日音乐知识', name: '巴赫赋格的结构美学', subtitle: '古典 / 对位', body: '赋格曲让同一主题在不同声部先后进入、交织展开，整体结构精密到像数学，但听感可以很流畅。', advice: '今天复杂的问题试着拆成几条线分头推进。', line: '多声部也能和谐，前提是每条线都清楚自己在哪。', scoreLabel: '共鸣度' },
+  { key: 'synthesizer-history', title: '今日音乐知识', name: '合成器改变了音乐生产方式', subtitle: '电子音乐 / 技术', body: '合成器让不依赖传统乐器的声音创作成为可能，从Moog到软件插件，大幅降低了音乐制作门槛。', advice: '今天看看有没有新工具能帮你做过去很难做的事。', line: '门槛降了，做出好东西的难度其实没降。', scoreLabel: '共鸣度' },
+  { key: 'acoustic-concert-hall', title: '今日音乐知识', name: '音乐厅的声学设计', subtitle: '建筑 / 声学', body: '顶级音乐厅的形状、材质和座位布局都经过声学设计，让声音在衰减前有合适的混响时间和扩散路径。', advice: '今天做汇报或沟通前，先想想环境适不适合。', line: '内容再好，场合不对也会折半。', scoreLabel: '共鸣度' },
+  { key: 'world-music-gamelan', title: '今日音乐知识', name: '加美兰与集体演奏哲学', subtitle: '世界音乐 / 印尼', body: '加美兰是印尼传统打击乐群奏，强调整体融合而非个人炫技，演奏者的目标是让自己的声音"消失"进整体里。', advice: '今天团队场合，想想自己是不是抢了不该抢的声部。', line: '有时候最好的贡献，是刚好不多不少。', scoreLabel: '共鸣度' },
+];
+
+export const dailyHistoryEvents: DailyTextCard[] = [
+  { key: 'moon-landing', title: '历史上的今天', name: '人类首次登月', subtitle: '1969年7月20日', body: '阿波罗11号，阿姆斯特朗踏上月球："这是个人一小步，人类一大步。"', advice: '今天做点没人做过的，哪怕很小。', line: '月球那一步，从火箭底下开始。', scoreLabel: '历史感' },
+  { key: 'titanic-sinks', title: '历史上的今天', name: '泰坦尼克号沉没', subtitle: '1912年4月15日', body: '撞冰山后两个半小时沉没，1500多人遇难，"永不沉没"破灭。', advice: '今天别把自信当保险。', line: '最硬的船也怕看不见的冰。', scoreLabel: '历史感' },
+  { key: 'berlin-wall-fall', title: '历史上的今天', name: '柏林墙倒塌', subtitle: '1989年11月9日', body: '东德开放边境，柏林墙被推倒，冷战象征消失。', advice: '今天看似坚固的，可能一夜就变。', line: '墙能挡人，挡不住时代。', scoreLabel: '历史感' },
+  { key: 'first-flight', title: '历史上的今天', name: '莱特兄弟首飞', subtitle: '1903年12月17日', body: '飞行者一号首飞12秒，36米，人类进入航空时代。', advice: '今天的12秒，可能是以后的12小时。', line: '飞不远不丢人，不敢飞才丢。', scoreLabel: '历史感' },
+  { key: 'penicillin-discovered', title: '历史上的今天', name: '青霉素被发现', subtitle: '1928年9月28日', body: '弗莱明注意到培养皿污染抑制细菌，偶然开启抗生素时代。', advice: '今天别急着扔意外，可能藏答案。', line: '实验室最值钱的，有时是那盘废料。', scoreLabel: '历史感' },
+  { key: 'first-email', title: '历史上的今天', name: '第一封电子邮件', subtitle: '1971年', body: 'Ray Tomlinson发出第一封网络邮件，选择@作为分隔符。', advice: '今天小决定，可能被用几十年。', line: '@符号：随便选的。', scoreLabel: '历史感' },
+  { key: 'einstein-paper', title: '历史上的今天', name: '爱因斯坦发表相对论', subtitle: '1905年', body: '26岁专利局职员发表狭义相对论，重新定义时空。', advice: '今天别因没名气就不敢发声。', line: '物理学最大革命，来自三等公务员。', scoreLabel: '历史感' },
+  { key: 'first-www', title: '历史上的今天', name: '万维网向公众开放', subtitle: '1991年8月6日', body: 'Tim Berners-Lee在CERN开发的WWW向公众开放。', advice: '今天开放比独占更有价值。', line: '网页最初是为了方便物理学家看论文。', scoreLabel: '历史感' },
+  { key: 'first-photo', title: '历史上的今天', name: '世界第一张照片', subtitle: '1826年', body: 'Nicéphore Niépce用日光蚀刻法拍窗外，曝光8小时。', advice: '今天慢点没关系，开创比完美重要。', line: '第一张照片：模糊，但划时代。', scoreLabel: '历史感' },
+  { key: 'dna-structure', title: '历史上的今天', name: 'DNA双螺旋结构发现', subtitle: '1953年', body: 'Watson和Crick在《自然》发表DNA双螺旋结构。', advice: '今天看复杂问题，试试找基本结构。', line: '生命的秘密，藏在螺旋里。', scoreLabel: '历史感' },
+  { key: 'first-computer', title: '历史上的今天', name: 'ENIAC计算机诞生', subtitle: '1946年2月14日', body: '世界第一台通用电子计算机，重30吨，占地167平米。', advice: '今天的笨重，是明天轻便的起点。', line: '手机算力吊打它，但没它就没手机。', scoreLabel: '历史感' },
+  { key: 'first-transpacific-flight', title: '历史上的今天', name: '首次跨太平洋飞行', subtitle: '1928年', body: 'Charles Kingsford Smith驾"南十字星"从美国飞到澳洲。', advice: '今天距离不是障碍，勇气和准备才是。', line: '太平洋：能飞过去的都是狠人。', scoreLabel: '历史感' },
+  { key: 'first-heart-transplant', title: '历史上的今天', name: '首例心脏移植手术', subtitle: '1967年12月3日', body: '南非医生Christiaan Barnard完成首例心脏移植，患者存活18天。', advice: '今天第一次尝试不需要完美。', line: '18天不算成功，但打开了门。', scoreLabel: '历史感' },
+  { key: 'chernobyl', title: '历史上的今天', name: '切尔诺贝利核事故', subtitle: '1986年4月26日', body: '4号反应堆爆炸，成为史上最严重核电站事故。', advice: '今天别在安全上省预算和流程。', line: '核能最怕的不是技术，是侥幸。', scoreLabel: '历史感' },
+  { key: 'first-sound-recording', title: '历史上的今天', name: '人类首次录音', subtitle: '1860年', body: 'Édouard-Léon Scott用声波记录仪录下声音，但无法回放。', advice: '今天记录下来，哪怕暂时用不上。', line: '最早录音：能存不能听，但够先锋。', scoreLabel: '历史感' },
+  { key: 'first-tv-broadcast', title: '历史上的今天', name: '首次电视广播', subtitle: '1936年', body: 'BBC在伦敦开始世界首个定期电视广播。', advice: '今天做的事，可能会变成新日常。', line: '电视刚出来，没人想到它会统治客厅。', scoreLabel: '历史感' },
+  { key: 'mount-everest-summit', title: '历史上的今天', name: '人类首登珠峰', subtitle: '1953年5月29日', body: 'Edmund Hillary和Tenzing Norgay登顶珠峰。', advice: '今天往高处走，别怕路难。', line: '顶峰的风景，留给爬上去的人。', scoreLabel: '历史感' },
+  { key: 'first-blood-transfusion', title: '历史上的今天', name: '首次成功输血', subtitle: '1818年', body: 'James Blundell完成首次人体输血，救了产后大出血产妇。', advice: '今天能救命的技术，一开始都很冒险。', line: '输血之前，失血几乎等于死亡。', scoreLabel: '历史感' },
+  { key: 'sputnik', title: '历史上的今天', name: '人造卫星上天', subtitle: '1957年10月4日', body: '苏联发射斯普特尼克1号，第一颗人造卫星入轨。', advice: '今天把想法送上天，别只在地上画图。', line: '卫星一上天，太空竞赛停不下来。', scoreLabel: '历史感' },
+  { key: 'first-vaccine', title: '历史上的今天', name: '牛痘疫苗诞生', subtitle: '1796年', body: 'Edward Jenner给男孩接种牛痘，证明可预防天花。', advice: '今天大胆假设，小心求证。', line: '疫苗之父，一开始也是在赌。', scoreLabel: '历史感' },
+  { key: 'first-automobile', title: '历史上的今天', name: '第一辆汽车诞生', subtitle: '1886年', body: 'Karl Benz获汽车专利，Benz Patent-Motorwagen成第一辆汽车。', advice: '今天造出来，比画在纸上强。', line: '汽车刚出来，还没马车快，但方向对了。', scoreLabel: '历史感' },
+  { key: 'first-telephone-call', title: '历史上的今天', name: '第一通电话', subtitle: '1876年3月10日', body: 'Alexander Graham Bell打通第一通电话："Watson先生，快来，我需要你。"', advice: '今天试试新工具，哪怕还不完美。', line: '人类第一通电话，内容很实在。', scoreLabel: '历史感' },
+  { key: 'atomic-bomb', title: '历史上的今天', name: '首颗原子弹试爆', subtitle: '1945年7月16日', body: '美国新墨西哥州三位一体试验，奥本海默："我成了死神。"', advice: '今天创造力也要带着责任。', line: '最强的发明，往往最难收回去。', scoreLabel: '历史感' },
+  { key: 'printing-press', title: '历史上的今天', name: '古登堡印刷机', subtitle: '1450年左右', body: 'Johannes Gutenberg发明活字印刷机，知识传播新纪元。', advice: '今天让信息流动起来，别藏着。', line: '印刷术：知识从此不再是贵族特权。', scoreLabel: '历史感' },
+  { key: 'first-powered-airplane', title: '历史上的今天', name: '动力飞行成功', subtitle: '1903年', body: '莱特兄弟飞行者一号，第一次有动力、可控、持续飞行。', advice: '今天控制比速度重要。', line: '飞起来不难，难的是飞哪都听你的。', scoreLabel: '历史感' },
+  { key: 'first-radio-broadcast', title: '历史上的今天', name: '首次无线电广播', subtitle: '1906年', body: 'Reginald Fessenden在圣诞夜首次无线电语音和音乐广播。', advice: '今天传播不只靠吼，要靠技术。', line: '电波穿墙，声音到家。', scoreLabel: '历史感' },
+  { key: 'independence-day-us', title: '历史上的今天', name: '美国独立宣言', subtitle: '1776年7月4日', body: '大陆会议通过《独立宣言》，宣布脱离英国。', advice: '今天敢说出口的决定，要有承担结果的准备。', line: '独立不是喊口号，是干出来的。', scoreLabel: '历史感' },
+  { key: 'french-revolution', title: '历史上的今天', name: '攻占巴士底狱', subtitle: '1789年7月14日', body: '巴黎民众攻占巴士底狱，法国大革命爆发。', advice: '今天积压的矛盾，总有爆发的一天。', line: '革命不是请客吃饭，是墙倒了。', scoreLabel: '历史感' },
+  { key: 'first-olympics', title: '历史上的今天', name: '现代奥运会开幕', subtitle: '1896年4月6日', body: '第一届现代奥运会在雅典举办，重启古代传统。', advice: '今天复兴传统，也是创新。', line: '奥运：古代仪式，现代玩法。', scoreLabel: '历史感' },
+  { key: 'apollo-13', title: '历史上的今天', name: '阿波罗13号事故', subtitle: '1970年4月13日', body: '氧气罐爆炸，登月取消，但全体机组成功返回。', advice: '今天计划失败了，保命比目标重要。', line: '成功的失败：活着回来就是赢。', scoreLabel: '历史感' },
+];
+
+export const dailyScienceFacts: DailyTextCard[] = [
+  { key: 'black-hole-photo', title: '每日科学知识', name: '首张黑洞照片', subtitle: '2019年', body: '事件视界望远镜拍摄M87星系中心黑洞，验证爱因斯坦广义相对论。', advice: '今天做的事，可能要很久才能看到结果。', line: '黑洞照片：拍了两年，冲洗了一年。', scoreLabel: '科学值' },
+  { key: 'crispr-gene', title: '每日科学知识', name: 'CRISPR基因编辑', subtitle: '生物技术', body: 'CRISPR-Cas9能精确编辑DNA序列，2020年诺贝尔化学奖，但伦理争议巨大。', advice: '今天技术能做到，不代表应该做。', line: '基因剪刀：最强工具，最大责任。', scoreLabel: '科学值' },
+  { key: 'quantum-supremacy', title: '每日科学知识', name: '量子霸权', subtitle: '2019年', body: 'Google量子计算机200秒完成超算需1万年的任务，但实际应用还很远。', advice: '今天突破和落地之间，还有一段路。', line: '量子计算：理论牛逼，实用还早。', scoreLabel: '科学值' },
+  { key: 'higgs-boson', title: '每日科学知识', name: '希格斯玻色子', subtitle: '2012年', body: 'LHC对撞机发现"上帝粒子"，解释物质质量来源，验证标准模型最后一块拼图。', advice: '今天找答案，有时要砸几十亿。', line: '上帝粒子：找了50年，终于逮到。', scoreLabel: '科学值' },
+  { key: 'gravitational-wave', title: '每日科学知识', name: '引力波探测', subtitle: '2015年', body: 'LIGO首次探测到引力波，爱因斯坦百年预言被证实，开启引力波天文学。', advice: '今天坚持的方向，可能要等很久才验证。', line: '引力波：爱因斯坦说有，100年后证实。', scoreLabel: '科学值' },
+  { key: 'dark-matter', title: '每日科学知识', name: '暗物质之谜', subtitle: '宇宙学', body: '宇宙85%是暗物质，但至今没人知道它是什么，只能通过引力效应推断存在。', advice: '今天看不见的，不代表不存在。', line: '暗物质：宇宙大部分，但看不见摸不着。', scoreLabel: '科学值' },
+  { key: 'neuron-plasticity', title: '每日科学知识', name: '神经可塑性', subtitle: '神经科学', body: '大脑能通过学习重新布线，成年后也能建立新神经连接，"用进废退"是真的。', advice: '今天开始练，大脑会跟着变。', line: '神经可塑：脑子不是固定的，是能练的。', scoreLabel: '科学值' },
+  { key: 'antibiotic-resistance', title: '每日科学知识', name: '抗生素耐药性', subtitle: '医学危机', body: '细菌进化速度超过新药研发，滥用抗生素导致超级细菌，可能回到无药可用时代。', advice: '今天方便的，明天可能没用。', line: '抗生素：用多了，细菌就不怕了。', scoreLabel: '科学值' },
+  { key: 'gut-microbiome', title: '每日科学知识', name: '肠道菌群', subtitle: '微生物学', body: '人体肠道有上万亿细菌，影响消化、免疫、情绪甚至大脑，被称为"第二大脑"。', advice: '今天善待肚子里的小伙伴。', line: '肠道菌群：你以为是你在活，其实是你们在活。', scoreLabel: '科学值' },
+  { key: 'epigenetics', title: '每日科学知识', name: '表观遗传学', subtitle: '基因调控', body: 'DNA序列不变，但基因表达可被环境改变，饮食、压力会影响基因开关，甚至遗传给下一代。', advice: '今天的生活方式，可能写进基因。', line: '表观遗传：基因是剧本，表达是演法。', scoreLabel: '科学值' },
+  { key: 'photosynthesis', title: '每日科学知识', name: '光合作用效率', subtitle: '植物生物学', body: '植物光合效率只有1-2%，远低于太阳能电池板，但养活了地球生命。', advice: '今天效率不是唯一标准。', line: '光合作用：效率低，但靠谱。', scoreLabel: '科学值' },
+  { key: 'telomere', title: '每日科学知识', name: '端粒与衰老', subtitle: '细胞生物学', body: '染色体端粒每次分裂变短，像保护帽磨损，细胞分裂50-70次就停止，这是衰老机制之一。', advice: '今天细胞在偷偷变老，但心态可以年轻。', line: '端粒：细胞的倒计时条。', scoreLabel: '科学值' },
+  { key: 'placebo-effect', title: '每日科学知识', name: '安慰剂效应', subtitle: '心理医学', body: '假药能产生真疗效，大脑预期会触发生理变化，甚至在患者知道是假药后仍有效。', advice: '今天心理暗示很强，别小看念头。', line: '安慰剂：假药真效果，脑子很诚实。', scoreLabel: '科学值' },
+  { key: 'caffeine-mechanism', title: '每日科学知识', name: '咖啡因机制', subtitle: '神经药理', body: '咖啡因阻断腺苷受体，腺苷本来让你困，被挡住后你就不困了，但不是真的不累。', advice: '今天提神是假象，补觉才是真需求。', line: '咖啡因：不是给能量，是屏蔽困意。', scoreLabel: '科学值' },
+  { key: 'circadian-rhythm', title: '每日科学知识', name: '生物钟', subtitle: '生理学', body: '人体24小时节律由SCN（视交叉上核）控制，蓝光会抑制褪黑素分泌，打乱生物钟。', advice: '今天睡前少看屏幕，生物钟会感谢你。', line: '生物钟：不是玄学，是SCN在管。', scoreLabel: '科学值' },
+  { key: 'moore-law', title: '每日科学知识', name: '摩尔定律', subtitle: '计算机科学', body: '芯片晶体管数量每18-24个月翻倍，支撑了50年，但物理极限快到了，3nm以下越来越难。', advice: '今天指数增长总有天花板。', line: '摩尔定律：曾经牛逼，现在快到头。', scoreLabel: '科学值' },
+  { key: 'nuclear-fusion', title: '每日科学知识', name: '核聚变能源', subtitle: '物理工程', body: '太阳的能量来源，人类想复制但太难，"永远还差30年"的梗已经说了60年。', advice: '今天最难的，往往是看起来最简单的。', line: '核聚变：太阳天天搞，人类还在试。', scoreLabel: '科学值' },
+  { key: 'fermi-paradox', title: '每日科学知识', name: '费米悖论', subtitle: '天文学', body: '宇宙这么大这么老，外星文明应该到处都是，但为什么我们什么都没看到？', advice: '今天保持好奇，但别急着下结论。', line: '费米悖论：宇宙空荡荡，是我们太早还是他们都死了？', scoreLabel: '科学值' },
+  { key: 'double-slit', title: '每日科学知识', name: '双缝干涉实验', subtitle: '量子力学', body: '光子/电子同时穿过两条缝，观测它就塌缩成一条，不观测就保持波态，挑战常识。', advice: '今天观察会改变结果，测不准是物理定律。', line: '双缝实验：你一看，它就变了。', scoreLabel: '科学值' },
+  { key: 'protein-folding', title: '每日科学知识', name: '蛋白质折叠', subtitle: '生物化学', body: '氨基酸链折叠成特定3D结构才有功能，折错了就是病，AlphaFold2用AI预测结构破解了50年难题。', advice: '今天结构决定功能，形状很重要。', line: '蛋白质折叠：折对了是药，折错了是病。', scoreLabel: '科学值' },
+];
 
 duelWeapons.push(
   { key: 'he-grenade', name: '高爆雷', style: '抛物线审判', power: 78, tempo: 64, line: '丢得准叫预判，丢歪了叫给地板听响。', fandomFile: 'HEgrenadehud_csgo.png' },

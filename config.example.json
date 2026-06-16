@@ -6,15 +6,15 @@
   "web_admin_port": 0,
   "login_check_interval_seconds": 30,
   "login_check_api_timeout_ms": 8000,
-  "bot_qq": 3853043835,
+  "bot_qq": 1234567890,
   "bot_name": "玩机器",
   "command_prefix": "/",
   "admin_qq": [123456789],
   "enabled_groups": [],
 
   "ai": {
-    "api_url": "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
-    "api_key": "在这里填入你的API密钥",
+    "api_url": "https://api.example.com/v1/chat/completions",
+    "api_key": "YOUR_API_KEY_HERE",
     "model": "mimo-v2.5-pro",
     "vision_model": "mimo-v2.5-pro",
     "active_preset": "wanjier",

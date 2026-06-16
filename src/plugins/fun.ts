@@ -11,21 +11,46 @@ import { getLiquipediaImageStats, resolvePlayerImage, resolveTeamImage } from '.
 import { resolveFandomFileImage, resolveFandomPageImage } from './fandom-image';
 import { getCsgoSkinsApiStats, resolveCsgoSkinImage } from './csgo-skins-api';
 import { buildDailyCardImageDataUrl, type DailyCardImageKind } from './daily-card-image';
+import {
+  dailyCsKindMetas,
+  dailyCsMetaFor,
+  imageKindAliases,
+  isDailyCardRequest,
+  normalizeCsImageKind,
+  type CsImageProbeKind,
+  type DailyCardKind,
+} from './daily-cs-metadata';
+import {
+  compactDailyImageFields,
+  dailyImagePairSecondSlugCandidates,
+  dailyImageSlugCandidates,
+  dailyLocalPackCardsFromDirs,
+  manifestSearchValues,
+  preferBeautyManifestImages,
+  uniqueManifestCardsByUrl,
+} from './daily-image-matching';
 import { getCsPredictTrainingHint } from './cs-predict';
 import { buildUserProfileDailyCsHint } from './user-profile';
 import {
-  areaLabel,
   cleanTrainingText,
-  clampMinutes,
   clearTrainingLogs,
   loadTrainingStore,
-  logsForUser,
-  normalizeTrainingArea,
   saveTrainingStore,
   setTrainingStorePathForTests,
   type CsTrainingLogEntry,
   type TrainingArea,
 } from './cs-training-store';
+import {
+  analyzeTrainingLogInput,
+  buildCsTrainingHistoryHint,
+  detectTrainingWeaknesses,
+  formatCsTrainingAnalysis,
+  formatCsTrainingStats,
+  formatTrainingLogEntry,
+  parseTrainingLogInput,
+  trainingCommandUsage,
+  type TrainingLogInput,
+} from './cs-training-runtime';
 import {
   csPlayers,
   csTeams,
@@ -35,6 +60,9 @@ import {
   csUtilities,
   csTactics,
   csClutches,
+  csEconomies,
+  csShotcalls,
+  csReviews,
   csSkins,
   csKnives,
   knifeSkins,
@@ -45,6 +73,10 @@ import {
   dailyFacts,
   dailyBookExcerpts,
   dailyPoems,
+  dailyMovieQuotes,
+  dailyMusicFacts,
+  dailyHistoryEvents,
+  dailyScienceFacts,
   duelWeapons,
 } from './fun-data';
 import {
@@ -103,10 +135,7 @@ interface DailyCard {
   fandomPage?: string;
 }
 
-type DailyCardKind = 'team' | 'map' | 'weapon' | 'skin' | 'role' | 'loadout' | 'utility' | 'tactic' | 'clutch';
 type CsQuizKind = 'map' | 'weapon' | 'utility' | 'tactic' | 'clutch';
-type CsImageProbeKind = DailyCardKind | 'player' | 'knife' | 'mokoko' | 'genshin' | 'all';
-type TrainingWeaknessKey = 'death' | 'trade' | 'utility' | 'aim' | 'clutch' | 'map' | 'review';
 
 type FandomWiki = 'counterstrike' | 'bandori' | 'genshin';
 
@@ -213,14 +242,6 @@ interface ImageCandidate {
     | 'static-url';
 }
 
-interface TrainingWeaknessSignal {
-  key: TrainingWeaknessKey;
-  label: string;
-  count: number;
-  minutes: number;
-  sample: string;
-}
-
 interface CsQuiz {
   kind: CsQuizKind;
   title: string;
@@ -240,154 +261,11 @@ let fandomImageResolver: (filename: string, wiki?: FandomWiki) => Promise<string
 let fandomPageImageResolver: (title: string, wiki?: FandomWiki) => Promise<string | null> = resolveFandomPageImage;
 let csgoSkinImageResolver: (weapon: string, skin: string) => Promise<string | null> = resolveCsgoSkinImage;
 
-function compactTrainingCompare(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '');
-}
-
-const trainingWeaknessSpecs: Record<TrainingWeaknessKey, {
-  label: string;
-  patterns: RegExp[];
-  advice: string;
-}> = {
-  death: {
-    label: '死亡质量',
-    patterns: [/死亡|死了|暴毙|白给|先死|首死|被抓|掉人|送了|干拉死|没换到/i],
-    advice: '先截3个死亡回合，分清是干拉、被抓timing还是没等补枪；下一局只改一个死法。',
-  },
-  trade: {
-    label: '补枪交换',
-    patterns: [/补枪|交易|trade|二身位|同步|跟不上|拉不开|距离太远|换不到|没补上/i],
-    advice: '把二身位距离拉到能2秒内补枪，突破时先喊“我出/你补”，别各打各的。',
-  },
-  utility: {
-    label: '道具时机',
-    patterns: [/道具|投掷物|烟|闪|火|雷|没闪|白了自己|封烟|烟没|忘丢|没丢|丢晚|丢早|nade|utility/i],
-    advice: '每张图只挑2颗高频烟闪火，练到能说清目的、落点和出手时机，再进实战。',
-  },
-  aim: {
-    label: '急停预瞄',
-    patterns: [/急停|预瞄|拉枪|控枪|压枪|爆头线|枪法|定位|peek|干拉|空枪|马枪|反应/i],
-    advice: '先把急停和预瞄线校准，DM里少追击杀数，多看第一枪是不是干净。',
-  },
-  clutch: {
-    label: '残局回防',
-    patterns: [/残局|回防|下包|拆包|保枪|1v\d?|clutch|postplant|时间不够|没钳/i],
-    advice: '残局先数人数、道具和时间；能等队友就等，不能打就保枪，别把优势打成单挑。',
-  },
-  map: {
-    label: '地图信息',
-    patterns: [/控图|默认|中路|香蕉道|长箱|短箱|a点|b点|包点|站位|架点|信息|timing|被绕|地图理解/i],
-    advice: '复盘开局30秒的信息链：谁拿空间、谁补道具、谁防绕后，先把默认打明白。',
-  },
-  review: {
-    label: '复盘闭环',
-    patterns: [/复盘|demo|录像|回看|死亡回合|截\d?|看录像|检讨/i],
-    advice: '复盘别只说“枪软”，每次写一个原因和一个下局动作，第二天再看有没有复发。',
-  },
-};
-
-function detectTrainingCardName(text: string, cards: DailyCard[]): string {
-  const compact = compactTrainingCompare(text);
-  for (const card of cards) {
-    const names = [card.key, card.name, card.title.replace(/^今日CS/, '')];
-    if (names.some((name) => {
-      const normalized = compactTrainingCompare(name);
-      return normalized && compact.includes(normalized);
-    })) {
-      return card.name;
-    }
-  }
-  return '';
-}
-
-function detectTrainingWeapon(text: string): string {
-  const compact = compactTrainingCompare(text);
-  if (/ak|ak47|ak-47/.test(compact)) return 'AK-47';
-  if (/m4|a1s|m4a1/.test(compact)) return 'M4A1-S';
-  if (/awp|大狙|狙/.test(compact)) return 'AWP';
-  if (/deagle|沙鹰/.test(compact)) return 'Desert Eagle';
-  return detectTrainingCardName(text, csWeapons);
-}
-
-function detectTrainingArea(text: string): TrainingArea {
-  const compact = compactTrainingCompare(text);
-  if (/(复盘|demo|录像|死亡回合|回看)/.test(compact)) return 'review';
-  if (/(道具|烟|闪|火|雷|投掷物|nade|utility)/i.test(text)) return 'utility';
-  if (/(残局|回防|下包|保枪|1v|clutch)/i.test(text)) return 'clutch';
-  if (/(定位|突破|辅助|锚点|自由人|指挥|狙击手|role)/i.test(text)) return 'role';
-  if (/(实战|天梯|排位|官匹|faceit|premier|match)/i.test(text)) return 'match';
-  if (/(练枪|枪法|急停|预瞄|拉枪|控枪|爆头|死斗|dm|bot|ak|awp|m4|沙鹰)/i.test(text)) return 'aim';
-  if (/(地图|控图|默认|mirage|inferno|nuke|ancient|anubis|dust2|overpass)/i.test(text)) return 'map';
-  return 'aim';
-}
-
-function detectTrainingWeaknesses(text: string): TrainingWeaknessKey[] {
-  const normalized = cleanTrainingText(text, 240).toLowerCase();
-  if (!normalized) return [];
-  return (Object.keys(trainingWeaknessSpecs) as TrainingWeaknessKey[])
-    .filter((key) => trainingWeaknessSpecs[key].patterns.some((pattern) => pattern.test(normalized)));
-}
-
-function primaryTrainingWeaknessText(keys: TrainingWeaknessKey[]): string {
-  return keys.map((key) => trainingWeaknessSpecs[key].label).join(' / ');
-}
-
-function weaknessLogCommand(parsed: ReturnType<typeof parseTrainingLogInput>): string {
-  if (!parsed) return '/cstrain log 30 Mirage AK 急停';
-  const noteCompact = compactTrainingCompare(parsed.note);
-  const mapPart = parsed.map && !noteCompact.includes(compactTrainingCompare(parsed.map)) ? parsed.map : '';
-  const weaponCompact = compactTrainingCompare(parsed.weapon);
-  const weaponPart = parsed.weapon
-    && !noteCompact.includes(weaponCompact)
-    && !(weaponCompact === 'ak47' && noteCompact.includes('ak'))
-    && !(weaponCompact === 'm4a1s' && noteCompact.includes('m4'))
-    ? parsed.weapon
-    : '';
-  const parts = [
-    '/cstrain log',
-    parsed.area,
-    String(parsed.minutes),
-    mapPart,
-    weaponPart,
-    parsed.note || '',
-  ].filter(Boolean);
-  return cleanTrainingText(parts.join(' '), 120);
-}
-
-function parseTrainingLogInput(args: string[]): { area: TrainingArea; minutes: number; map: string; weapon: string; note: string } | null {
-  const raw = args.join(' ').trim();
-  if (!raw) return null;
-  const minutesMatch = raw.match(/(?:^|\s)(\d{1,3})(?:\s*(?:分钟|min|m))?(?=\s|$)/i);
-  const minutes = minutesMatch ? clampMinutes(minutesMatch[1]) : 30;
-  const withoutMinutes = minutesMatch
-    ? `${raw.slice(0, minutesMatch.index).trim()} ${raw.slice((minutesMatch.index || 0) + minutesMatch[0].length).trim()}`.trim()
-    : raw;
-  if (!withoutMinutes && !minutesMatch) return null;
-  const area = normalizeTrainingArea(args[0]);
-  const detectedArea = area === 'aim' && !/^(?:aim|枪法|练枪)$/i.test(args[0] || '')
-    ? detectTrainingArea(raw)
-    : area;
-  const map = detectTrainingCardName(raw, csMaps);
-  const weapon = detectTrainingWeapon(raw);
-  const note = cleanTrainingText(withoutMinutes || raw, 100);
-  return { area: detectedArea, minutes, map, weapon, note };
-}
-
-function analyzeTrainingLogInput(args: string[]): {
-  parsed: NonNullable<ReturnType<typeof parseTrainingLogInput>>;
-  weaknesses: TrainingWeaknessKey[];
-} | null {
-  const parsed = parseTrainingLogInput(args);
-  if (!parsed) return null;
-  const weaknesses = detectTrainingWeaknesses([parsed.note, parsed.map, parsed.weapon, parsed.area].join(' '));
-  return { parsed, weaknesses };
-}
-
 function trainingDisplayName(ctx: PluginContext): string {
   return cleanTrainingText(ctx.event.sender.card || ctx.event.sender.nickname || `user${ctx.event.user_id}`, 24);
 }
 
-function addTrainingLog(ctx: PluginContext, parsed: { area: TrainingArea; minutes: number; map: string; weapon: string; note: string }): CsTrainingLogEntry {
+function addTrainingLog(ctx: PluginContext, parsed: TrainingLogInput): CsTrainingLogEntry {
   const store = loadTrainingStore();
   const createdAt = Date.now();
   const entry: CsTrainingLogEntry = {
@@ -407,155 +285,6 @@ function addTrainingLog(ctx: PluginContext, parsed: { area: TrainingArea; minute
   store.logs.push(entry);
   saveTrainingStore(store);
   return entry;
-}
-
-function collectTrainingWeaknessSignals(logs: CsTrainingLogEntry[]): TrainingWeaknessSignal[] {
-  const signals = new Map<TrainingWeaknessKey, TrainingWeaknessSignal>();
-  for (const log of logs) {
-    const keys = detectTrainingWeaknesses([log.note, log.map, log.weapon, log.area].join(' '));
-    for (const key of keys) {
-      const spec = trainingWeaknessSpecs[key];
-      const existing = signals.get(key);
-      if (existing) {
-        existing.count += 1;
-        existing.minutes += log.minutes;
-        if (!existing.sample && log.note) existing.sample = log.note;
-      } else {
-        signals.set(key, {
-          key,
-          label: spec.label,
-          count: 1,
-          minutes: log.minutes,
-          sample: log.note,
-        });
-      }
-    }
-  }
-  return [...signals.values()].sort((a, b) => b.count - a.count || b.minutes - a.minutes || a.label.localeCompare(b.label, 'zh-CN'));
-}
-
-function summarizeTrainingLogs(logs: CsTrainingLogEntry[]): {
-  sessions: number;
-  minutes: number;
-  byArea: Partial<Record<TrainingArea, number>>;
-  topArea: TrainingArea | null;
-  missing: TrainingArea[];
-  weaknesses: TrainingWeaknessSignal[];
-  recent: CsTrainingLogEntry[];
-} {
-  const byArea: Partial<Record<TrainingArea, number>> = {};
-  let minutes = 0;
-  for (const log of logs) {
-    minutes += log.minutes;
-    byArea[log.area] = (byArea[log.area] || 0) + log.minutes;
-  }
-  const topArea = (Object.entries(byArea).sort((a, b) => b[1] - a[1])[0]?.[0] || null) as TrainingArea | null;
-  const missing = (['aim', 'utility', 'review', 'match'] as TrainingArea[]).filter((area) => !byArea[area]);
-  return { sessions: logs.length, minutes, byArea, topArea, missing, weaknesses: collectTrainingWeaknessSignals(logs), recent: logs.slice(0, 5) };
-}
-
-function formatTrainingWeaknessSignals(signals: TrainingWeaknessSignal[], limit = 3): string {
-  return signals.slice(0, limit).map((signal) => `${signal.label}${signal.count}次`).join(' / ');
-}
-
-function buildTrainingAdvice(summary: ReturnType<typeof summarizeTrainingLogs>): string {
-  if (summary.sessions === 0) return '还没训练记录，先用 /cstrain log 30 Mirage AK 急停 记一条，后面就能按你短板调计划。';
-  const topWeakness = summary.weaknesses[0];
-  if (topWeakness) {
-    const sample = topWeakness.sample ? `你日志里写过“${cleanTrainingText(topWeakness.sample, 28)}”，` : '';
-    return `${sample}${trainingWeaknessSpecs[topWeakness.key].advice}`;
-  }
-  if (summary.minutes < 90) return '训练频率还偏低，先别追花活，连续三天把热身+一项重点练完。';
-  if (summary.topArea === 'aim' && summary.missing.includes('utility')) return '最近练枪偏多，道具偏少；今天补一组烟闪火，别只靠枪法救坏决策。';
-  if (summary.missing.includes('review')) return '最近缺复盘；今天至少截3个死亡回合，看补枪距离和道具时机。';
-  if (summary.missing.includes('match')) return '最近实战记录少；练完打一局，把训练目标带进回合里，不然就是靶场幻觉。';
-  if (summary.topArea === 'utility') return '最近道具有练到，今天把道具和第一枪连起来，别只会站出生点背点位。';
-  return '训练结构还行，今天重点是少贪枪、练完复盘，别让训练变成打卡截图。';
-}
-
-function buildCsTrainingHistoryHint(chatType: 'group' | 'private', chatId: number | string, userId: number): string {
-  const logs = logsForUser(chatType, chatId, userId, 14);
-  if (logs.length === 0) return '';
-  const summary = summarizeTrainingLogs(logs);
-  const areaParts = (Object.entries(summary.byArea) as [TrainingArea, number][])
-    .sort((a, b) => b[1] - a[1])
-    .map(([area, minutes]) => `${areaLabel(area)}${minutes}m`)
-    .join(' / ');
-  const weaknessParts = formatTrainingWeaknessSignals(summary.weaknesses);
-  return [
-    `训练历史：近14天${summary.sessions}次/${summary.minutes}分钟${areaParts ? `，${areaParts}` : ''}`,
-    weaknessParts ? `日志短板：${weaknessParts}` : '',
-    `个人短板：${buildTrainingAdvice(summary)}`,
-  ].filter(Boolean).join('\n');
-}
-
-function formatTrainingLogEntry(entry: CsTrainingLogEntry): string {
-  const parts = [
-    areaLabel(entry.area),
-    `${entry.minutes}分钟`,
-    entry.map || '',
-    entry.weapon || '',
-  ].filter(Boolean);
-  return `${parts.join(' / ')}${entry.note ? ` | ${entry.note}` : ''}`;
-}
-
-function formatCsTrainingStats(chatType: 'group' | 'private', chatId: number | string, userId: number): string {
-  const logs = logsForUser(chatType, chatId, userId, 14);
-  const summary = summarizeTrainingLogs(logs);
-  if (summary.sessions === 0) {
-    return [
-      'CS训练记录',
-      '近14天还没有记录。',
-      '用法：/cstrain log 30 Mirage AK 急停',
-      '也可以：/cstrain log 道具 20 Inferno 烟闪',
-    ].join('\n');
-  }
-  const areaParts = (Object.entries(summary.byArea) as [TrainingArea, number][])
-    .sort((a, b) => b[1] - a[1])
-    .map(([area, minutes]) => `${areaLabel(area)}${minutes}m`)
-    .join(' / ');
-  return [
-    'CS训练记录',
-    `近14天: ${summary.sessions}次 / ${summary.minutes}分钟`,
-    `分布: ${areaParts}`,
-    summary.weaknesses.length ? `日志短板: ${formatTrainingWeaknessSignals(summary.weaknesses)}` : '',
-    `建议: ${buildTrainingAdvice(summary)}`,
-    '',
-    '最近记录:',
-    ...summary.recent.map((entry, index) => `${index + 1}. ${formatTrainingLogEntry(entry)}`),
-    '',
-    '/cstrain clear 可以清空你在当前会话的训练记录',
-  ].filter((line) => line !== '').join('\n');
-}
-
-function formatCsTrainingAnalysis(analysis: NonNullable<ReturnType<typeof analyzeTrainingLogInput>>): string {
-  const weaknessText = primaryTrainingWeaknessText(analysis.weaknesses) || '暂时没识别到明确短板';
-  const advice = analysis.weaknesses
-    .slice(0, 3)
-    .map((key, index) => `${index + 1}. ${trainingWeaknessSpecs[key].advice}`);
-  return [
-    'CS训练日志分析',
-    `识别重点: ${weaknessText}`,
-    `推断分类: ${areaLabel(analysis.parsed.area)} / ${analysis.parsed.minutes}分钟${analysis.parsed.map ? ` / ${analysis.parsed.map}` : ''}${analysis.parsed.weapon ? ` / ${analysis.parsed.weapon}` : ''}`,
-    analysis.parsed.note ? `原始摘要: ${analysis.parsed.note}` : '',
-    advice.length ? '建议动作:' : '',
-    ...advice,
-    advice.length ? '' : '建议动作: 先补一句具体问题，比如“死亡多、补枪慢、没闪、回防乱”，我再给你拆训练项。',
-    `要写入训练历史可以发: ${weaknessLogCommand(analysis.parsed)}`,
-    '真话边界：这里只分析你发的文字日志，不读取demo/截图，也不当作实时赛事事实。',
-  ].filter((line) => line !== '').join('\n');
-}
-
-function trainingCommandUsage(): string {
-  return [
-    'CS训练记录用法',
-    '/cstrain - 今日训练计划',
-    '/cstrain log 30 Mirage AK 急停',
-    '/cstrain log 道具 20 Inferno 烟闪',
-    '/cstrain analyze Mirage 死亡8次 补枪距离太远 没闪',
-    '/cstrain stats - 看近14天训练分布',
-    '/cstrain clear - 清空当前会话你的训练记录',
-  ].join('\n');
 }
 
 function todayKey(): string {
@@ -611,6 +340,22 @@ function dailyBookExcerptFor(userId: number, scopeId: number): DailyTextCard {
 
 function dailyPoemFor(userId: number, scopeId: number): DailyTextCard {
   return dailyPoems[dailySeedForKind('daily_poem', userId, scopeId) % dailyPoems.length];
+}
+
+function dailyMovieQuoteFor(userId: number, scopeId: number): DailyTextCard {
+  return dailyMovieQuotes[dailySeedForKind('daily_movie', userId, scopeId) % dailyMovieQuotes.length];
+}
+
+function dailyMusicFactFor(userId: number, scopeId: number): DailyTextCard {
+  return dailyMusicFacts[dailySeedForKind('daily_music', userId, scopeId) % dailyMusicFacts.length];
+}
+
+function dailyHistoryEventFor(userId: number, scopeId: number): DailyTextCard {
+  return dailyHistoryEvents[dailySeedForKind('daily_history', userId, scopeId) % dailyHistoryEvents.length];
+}
+
+function dailyScienceFactFor(userId: number, scopeId: number): DailyTextCard {
+  return dailyScienceFacts[dailySeedForKind('daily_science', userId, scopeId) % dailyScienceFacts.length];
 }
 
 function dailyDuelPlayerWeaponFor(userId: number, scopeId: number): DailyDuelWeapon {
@@ -1090,36 +835,8 @@ function isCsImageCommand(command: string | null, rawText: string): boolean {
   return /^(?:\/)?(?:csimage|csimg|cs图|图片测试)/.test(normalizeDrawText(rawText));
 }
 
-function normalizeCsImageKind(input: string): CsImageProbeKind {
-  const text = normalizeDrawText(input || '');
-  if (/^(all|全部|全量|所有)$/.test(text)) return 'all';
-  if (/^(player|选手|csplayer|今日选手)$/.test(text)) return 'player';
-  if (/^(knife|刀|发刀|csknife|今日发刀)$/.test(text)) return 'knife';
-  if (/^(mokoko|木柜子|mygo|avemujica|角色|每日木柜子)$/.test(text)) return 'mokoko';
-  if (/^(genshin|ys|原神|原神角色|每日原神)$/.test(text)) return 'genshin';
-  if (/^(team|队伍|战队|csteam|今日队伍|今日战队)$/.test(text)) return 'team';
-  if (/^(map|地图|csmap|今日地图)$/.test(text)) return 'map';
-  if (/^(weapon|gun|枪|武器|枪械|csweapon|今日武器)$/.test(text)) return 'weapon';
-  if (/^(skin|skins|皮肤|csskin|今日皮肤)$/.test(text)) return 'skin';
-  if (/^(role|position|定位|位置|csrole|今日定位)$/.test(text)) return 'role';
-  if (/^(loadout|pack|套餐|套装|今日cs|csloadout)$/.test(text)) return 'loadout';
-  if (/^(utility|nade|道具|投掷物|csutility)$/.test(text)) return 'utility';
-  if (/^(tactic|strat|战术|cstactic)$/.test(text)) return 'tactic';
-  if (/^(clutch|残局|csclutch)$/.test(text)) return 'clutch';
-  return 'team';
-}
-
-function cardsForImageKind(kind: CsImageProbeKind): DailyCard[] {
-  if (kind === 'team') return csTeams;
-  if (kind === 'map') return csMaps;
-  if (kind === 'weapon') return csWeapons;
-  if (kind === 'skin') return csSkins;
-  if (kind === 'role') return csRoles;
-  if (kind === 'loadout') return csTeams;
-  if (kind === 'utility') return csUtilities;
-  if (kind === 'tactic') return csTactics;
-  if (kind === 'clutch') return csClutches;
-  return [];
+function isDailyCardKind(kind: CsImageProbeKind): kind is DailyCardKind {
+  return dailyCsKindMetas.some((meta) => meta.kind === kind);
 }
 
 function isCsPlayerDrawRequest(command: string | null, rawText: string): boolean {
@@ -1185,41 +902,44 @@ function isDailyPoemRequest(command: string | null, rawText: string): boolean {
     || (/(今日|每日|今天|来个|给我|来首)/.test(text) && /(古诗词|古诗|诗词|唐诗|宋词)/.test(text));
 }
 
+function isDailyMovieRequest(command: string | null, rawText: string): boolean {
+  if (['movie', 'film', '影视', '台词', '影视台词', '每日影视台词', '今日影视台词'].includes(command || '')) return true;
+  const text = normalizeDrawText(rawText);
+  if (!text) return false;
+  return ['每日影视台词', '今日影视台词', '影视台词', '来句台词', '今天影视', '每日台词', '今日台词'].includes(text)
+    || (/(今日|每日|今天|来个|给我|来句)/.test(text) && /(台词|影视|电影|剧台词|经典台词)/.test(text));
+}
+
+function isDailyMusicRequest(command: string | null, rawText: string): boolean {
+  if (['music', 'musicfact', '音乐', '音乐知识', '每日音乐知识', '今日音乐知识'].includes(command || '')) return true;
+  const text = normalizeDrawText(rawText);
+  if (!text) return false;
+  return ['每日音乐知识', '今日音乐知识', '音乐知识', '来个音乐知识', '今天音乐'].includes(text)
+    || (/(今日|每日|今天|来个|给我)/.test(text) && /(音乐知识|乐理|音乐冷知识|音乐小知识)/.test(text));
+}
+
+function isDailyHistoryRequest(command: string | null, rawText: string): boolean {
+  if (['history', 'today', '历史', '历史今天', '历史上的今天', '今天历史'].includes(command || '')) return true;
+  const text = normalizeDrawText(rawText);
+  if (!text) return false;
+  return ['历史上的今天', '历史今天', '今天历史', '每日历史', '来个历史'].includes(text)
+    || (/(今日|每日|今天|来个|给我)/.test(text) && /(历史|历史今天|历史上的今天)/.test(text));
+}
+
+function isDailyScienceRequest(command: string | null, rawText: string): boolean {
+  if (['science', 'sci', '科学', '科学知识', '每日科学', '今日科学'].includes(command || '')) return true;
+  const text = normalizeDrawText(rawText);
+  if (!text) return false;
+  return ['每日科学', '今日科学', '科学知识', '来个科学知识', '科普知识'].includes(text)
+    || (/(今日|每日|今天|来个|给我)/.test(text) && /(科学|科普|科学知识|科学小知识)/.test(text));
+}
+
 function isDailyDuelRequest(command: string | null, rawText: string): boolean {
   if (['duel', '决斗', '紫禁之巅', '决战紫禁之巅', '每日决战紫禁之巅', '今日决战紫禁之巅'].includes(command || '')) return true;
   const text = normalizeDrawText(rawText);
   if (!text) return false;
   return ['决战紫禁之巅', '每日决战紫禁之巅', '今日决战紫禁之巅', '紫禁之巅'].includes(text)
     || (/(今日|每日|今天|来个|给我)/.test(text) && /(决战|决斗|紫禁之巅|单挑)/.test(text));
-}
-
-function isDailyCardRequest(command: string | null, rawText: string, kind: DailyCardKind): boolean {
-  const commandMap: Record<DailyCardKind, string[]> = {
-    team: ['csteam', 'csteamday', 'todayteam', '今日队伍', '每日队伍', '抽队伍', '今日战队', '每日战队'],
-    map: ['csmap', 'mapday', 'todaymap', '今日地图', '每日地图', '抽地图'],
-    weapon: ['csweapon', 'weaponday', 'todayweapon', '今日武器', '每日武器', '抽武器', '今日枪械'],
-    skin: ['csskin', 'cskin', 'skinsday', 'todayskin', '今日皮肤', '每日皮肤', '抽皮肤'],
-    role: ['csrole', 'roleday', 'todayrole', '今日定位', '每日定位', '抽定位', '今日位置'],
-    loadout: ['csloadout', 'cspack', 'csdaily', '今日cs', '每日cs', '今日cs2', '每日cs2', '今日套餐', '每日套餐', '今日套装', '每日套装'],
-    utility: ['csutility', 'csnade', 'todaynade', '今日道具', '每日道具', '抽道具', '今日投掷物'],
-    tactic: ['cstactic', 'csstrat', 'todaystrat', '今日战术', '每日战术', '抽战术'],
-    clutch: ['csclutch', 'todayclutch', '今日残局', '每日残局', '抽残局'],
-  };
-  if (command && commandMap[kind].includes(command)) return true;
-  const text = normalizeDrawText(rawText);
-  if (!text) return false;
-  if (kind === 'loadout' && ['今日cs', '每日cs', '今天cs', '今日cs2', '每日cs2', '今天cs2'].includes(text)) return true;
-  const hasDaily = /(抽|今日|每日|今天|本日|来个|给我来个)/.test(text);
-  if (!hasDaily) return false;
-  if (kind === 'team') return /(cs队伍|cs2队伍|队伍签|战队|主队|今日队伍|每日队伍)/.test(text);
-  if (kind === 'map') return /(cs地图|cs2地图|地图签|今日地图|每日地图|哪张图)/.test(text);
-  if (kind === 'weapon') return /(cs武器|cs2武器|枪械|武器签|今日武器|每日武器|今天用什么枪)/.test(text);
-  if (kind === 'skin') return /(cs皮肤|cs2皮肤|枪皮肤|武器皮肤|皮肤签|今日皮肤|每日皮肤|今天什么皮肤)/.test(text);
-  if (kind === 'role') return /(cs定位|cs2定位|位置|定位签|今日定位|每日定位|今天打什么位)/.test(text);
-  if (kind === 'utility') return /(cs道具|cs2道具|投掷物|道具签|今日道具|每日道具|今天丢什么)/.test(text);
-  if (kind === 'tactic') return /(cs战术|cs2战术|战术签|今日战术|每日战术|今天怎么打|今天打什么战术)/.test(text);
-  if (kind === 'clutch') return /(cs残局|cs2残局|残局签|今日残局|每日残局|今天残局|残局怎么打)/.test(text);
-  return /(cs套餐|cs2套餐|今日套餐|每日套餐|今日套装|每日套装|今天怎么打|今天打啥)/.test(text);
 }
 
 function isCsTrainingRequest(command: string | null, rawText: string): boolean {
@@ -1532,7 +1252,7 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
     return probeImageCandidates(`每日原神角色 ${character.name}`, await buildGenshinImageCandidates(character, userId, scopeId), card, score);
   }
   if (kind === 'all') {
-    const kinds: CsImageProbeKind[] = ['player', 'team', 'map', 'weapon', 'skin', 'role', 'utility', 'tactic', 'clutch', 'knife', 'mokoko', 'genshin'];
+    const kinds: CsImageProbeKind[] = ['player', ...dailyCsKindMetas.map((meta) => meta.kind), 'knife', 'mokoko', 'genshin'];
     const lines = ['CS真实图片批量测试'];
     for (const item of kinds) {
       if (item === 'player') {
@@ -1592,8 +1312,9 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
         if (!ok) lines.push(`FAIL genshin ${character.name}`);
         continue;
       }
-      const cards = cardsForImageKind(item);
-      const card = dailyCardFor(`cs${item}`, userId, scopeId, cards);
+      if (!isDailyCardKind(item)) continue;
+      const meta = dailyCsMetaFor(item);
+      const card = dailyCardFor(meta.seedKey, userId, scopeId, meta.cards);
       const candidates = await buildDailyCardImageCandidates(item, card, userId, scopeId);
       let ok = false;
       for (const candidate of candidates.slice(0, 4)) {
@@ -1610,9 +1331,10 @@ async function probeDailyCard(kind: CsImageProbeKind, userId: number, scopeId: n
     if (stats.lastError) lines.push(`最近错误: ${stats.lastError}`);
     return [{ type: 'text', data: { text: lines.join('\n') } }];
   }
-  const cards = cardsForImageKind(kind);
-  const card = dailyCardFor(kind === 'loadout' ? 'csteam_pack' : `cs${kind}`, userId, scopeId, cards);
-  const score = dailyScoreForKind(kind === 'loadout' ? 'csloadout' : `cs${kind}`, userId, scopeId);
+  if (!isDailyCardKind(kind)) return [{ type: 'text', data: { text: '不支持这个图片测试类型。' } }];
+  const meta = dailyCsMetaFor(kind);
+  const card = dailyCardFor(meta.seedKey, userId, scopeId, meta.cards);
+  const score = dailyScoreForKind(meta.scoreKey, userId, scopeId);
   const candidates = await buildDailyCardImageCandidates(kind, card, userId, scopeId);
   return probeImageCandidates(`${card.title} ${card.name}`, candidates, card, score);
 }
@@ -1634,6 +1356,9 @@ function inferDailyCardImageKind(card: DailyCard): DailyCardImageKind {
   if (/utility|道具|flash|smoke|molotov|grenade|kit/.test(text)) return 'utility';
   if (/tactic|战术|default|explode|split|fake|contact|forcebuy/.test(text)) return 'tactic';
   if (/clutch|残局|retake|postplant|save/.test(text)) return 'clutch';
+  if (/economy|eco|money|经济|经济局|强起|半起|奖励局|英雄步枪/.test(text)) return 'economy';
+  if (/shotcall|call|igl|指挥|口令|集合令|暂停重置/.test(text)) return 'shotcall';
+  if (/review|demo|vod|复盘|切片|首死|时间轴/.test(text)) return 'review';
   if (/mokoko|mygo|ave mujica|木柜子/.test(text)) return 'mokoko';
   if (/genshin|原神/.test(text)) return 'genshin';
   if (/fact|冷知识/.test(text)) return 'fact';
@@ -1875,58 +1600,6 @@ function dailyBeautyMatchCacheStats(): { size: number; max: number; hits: number
   };
 }
 
-const dailyImageKindAliases: Record<string, string[]> = {
-  player: ['player', 'csplayer', 'dailyplayer', '选手', '每日选手', '今日选手'],
-  team: ['team', 'csteam', 'squad', '战队', '队伍', '每日战队', '今日队伍'],
-  map: ['map', 'csmap', '地图', '每日地图', '今日地图'],
-  weapon: ['weapon', 'gun', 'csweapon', '武器', '枪', '枪械'],
-  skin: ['skin', 'skins', 'csskin', '皮肤', '饰品'],
-  role: ['role', 'position', 'csrole', '定位', '位置'],
-  loadout: ['loadout', 'pack', 'package', '套餐', '套装', '今日cs'],
-  utility: ['utility', 'nade', 'grenade', 'csutility', '道具', '投掷物'],
-  tactic: ['tactic', 'strat', 'strategy', 'cstactic', '战术'],
-  clutch: ['clutch', 'csclutch', '残局'],
-  knife: ['knife', 'csknife', '刀', '发刀', '刀皮'],
-  mokoko: ['mokoko', 'mygo', 'avemujica', 'bandori', '木柜子', '迷子', '母鸡卡'],
-  genshin: ['genshin', 'ys', '原神', '提瓦特'],
-  duel: ['duel', 'dailyduel', '紫禁之巅', '决战'],
-  fact: ['fact', 'cold', 'coldfact', '冷知识'],
-  book: ['book', 'excerpt', '书摘'],
-  poem: ['poem', '古诗词', '诗词'],
-};
-
-function imageKindAliases(kind: string): string[] {
-  const normalized = compactManifestValue(kind);
-  const aliases = dailyImageKindAliases[normalized] || [normalized];
-  return [...new Set([normalized, ...aliases.map(compactManifestValue)])].filter(Boolean);
-}
-
-const dailyLocalImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
-const dailyLocalPackScanLimit = 5000;
-
-function dailyImageSlug(value: unknown): string {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/[《》「」『』“”‘’]/g, '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/\|/g, ' ')
-    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-');
-}
-
-function dailyImageSlugCandidates(values: unknown[]): string[] {
-  const slugs: string[] = [];
-  for (const value of values) {
-    const slug = dailyImageSlug(value);
-    if (slug) slugs.push(slug);
-    const dense = slug.replace(/-/g, '');
-    if (dense && dense !== slug) slugs.push(dense);
-  }
-  return [...new Set(slugs)].filter(Boolean);
-}
-
 function dailyLocalImagePackRootSignature(): string {
   const root = dailyImagePackRoot();
   try {
@@ -1938,78 +1611,10 @@ function dailyLocalImagePackRootSignature(): string {
   }
 }
 
-function dailyLocalPackDirectoryImages(directory: string): string[] {
-  const images: string[] = [];
-  const stack = [directory];
-  while (stack.length > 0 && images.length < dailyLocalPackScanLimit) {
-    const current = stack.pop()!;
-    let entries: fs.Dirent[] = [];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      const filepath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(filepath);
-        continue;
-      }
-      if (entry.isFile() && dailyLocalImageExtensions.has(path.extname(entry.name).toLowerCase())) images.push(filepath);
-    }
-  }
-  return images;
-}
-
-function dailyLocalPackCardsFromDirs(kind: string, label: string, directories: string[]): BestdoriCardImage[] {
-  const cards: BestdoriCardImage[] = [];
-  const seen = new Set<string>();
-  for (const directory of directories) {
-    const resolved = path.resolve(directory);
-    if (seen.has(resolved) || !fs.existsSync(resolved)) continue;
-    seen.add(resolved);
-    let stat: fs.Stats;
-    try {
-      stat = fs.statSync(resolved);
-    } catch {
-      continue;
-    }
-    if (!stat.isDirectory()) continue;
-    for (const filepath of dailyLocalPackDirectoryImages(resolved)) {
-      cards.push({
-        kind,
-        key: dailyImageSlug(label),
-        name: label,
-        title: `${label} local ${path.basename(filepath, path.extname(filepath))}`,
-        tags: ['local', 'authorized', 'image-pack'],
-        priority: 70,
-        url: filepath,
-      });
-    }
-  }
-  return preferBeautyManifestImages(cards);
-}
-
 function dailyLocalPackDirsFor(kind: string, values: unknown[]): string[] {
   const root = dailyImagePackRoot();
   const kindRoot = path.join(root, compactManifestValue(kind) || kind);
   return dailyImageSlugCandidates(values).map((slug) => path.join(kindRoot, slug));
-}
-
-function dailyImagePairSecondSlugCandidates(firstSlugs: string[], secondValues: unknown[]): string[] {
-  const secondSlugs = dailyImageSlugCandidates(secondValues);
-  const result = new Set(secondSlugs);
-  for (const first of firstSlugs) {
-    const firstDense = first.replace(/-/g, '');
-    for (const second of secondSlugs) {
-      if (second.startsWith(`${first}-`)) result.add(second.slice(first.length + 1));
-      const secondDense = second.replace(/-/g, '');
-      if (firstDense && secondDense.startsWith(firstDense) && secondDense.length > firstDense.length) {
-        result.add(secondDense.slice(firstDense.length));
-      }
-    }
-  }
-  return [...result].filter(Boolean);
 }
 
 function dailyLocalPackDirsForPair(kind: string, firstValues: unknown[], secondValues: unknown[]): string[] {
@@ -2025,41 +1630,6 @@ function dailyLocalPackDirsForPair(kind: string, firstValues: unknown[], secondV
     }
   }
   return [...new Set(dirs)];
-}
-
-function manifestSearchValues(card: BestdoriCardImage): string[] {
-  return [
-    card.key,
-    card.itemKey,
-    card.nick,
-    card.name,
-    card.itemName,
-    card.characterKey,
-    card.characterName,
-    card.weapon,
-    card.skin,
-    card.title,
-    ...(Array.isArray(card.tags) ? card.tags : []),
-  ].map(compactManifestValue).filter(Boolean);
-}
-
-function manifestBeautyScore(card: BestdoriCardImage): number {
-  const text = [
-    card.title,
-    card.style,
-    card.quality,
-    ...(Array.isArray(card.tags) ? card.tags : []),
-  ].join(' ').toLowerCase();
-  let score = Number.isFinite(Number(card.priority)) ? Number(card.priority) : 0;
-  if (/(splash|card|art|artwork|illustration|poster|wallpaper|keyvisual|scene|stage|ingame|inspect|render|showcase|cinematic|卡面|立绘|海报|壁纸|场景|舞台|检视|展示|官图|美图)/i.test(text)) score += 80;
-  if (/(headshot|portrait|avatar|profile|idphoto|大头|头像|证件|半身像)/i.test(text)) score -= 120;
-  return score;
-}
-
-function preferBeautyManifestImages(cards: BestdoriCardImage[]): BestdoriCardImage[] {
-  const sorted = [...cards].sort((a, b) => manifestBeautyScore(b) - manifestBeautyScore(a));
-  const beautiful = sorted.filter((card) => manifestBeautyScore(card) > -80);
-  return beautiful.length > 0 ? beautiful : sorted;
 }
 
 function dailyBeautyManifestImagesFor(kind: string, values: unknown[]): BestdoriCardImage[] {
@@ -2126,16 +1696,6 @@ function dailyBeautyCandidatesFromCards(kind: string, label: string, cards: Best
       label: `${label}/beauty/${card.title || index + 1}`,
       source: 'authorized-image',
     }));
-}
-
-function uniqueManifestCardsByUrl(cards: BestdoriCardImage[]): BestdoriCardImage[] {
-  const seen = new Set<string>();
-  return cards.filter((card) => {
-    const url = String(card.url || '').trim();
-    if (!url || seen.has(url)) return false;
-    seen.add(url);
-    return true;
-  });
 }
 
 function dailyBeautyKindFallbackImagesFor(kind: string, label: string, exactCards: BestdoriCardImage[]): BestdoriCardImage[] {
@@ -2210,14 +1770,8 @@ function formatBeautyCoverage(name: string, count: number): string {
 
 function currentDailyBeautyCoverageLines(userId: number, scopeId: number): string[] {
   const player = dailyPlayerFor(userId, scopeId);
-  const team = dailyCardFor('csteam', userId, scopeId, csTeams);
-  const map = dailyCardFor('csmap', userId, scopeId, csMaps);
   const weapon = dailyCardFor('csweapon', userId, scopeId, csWeapons);
   const skin = dailySkinForWeapon(weapon, userId, scopeId);
-  const role = dailyCardFor('csrole', userId, scopeId, csRoles);
-  const utility = dailyCardFor('csutility', userId, scopeId, csUtilities);
-  const tactic = dailyCardFor('cstactic', userId, scopeId, csTactics);
-  const clutch = dailyCardFor('csclutch', userId, scopeId, csClutches);
   const knife = dailyKnifeFor(userId, scopeId);
   const knifeSkin = dailyKnifeSkinFor(userId, scopeId, knife);
   const mokoko = dailyCharacterFor(userId, scopeId);
@@ -2226,16 +1780,17 @@ function currentDailyBeautyCoverageLines(userId: number, scopeId: number): strin
   const book = dailyBookExcerptFor(userId, scopeId);
   const poem = dailyPoemFor(userId, scopeId);
   const duelWeapon = dailyDuelPlayerWeaponFor(userId, scopeId);
+  const dailyCsRows = dailyCsKindMetas
+    .filter((meta) => meta.kind !== 'loadout' && meta.kind !== 'skin')
+    .map((meta) => {
+      const card = dailyCardFor(meta.seedKey, userId, scopeId, meta.cards);
+      return formatBeautyCoverage(meta.label, dailyBeautyImageCountFor(meta.kind, dailyCardManifestSearchValues(card)));
+    });
   const rows = [
     formatBeautyCoverage('选手', dailyBeautyImageCountFor('player', [player.nick, player.name, ...(player.aliases || [])])),
-    formatBeautyCoverage('战队', dailyBeautyImageCountFor('team', dailyCardManifestSearchValues(team))),
-    formatBeautyCoverage('地图', dailyBeautyImageCountFor('map', dailyCardManifestSearchValues(map))),
-    formatBeautyCoverage('武器', dailyBeautyImageCountFor('weapon', dailyCardManifestSearchValues(weapon))),
+    ...dailyCsRows.slice(0, 3),
     formatBeautyCoverage('皮肤', dailyBeautySkinImagesFor(skin).length),
-    formatBeautyCoverage('定位', dailyBeautyImageCountFor('role', dailyCardManifestSearchValues(role))),
-    formatBeautyCoverage('道具', dailyBeautyImageCountFor('utility', dailyCardManifestSearchValues(utility))),
-    formatBeautyCoverage('战术', dailyBeautyImageCountFor('tactic', dailyCardManifestSearchValues(tactic))),
-    formatBeautyCoverage('残局', dailyBeautyImageCountFor('clutch', dailyCardManifestSearchValues(clutch))),
+    ...dailyCsRows.slice(3),
     formatBeautyCoverage('刀皮', dailyBeautyKnifeImagesFor(knife, knifeSkin).length),
     formatBeautyCoverage('木柜子', dailyBeautyImageCountFor('mokoko', mokokoSearchValues(mokoko))),
     formatBeautyCoverage('原神', dailyBeautyImageCountFor('genshin', genshinSearchValues(genshin))),
@@ -2249,15 +1804,6 @@ function currentDailyBeautyCoverageLines(userId: number, scopeId: number): strin
     `当前签位美图覆盖: ${rows.join(' / ')}`,
     '图片隔离: daily-beauty清单必须写kind和对象标识，不能跨功能混用',
   ];
-}
-
-function compactDailyImageFields(fields: Record<string, unknown>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    const text = String(value || '').trim();
-    if (text) result[key] = text;
-  }
-  return result;
 }
 
 function dailyCardManifestFields(card: DailyCard): Record<string, string> {
@@ -2303,14 +1849,10 @@ function dailyImageManifestTargets(): DailyImageManifestTarget[] {
       ['poster', 'action', 'stage', 'wallpaper'],
     ));
   }
-  for (const team of csTeams) {
-    targets.push(dailyImageTarget('team', team.name, dailyCardManifestFields(team), dailyBeautyImageCountFor('team', dailyCardManifestSearchValues(team)), ['poster', 'stage', 'keyvisual', 'wallpaper']));
-  }
-  for (const map of csMaps) {
-    targets.push(dailyImageTarget('map', map.name, dailyCardManifestFields(map), dailyBeautyImageCountFor('map', dailyCardManifestSearchValues(map)), ['map', 'scene', 'wallpaper', 'screenshot']));
-  }
-  for (const weapon of csWeapons) {
-    targets.push(dailyImageTarget('weapon', weapon.name, dailyCardManifestFields(weapon), dailyBeautyImageCountFor('weapon', dailyCardManifestSearchValues(weapon)), ['inspect', 'showcase', 'render', 'wallpaper']));
+  for (const meta of dailyCsKindMetas.filter((item) => item.kind !== 'skin' && item.kind !== 'loadout')) {
+    for (const card of meta.cards) {
+      targets.push(dailyImageTarget(meta.kind, card.name, dailyCardManifestFields(card), dailyBeautyImageCountFor(meta.kind, dailyCardManifestSearchValues(card)), meta.imageTags));
+    }
   }
   for (const skin of csSkins) {
     targets.push(dailyImageTarget('skin', skin.name, compactDailyImageFields({
@@ -2320,18 +1862,6 @@ function dailyImageManifestTargets(): DailyImageManifestTarget[] {
       name: skin.name,
       itemName: skin.name,
     }), dailyBeautySkinImagesFor(skin).length, ['inspect', 'showcase', 'skin', 'render']));
-  }
-  for (const role of csRoles) {
-    targets.push(dailyImageTarget('role', role.name, dailyCardManifestFields(role), dailyBeautyImageCountFor('role', dailyCardManifestSearchValues(role)), ['poster', 'action', 'scene', 'wallpaper']));
-  }
-  for (const utility of csUtilities) {
-    targets.push(dailyImageTarget('utility', utility.name, dailyCardManifestFields(utility), dailyBeautyImageCountFor('utility', dailyCardManifestSearchValues(utility)), ['utility', 'lineup', 'scene', 'showcase']));
-  }
-  for (const tactic of csTactics) {
-    targets.push(dailyImageTarget('tactic', tactic.name, dailyCardManifestFields(tactic), dailyBeautyImageCountFor('tactic', dailyCardManifestSearchValues(tactic)), ['tactic', 'scene', 'poster', 'action']));
-  }
-  for (const clutch of csClutches) {
-    targets.push(dailyImageTarget('clutch', clutch.name, dailyCardManifestFields(clutch), dailyBeautyImageCountFor('clutch', dailyCardManifestSearchValues(clutch)), ['clutch', 'action', 'scene', 'poster']));
   }
   for (const knife of csKnives) {
     for (const skin of knifeSkinPoolFor(knife)) {
@@ -3786,7 +3316,7 @@ export const funPlugin: Plugin = {
         '每日CS选手状态 / 图片状态',
         `选手池: ${csPlayers.length}人`,
         `队伍池: ${csTeams.length}队`,
-        `地图/武器/皮肤/定位/道具/战术/残局: ${csMaps.length}/${csWeapons.length}/${csSkins.length}/${csRoles.length}/${csUtilities.length}/${csTactics.length}/${csClutches.length}`,
+        `地图/武器/皮肤/定位/道具/战术/残局/经济/口令/复盘: ${csMaps.length}/${csWeapons.length}/${csSkins.length}/${csRoles.length}/${csUtilities.length}/${csTactics.length}/${csClutches.length}/${csEconomies.length}/${csShotcalls.length}/${csReviews.length}`,
         `发刀池: 刀型${csKnives.length}类 / 刀皮${knifeSkins.length}种`,
         `木柜子池: MyGO!!!!!/Ave Mujica 共${dailyCharacters.length}人`,
         `Bestdori本地卡面: ${loadBestdoriCardImages().length}张`,
@@ -3799,7 +3329,7 @@ export const funPlugin: Plugin = {
         bestdoriCoverageLine(),
         genshinCoverageLine(),
         ...currentDailyBeautyCoverageLines(ctx.event.user_id, ctx.groupId || 0),
-        `冷知识/书摘/古诗词: ${dailyFacts.length}/${dailyBookExcerpts.length}/${dailyPoems.length}`,
+        `冷知识/书摘/古诗词/影视/音乐/历史/科学: ${dailyFacts.length}/${dailyBookExcerpts.length}/${dailyPoems.length}/${dailyMovieQuotes.length}/${dailyMusicFacts.length}/${dailyHistoryEvents.length}/${dailyScienceFacts.length}`,
         `紫禁之巅武器池: ${duelWeapons.length}种`,
         `发图顺序: 木柜子 Bestdori卡面 -> 专属美图池；其他每日 专属美图池 -> 专用清单 -> 公开图片接口 -> 日签图`,
         `队伍示例: ${csTeams.slice(0, 3).map((item) => `${item.name}(${dailyCardImagePlan(item).replace(/^图片路径：/, '')})`).join(' | ')}`,
@@ -3960,24 +3490,36 @@ export const funPlugin: Plugin = {
       ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'poem', scopeId));
       return true;
     }
+    if (isDailyMovieRequest(ctx.command, raw) || fuzzy === 'dailymovie') {
+      const card = dailyMovieQuoteFor(ctx.event.user_id, scopeId);
+      const score = dailyScoreForKind('daily_movie', ctx.event.user_id, scopeId);
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'movie', scopeId));
+      return true;
+    }
+    if (isDailyMusicRequest(ctx.command, raw) || fuzzy === 'dailymusic') {
+      const card = dailyMusicFactFor(ctx.event.user_id, scopeId);
+      const score = dailyScoreForKind('daily_music', ctx.event.user_id, scopeId);
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'music', scopeId));
+      return true;
+    }
+    if (isDailyHistoryRequest(ctx.command, raw) || fuzzy === 'dailyhistory') {
+      const card = dailyHistoryEventFor(ctx.event.user_id, scopeId);
+      const score = dailyScoreForKind('daily_history', ctx.event.user_id, scopeId);
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'history', scopeId));
+      return true;
+    }
+    if (isDailyScienceRequest(ctx.command, raw) || fuzzy === 'dailyscience') {
+      const card = dailyScienceFactFor(ctx.event.user_id, scopeId);
+      const score = dailyScoreForKind('daily_science', ctx.event.user_id, scopeId);
+      ctx.reply(await buildDailyTextCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'science', scopeId));
+      return true;
+    }
     if (isDailyDuelRequest(ctx.command, raw) || fuzzy === 'dailyduel') {
       ctx.reply(await buildDailyDuelMessage(ctx.event.user_id, scopeId, ctx.isPrivate));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'loadout') || fuzzy === 'csloadout') {
       ctx.reply(await buildLoadoutMessage(ctx.event.user_id, scopeId, ctx.isPrivate));
-      return true;
-    }
-    if (isDailyCardRequest(ctx.command, raw, 'team') || fuzzy === 'csteam') {
-      const card = dailyCardFor('csteam', ctx.event.user_id, scopeId, csTeams);
-      const score = dailyScoreForKind('csteam', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'team', scopeId));
-      return true;
-    }
-    if (isDailyCardRequest(ctx.command, raw, 'map') || fuzzy === 'csmap') {
-      const card = dailyCardFor('csmap', ctx.event.user_id, scopeId, csMaps);
-      const score = dailyScoreForKind('csmap', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'map', scopeId));
       return true;
     }
     if (isDailyCardRequest(ctx.command, raw, 'weapon') || fuzzy === 'csweapon') {
@@ -3993,29 +3535,13 @@ export const funPlugin: Plugin = {
       ctx.reply(await buildSkinMessage(ctx.event.user_id, skin, score, ctx.isPrivate, scopeId));
       return true;
     }
-    if (isDailyCardRequest(ctx.command, raw, 'role') || fuzzy === 'csrole') {
-      const card = dailyCardFor('csrole', ctx.event.user_id, scopeId, csRoles);
-      const score = dailyScoreForKind('csrole', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'role', scopeId));
-      return true;
-    }
-    if (isDailyCardRequest(ctx.command, raw, 'utility') || fuzzy === 'csutility') {
-      const card = dailyCardFor('csutility', ctx.event.user_id, scopeId, csUtilities);
-      const score = dailyScoreForKind('csutility', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'utility', scopeId));
-      return true;
-    }
-    if (isDailyCardRequest(ctx.command, raw, 'tactic') || fuzzy === 'cstactic') {
-      const card = dailyCardFor('cstactic', ctx.event.user_id, scopeId, csTactics);
-      const score = dailyScoreForKind('cstactic', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'tactic', scopeId));
-      return true;
-    }
-    if (isDailyCardRequest(ctx.command, raw, 'clutch') || fuzzy === 'csclutch') {
-      const card = dailyCardFor('csclutch', ctx.event.user_id, scopeId, csClutches);
-      const score = dailyScoreForKind('csclutch', ctx.event.user_id, scopeId);
-      ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, 'clutch', scopeId));
-      return true;
+    for (const meta of dailyCsKindMetas.filter((item) => !['loadout', 'weapon', 'skin'].includes(item.kind))) {
+      if (isDailyCardRequest(ctx.command, raw, meta.kind) || fuzzy === meta.fuzzyKey) {
+        const card = dailyCardFor(meta.seedKey, ctx.event.user_id, scopeId, meta.cards);
+        const score = dailyScoreForKind(meta.scoreKey, ctx.event.user_id, scopeId);
+        ctx.reply(await buildDailyCardMessage(ctx.event.user_id, card, score, ctx.isPrivate, meta.kind, scopeId));
+        return true;
+      }
     }
 
     return false;
@@ -4032,6 +3558,9 @@ export const __test = {
   csUtilities,
   csTactics,
   csClutches,
+  csEconomies,
+  csShotcalls,
+  csReviews,
   csKnives,
   knifeSkins,
   dailyCharacters,
@@ -4039,6 +3568,10 @@ export const __test = {
   dailyFacts,
   dailyBookExcerpts,
   dailyPoems,
+  dailyMovieQuotes,
+  dailyMusicFacts,
+  dailyHistoryEvents,
+  dailyScienceFacts,
   duelWeapons,
   dailyPlayerFor,
   dailyPlayerScore,
@@ -4054,6 +3587,10 @@ export const __test = {
   dailyFactFor,
   dailyBookExcerptFor,
   dailyPoemFor,
+  dailyMovieQuoteFor,
+  dailyMusicFactFor,
+  dailyHistoryEventFor,
+  dailyScienceFactFor,
   dailyDuelPlayerWeaponFor,
   dailyDuelBotWeaponFor,
   dailyScoreForKind,
