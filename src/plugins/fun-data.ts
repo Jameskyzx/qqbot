@@ -174,7 +174,7 @@ csPlayers.push(
   { nick: 'Hobbit', name: 'Abay Khassenov', team: 'Falcons / G2 历史', role: 'Rifler', note: '哈萨克斯坦步枪签，稳定是他的基本面，今天也别急。', image: 'https://liquipedia.net/commons/images/2/22/Hobbit_at_IEM_Dallas_2024.jpg', imageSource: 'liquipedia' },
 );
 
-dailyFacts.push(
+const extraDailyFactsA: DailyTextCard[] = [
   { key: 'saltwater-taffy', title: '每日冷知识', name: '盐水太妃糖不含盐水', subtitle: '食品 / 命名', body: '英语里的"saltwater taffy"名字来源不太确定，它并不是真的用大量盐水做的，更多是地名传说。', advice: '今天看名字别想当然，背后可能是另一回事。', line: '有些名字只是名字，别认真往字面解。', scoreLabel: '新鲜度' },
   { key: 'coral-bleach', title: '每日冷知识', name: '珊瑚白化不等于死亡', subtitle: '海洋 / 生态', body: '珊瑚变白是因为失去共生藻，但若温度恢复较快，珊瑚可能重新与藻类共生并恢复颜色。', advice: '今天看见颜色褪掉的东西，先别急着放弃。', line: '白了不一定死了，可能只是状态不好。', scoreLabel: '新鲜度' },
   { key: 'maglev-record', title: '每日冷知识', name: '磁悬浮列车速度纪录很高', subtitle: '工程 / 交通', body: '磁悬浮车辆实验速度已超过600km/h，靠电磁力悬浮和推进，减少摩擦是关键。', advice: '今天把阻力减少一点，速度会自己上来。', line: '快不是拼命推，是减阻。', scoreLabel: '新鲜度' },
@@ -185,9 +185,9 @@ dailyFacts.push(
   { key: 'sneeze-speed', title: '每日冷知识', name: '喷嚏速度很快但数据夸大了', subtitle: '生理 / 速度', body: '喷嚏射流速度通常在30-50m/s左右，早期报道的"160km/h"数据被广泛质疑，实际较低。', advice: '今天遇到令人印象深刻的数字，不妨先核查来源。', line: '好的数字要有出处，没出处的传了也没用。', scoreLabel: '新鲜度' },
   { key: 'tree-rings-climate', title: '每日冷知识', name: '树木年轮记录气候', subtitle: '地质 / 古气候', body: '年轮宽窄对应当年生长条件，利用长寿树木可以重建数百年甚至数千年的气候历史。', advice: '今天自己留下的痕迹，也在记录着环境。', line: '树比人更会写日记，不说话但很诚实。', scoreLabel: '新鲜度' },
   { key: 'airport-code', title: '每日冷知识', name: '机场代码有历史遗留原因', subtitle: '航空 / 命名', body: '一些机场IATA代码看起来和城市名无关，因为早期代码由气象站命名，后来延续下来。', advice: '今天遇到奇怪规则，很可能有历史原因。', line: '有些命名逻辑早就不在了，名字却还活着。', scoreLabel: '新鲜度' },
-);
+];
 
-dailyPoems.push(
+const extraDailyPoemsA: DailyTextCard[] = [
   { key: 'wang-an-shi-plum', title: '每日古诗词', name: '王安石《梅花》', subtitle: '宋诗 / 冬梅', body: '遥知不是雪，为有暗香来。', advice: '今天有时不用大声，香气会自己到。', line: '真正的存在，不需要被看见也能被感知。', scoreLabel: '诗意值' },
   { key: 'tao-yuan-ming-drink', title: '每日古诗词', name: '陶渊明《饮酒》', subtitle: '晋诗 / 归隐', body: '采菊东篱下，悠然见南山。', advice: '今天找一个不被打扰的地方，哪怕五分钟。', line: '悠然是一种姿态，不是一种条件。', scoreLabel: '诗意值' },
   { key: 'han-yu-early-spring', title: '每日古诗词', name: '韩愈《早春》', subtitle: '唐诗 / 早春', body: '草色遥看近却无。', advice: '今天期待的东西远看有，近看没有，不要气馁。', line: '有时候近看才是错的，退一步更清楚。', scoreLabel: '诗意值' },
@@ -196,7 +196,7 @@ dailyPoems.push(
   { key: 'li-bai-toast', title: '每日古诗词', name: '李白《将进酒》', subtitle: '唐诗 / 豪情', body: '天生我材必有用，千金散尽还复来。', advice: '今天别嫌自己不够用，先把手上的事做好。', line: '气场这东西，有时候是说给自己听的。', scoreLabel: '诗意值' },
   { key: 'wang-changling-border2', title: '每日古诗词', name: '王昌龄《从军行》', subtitle: '唐诗 / 边塞', body: '黄沙百战穿金甲，不破楼兰终不还。', advice: '今天定个不回头的目标，认真走一段。', line: '不是每条路都短，能走完的才叫走过。', scoreLabel: '诗意值' },
   { key: 'li-qingzhao-river', title: '每日古诗词', name: '李清照《武陵春》', subtitle: '宋词 / 愁绪', body: '只恐双溪舴艋舟，载不动、许多愁。', advice: '今天情绪很重，找个出口说一说，别全压着。', line: '愁这个东西，李清照连重量都算出来了。', scoreLabel: '诗意值' },
-);
+];
 
 
 export const csTeams: DailyCard[] = [
@@ -823,6 +823,9 @@ export const dailyPoems: DailyTextCard[] = [
   { key: 'lu-you', title: '每日古诗词', name: '陆游《游山西村》', subtitle: '宋诗 / 柳暗花明', body: '山重水复疑无路，柳暗花明又一村。', advice: '今天卡住也别急，先多走两步看看。', line: '转机常常躲在弯后面。', scoreLabel: '诗意值' },
   { key: 'yang-wanli', title: '每日古诗词', name: '杨万里《小池》', subtitle: '宋诗 / 夏日', body: '小荷才露尖尖角，早有蜻蜓立上头。', advice: '今天保护刚冒头的小想法，别急着批评它。', line: '新东西刚露头，也值得被看见。', scoreLabel: '诗意值' },
 ];
+
+dailyFacts.push(...extraDailyFactsA);
+dailyPoems.push(...extraDailyPoemsA);
 
 export const duelWeapons: DailyDuelWeapon[] = [
   { key: 'deagle', name: '沙鹰', style: '一发入魂', power: 92, tempo: 45, line: '准了封神，空了当场沉默。', fandomFile: 'CS2_Desert_Eagle_Inventory.png' },

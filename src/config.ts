@@ -63,7 +63,7 @@ const DEFAULT_AI_CONFIG: AIConfig = {
   enable_knowledge: true,
   knowledge_max_chars: 2600,
   knowledge_force_style: true,
-  related_reply_probability: 0.72,
+  related_reply_probability: 0.36,
   persona_mode: 'first_person_bot',
   aggression_level: 'medium',
   knowledge_update_mode: 'reviewed_command',

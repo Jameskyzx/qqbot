@@ -626,7 +626,7 @@ async function runApiVoiceGeneration(
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       setVoiceError(lastError.message);
-      if (err instanceof TtsRequestError && (err.statusCode === 401 || err.statusCode === 403)) {
+      if (err instanceof TtsRequestError && (err.statusCode === 401 || err.statusCode === 403 || err.statusCode === 429)) {
         break;
       }
     }

@@ -30,8 +30,9 @@ function loadDotEnv(): void {
         && !!value.trim()
         && !hasUsableApiKey(existing)
         && hasUsableApiKey(value);
-      // PM2 里可能残留旧的占位 key；这种情况允许 .env 的真实 key 覆盖。
-      if (key && (existing === undefined || existing.trim() === '' || shouldOverridePlaceholderKey)) {
+      const shouldOverrideWanjierKey = key.startsWith('WANJIER_') && value.trim() !== '';
+      // PM2 里可能残留旧环境变量；.env 是部署时的运行配置来源。
+      if (key && (existing === undefined || existing.trim() === '' || shouldOverridePlaceholderKey || shouldOverrideWanjierKey)) {
         process.env[key] = value;
       }
     }
@@ -56,6 +57,7 @@ import { csWatchPlugin, shutdownCsWatchTasks, startCsWatchTasks } from './plugin
 import { flushHltvCache } from './plugins/hltv-api';
 import { dailyPulsePlugin, shutdownDailyPulseTasks, startDailyPulseTasks } from './plugins/daily-pulse';
 import { stickersPlugin } from './plugins/stickers';
+import { naiDrawPlugin } from './plugins/nai-draw';
 import { diagPlugin } from './plugins/diag';
 import { statsPlugin } from './plugins/stats';
 import { adminPlugin } from './plugins/admin';
@@ -126,6 +128,7 @@ function main(): void {
   handler.use(funPlugin);
   handler.use(dailyPulsePlugin);
   handler.use(stickersPlugin);
+  handler.use(naiDrawPlugin);
   handler.use(aiChatPlugin);    // 对话放最后
 
   // 注册非消息事件监听器
