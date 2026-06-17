@@ -7,6 +7,7 @@ const log = createLogger('NaiDraw');
 const DEFAULT_BASE_URL = 'https://api.idlecloud.cc';
 const DEFAULT_MODEL = 'nai-diffusion-4-5-full';
 const DEFAULT_POSITIVE_SUFFIX = `artist:wlopc, 1.2::xiaoluo_xl::, 1.3::Artist: misaka_12003-gou::, 1.2::Artist:shexyo::, 0.7::Artist:b.sa_(bbbs)::, 1::Artist:qiandaiyiyu::, 1.05::artist:natedecock::, 1.05::artist:kunaboto::, 0.75::artist:kandata_nijou::, 1.05::artist:zer0.zer0 ::, 1.05::artist:jasony::, 0.75::misaka_12003-gou ::, dino_(dinoartforame), wanke, liduke, year 2025, realistic, 4k, -2::green::, textless version, The image is highly intricate finished drawn, write realistically, true to life, 3d, Only the character's face is in anime style, but their body is in realistic style, 1.35::A highly finished photo-style artwork that has lively color, graphic texture, realistic skin surface, and lifelike flesh with little obliques::, 1.63::photorealistic::, 1.63::photo(medium)::, 10::best quality, absurdres, very aesthetic, detailed, masterpiece::, -5.1::artist collaboration, -5::flat_color::, 1.2::breast_focus::, uncensored, very aesthetic, masterpiece, no text`;
+const DEFAULT_CHARACTER1_SUFFIX = 'mature female, plump, oily skin, curvy, 1.3::gigantic_Breasts::';
 const DEFAULT_NEGATIVE = 'nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, 1990s (style), mutation, deformed, distorted, disfigured, artistic error, distorted anatomy, anatomical structure error, asymmetrical face, unnatural hair, bad eyes, cloudy eyes, blank eyes, 4koma, 2koma, veins, lowres, badanatomy, badhands, badfoots, wrong, badfingers, text, error, missingfingers, extradigit, fewerdigits, cropped, worstquality, lowquality, normalquality, jpegartifacts, signature, watermark, usemame, blury, badfeet, logo, too many watermarks, three legs, wrong hand, wrong feet, wrong fingers, deformed leg, abnormal, malformation, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digits, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, bad feet, extra legs, poorly drawn shoes, bad proportions, bad limb, bad hands, extra hands, bad hand structure, extra digits, fewer digits, bad legs, extra legs, amputee, distorted composition, bad perspective, multiple views, negative space, animation error, chromatic aberration, disorganized colors, scan artifacts, jpeg artifacts, vertical lines, vertical banding, worst quality, bad quality, blurry, upscaled, fewer details, unfinished, incomplete, amateur, cheesy, unsatisfactory, inadequate, deficient, subpar, poor, displeasing, very displeasing, bad illustration, bad portrait, in container';
 const DEFAULT_SAMPLER = 'k_dpmpp_2m_sde';
 const MIN_INTERVAL_MS = 20_000;
@@ -97,6 +98,15 @@ function appendDefaultPositiveSuffix(prompt: string): string {
   if (!suffix) return cleanPrompt;
   if (cleanPrompt.toLowerCase().includes(suffix.toLowerCase())) return cleanPrompt;
   return sanitizePrompt(`${cleanPrompt}, ${suffix}`);
+}
+
+function appendCharacter1Suffix(character: string): string {
+  const cleanCharacter = sanitizePrompt(character);
+  if (!cleanCharacter) return '';
+  const suffix = sanitizePrompt(envString('WANJIER_NAI_CHARACTER1_SUFFIX', DEFAULT_CHARACTER1_SUFFIX));
+  if (!suffix) return cleanCharacter;
+  if (cleanCharacter.toLowerCase().includes(suffix.toLowerCase())) return cleanCharacter;
+  return sanitizePrompt(`${cleanCharacter}, ${suffix}`);
 }
 
 function clampDrawOptions(options: DrawOptions): DrawOptions {
@@ -215,7 +225,7 @@ function extractJsonObject(text: string): AiDrawSpec | null {
 
 function applyAiSpec(base: DrawOptions, spec: AiDrawSpec | null): DrawOptions {
   if (!spec) return base;
-  const character = typeof spec.character === 'string' ? sanitizePrompt(spec.character) : '';
+  const character = typeof spec.character === 'string' ? appendCharacter1Suffix(spec.character) : '';
   const prompt = typeof spec.prompt === 'string' && spec.prompt.trim()
     ? sanitizePrompt(character ? `${spec.prompt}, ${character}` : spec.prompt)
     : base.prompt;
