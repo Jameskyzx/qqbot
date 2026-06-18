@@ -7,7 +7,7 @@ const log = createLogger('NaiDraw');
 const DEFAULT_BASE_URL = 'https://api.idlecloud.cc';
 const DEFAULT_MODEL = 'nai-diffusion-4-5-full';
 const DEFAULT_POSITIVE_SUFFIX = `artist:wlopc, 1.2::xiaoluo_xl::, 1.3::Artist: misaka_12003-gou::, 1.2::Artist:shexyo::, 0.7::Artist:b.sa_(bbbs)::, 1::Artist:qiandaiyiyu::, 1.05::artist:natedecock::, 1.05::artist:kunaboto::, 0.75::artist:kandata_nijou::, 1.05::artist:zer0.zer0 ::, 1.05::artist:jasony::, 0.75::misaka_12003-gou ::, dino_(dinoartforame), wanke, liduke, year 2025, realistic, 4k, -2::green::, textless version, The image is highly intricate finished drawn, write realistically, true to life, 3d, Only the character's face is in anime style, but their body is in realistic style, 1.35::A highly finished photo-style artwork that has lively color, graphic texture, realistic skin surface, and lifelike flesh with little obliques::, 1.63::photorealistic::, 1.63::photo(medium)::, 10::best quality, absurdres, very aesthetic, detailed, masterpiece::, -5.1::artist collaboration, -5::flat_color::, 1.2::breast_focus::, uncensored, very aesthetic, masterpiece, no text`;
-const DEFAULT_CHARACTER1_SUFFIX = 'mature female, plump, oily skin, curvy, 1.3::gigantic_Breasts::';
+const DEFAULT_CHARACTER1_SUFFIX = 'mature female, plump, oily skin, curvy, 1.3::gigantic_Breasts,::';
 const DEFAULT_NEGATIVE = 'nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, 1990s (style), mutation, deformed, distorted, disfigured, artistic error, distorted anatomy, anatomical structure error, asymmetrical face, unnatural hair, bad eyes, cloudy eyes, blank eyes, 4koma, 2koma, veins, lowres, badanatomy, badhands, badfoots, wrong, badfingers, text, error, missingfingers, extradigit, fewerdigits, cropped, worstquality, lowquality, normalquality, jpegartifacts, signature, watermark, usemame, blury, badfeet, logo, too many watermarks, three legs, wrong hand, wrong feet, wrong fingers, deformed leg, abnormal, malformation, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digits, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, bad feet, extra legs, poorly drawn shoes, bad proportions, bad limb, bad hands, extra hands, bad hand structure, extra digits, fewer digits, bad legs, extra legs, amputee, distorted composition, bad perspective, multiple views, negative space, animation error, chromatic aberration, disorganized colors, scan artifacts, jpeg artifacts, vertical lines, vertical banding, worst quality, bad quality, blurry, upscaled, fewer details, unfinished, incomplete, amateur, cheesy, unsatisfactory, inadequate, deficient, subpar, poor, displeasing, very displeasing, bad illustration, bad portrait, in container';
 const DEFAULT_SAMPLER = 'k_dpmpp_2m_sde';
 const MIN_INTERVAL_MS = 20_000;
@@ -33,7 +33,10 @@ type DrawOptions = {
 
 type AiDrawSpec = Partial<{
   prompt: string;
+  positivePrompt: string;
   character: string;
+  character1: string;
+  character2: string;
   negativePrompt: string;
   model: string;
   width: number;
@@ -107,6 +110,15 @@ function appendCharacter1Suffix(character: string): string {
   if (!suffix) return cleanCharacter;
   if (cleanCharacter.toLowerCase().includes(suffix.toLowerCase())) return cleanCharacter;
   return sanitizePrompt(`${cleanCharacter}, ${suffix}`);
+}
+
+function character1Suffix(): string {
+  return sanitizePrompt(envString('WANJIER_NAI_CHARACTER1_SUFFIX', DEFAULT_CHARACTER1_SUFFIX));
+}
+
+function hasCharacter1Suffix(prompt: string): boolean {
+  const suffix = character1Suffix();
+  return !!suffix && prompt.toLowerCase().includes(suffix.toLowerCase());
 }
 
 function clampDrawOptions(options: DrawOptions): DrawOptions {
@@ -209,6 +221,72 @@ function parseDrawOptions(rawArgs: string[]): DrawOptions | null {
   return clampDrawOptions({ prompt, negativePrompt, model, width, height, steps, scale, sampler, seed });
 }
 
+function labeledSpecKey(label: string): keyof AiDrawSpec | null {
+  const normalized = label.toLowerCase().replace(/\s+/g, '');
+  if (['正面提示词', '正面提示', '正面', 'prompt', 'positiveprompt', 'positive'].includes(normalized)) return 'prompt';
+  if (['角色1', '角色一', 'character1', 'char1'].includes(normalized)) return 'character1';
+  if (['角色2', '角色二', 'character2', 'char2'].includes(normalized)) return 'character2';
+  if (['角色', 'character', 'char'].includes(normalized)) return 'character1';
+  if (['负面提示词', '反向提示词', '负面提示', '反向提示', '负面', '反向', 'negativeprompt', 'negative', 'neg'].includes(normalized)) return 'negativePrompt';
+  if (['seed', '种子'].includes(normalized)) return 'seed';
+  if (['width', '宽', '宽度', 'w'].includes(normalized)) return 'width';
+  if (['height', '高', '高度', 'h'].includes(normalized)) return 'height';
+  if (['steps', '步数'].includes(normalized)) return 'steps';
+  if (['scale', 'cfg'].includes(normalized)) return 'scale';
+  if (['sampler', '采样', '采样器'].includes(normalized)) return 'sampler';
+  if (['model', '模型'].includes(normalized)) return 'model';
+  return null;
+}
+
+function applyNumericHints(spec: AiDrawSpec, input: string): AiDrawSpec {
+  const next = { ...spec };
+  const size = input.match(/(?:尺寸|大小|size)?\s*[:：=]?\s*(\d{2,4})\s*[x×*]\s*(\d{2,4})/i);
+  if (size) {
+    next.width = Number(size[1]);
+    next.height = Number(size[2]);
+  }
+  const seed = input.match(/(?:seed|种子)\s*[:：= ]\s*(\d{1,10})/i);
+  if (seed) next.seed = Number(seed[1]);
+  const steps = input.match(/(?:steps|步数)\s*[:：= ]\s*(\d{1,3})/i);
+  if (steps) next.steps = Number(steps[1]);
+  const scale = input.match(/(?:scale|cfg)\s*[:：= ]\s*(\d+(?:\.\d+)?)/i);
+  if (scale) next.scale = Number(scale[1]);
+  return next;
+}
+
+function parseLabeledSpec(input: string): AiDrawSpec | null {
+  const labels = [
+    '正面提示词', '正面提示', '正面', 'positive prompt', 'positivePrompt', 'positive', 'prompt',
+    '角色1', '角色一', 'character 1', 'character1', 'char 1', 'char1',
+    '角色2', '角色二', 'character 2', 'character2', 'char 2', 'char2',
+    '角色', 'character', 'char',
+    '负面提示词', '反向提示词', '负面提示', '反向提示', '负面', '反向', 'negative prompt', 'negativePrompt', 'negative', 'neg',
+    'seed', '种子', 'width', '宽度', '宽', 'height', '高度', '高', 'steps', '步数', 'scale', 'cfg', 'sampler', '采样器', '采样', 'model', '模型',
+  ].sort((a, b) => b.length - a.length);
+  const escaped = labels.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const labelRegex = new RegExp(`(?:^|[\\n;；,，]|\\s+)\\s*(${escaped.join('|')})\\s*[:：=]\\s*`, 'gi');
+  const matches = [...input.matchAll(labelRegex)];
+  if (matches.length === 0) return null;
+
+  const spec: AiDrawSpec = {};
+  for (let index = 0; index < matches.length; index++) {
+    const match = matches[index];
+    const key = labeledSpecKey(match[1]);
+    if (!key) continue;
+    const start = (match.index || 0) + match[0].length;
+    const end = matches[index + 1]?.index ?? input.length;
+    const value = sanitizePrompt(input.slice(start, end).replace(/^[,，;；\s]+|[,，;；\s]+$/g, ''));
+    if (!value) continue;
+    if (['width', 'height', 'steps', 'scale', 'seed'].includes(key)) {
+      const numeric = Number(value.match(/\d+(?:\.\d+)?/)?.[0]);
+      if (Number.isFinite(numeric)) (spec as Record<string, unknown>)[key] = numeric;
+    } else {
+      (spec as Record<string, unknown>)[key] = value;
+    }
+  }
+  return applyNumericHints(spec, input);
+}
+
 function extractJsonObject(text: string): AiDrawSpec | null {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
   const candidate = fenced || text;
@@ -225,10 +303,18 @@ function extractJsonObject(text: string): AiDrawSpec | null {
 
 function applyAiSpec(base: DrawOptions, spec: AiDrawSpec | null): DrawOptions {
   if (!spec) return base;
-  const character = typeof spec.character === 'string' ? appendCharacter1Suffix(spec.character) : '';
-  const prompt = typeof spec.prompt === 'string' && spec.prompt.trim()
-    ? sanitizePrompt(character ? `${spec.prompt}, ${character}` : spec.prompt)
-    : base.prompt;
+  const promptText = typeof spec.prompt === 'string' && spec.prompt.trim()
+    ? spec.prompt
+    : (typeof spec.positivePrompt === 'string' && spec.positivePrompt.trim() ? spec.positivePrompt : '');
+  const character1Source = typeof spec.character1 === 'string' && spec.character1.trim()
+    ? spec.character1
+    : (typeof spec.character === 'string' && spec.character.trim() ? spec.character : '');
+  const character1 = character1Source ? appendCharacter1Suffix(character1Source) : '';
+  const character2 = typeof spec.character2 === 'string' ? sanitizePrompt(spec.character2) : '';
+  const characters = [character1, character2].filter(Boolean).join(', ');
+  const prompt = promptText
+    ? sanitizePrompt(characters ? `${promptText}, ${characters}` : promptText)
+    : (characters ? sanitizePrompt(`${base.prompt}, ${characters}`) : base.prompt);
   const negativePrompt = typeof spec.negativePrompt === 'string' && spec.negativePrompt.trim()
     ? sanitizePrompt(spec.negativePrompt)
     : base.negativePrompt;
@@ -252,6 +338,9 @@ function shouldUseAiParse(input: string): boolean {
 }
 
 async function parseWithAi(ctx: Parameters<Plugin['handler']>[0], rawInput: string, base: DrawOptions): Promise<DrawOptions> {
+  const labeledSpec = parseLabeledSpec(rawInput);
+  if (labeledSpec) return applyAiSpec(base, labeledSpec);
+
   if (!shouldUseAiParse(rawInput)) return base;
   const config = ctx.bot.getConfig().ai;
   if (!config?.api_key || !config?.api_url || !config?.model) return base;
@@ -262,9 +351,10 @@ async function parseWithAi(ctx: Parameters<Plugin['handler']>[0], rawInput: stri
       content: [
         '你是 NovelAI/NAI 画图参数解析器，只输出 JSON，不要解释。',
         '从用户中文或英文请求中提取文生图参数。',
-        '字段: prompt, character, negativePrompt, width, height, steps, scale, sampler, seed, model。',
-        'prompt 使用适合 NAI 的英文 tags/短语，保留用户指定风格和构图。',
-        'character 放角色名/人物名/作品角色特征；如果已写进 prompt 可以留空。',
+        '字段: prompt, character1, character2, negativePrompt, width, height, steps, scale, sampler, seed, model。',
+        'prompt 只放正面提示词/画面主体/风格/构图，不要把角色1、角色2混进 prompt。',
+        'character1 只放用户写的“角色1/角色/主角色”的角色名、人物名或人物特征。',
+        'character2 只放用户写的“角色2/第二角色”的角色名、人物名或人物特征；没有就省略。',
         'negativePrompt 放用户说的“不要/负面/反向”，没有则用默认质量反向词。',
         'width/height 必须是64倍数，乘积不超过1048576；steps最大28，scale范围1-10。',
         '如果用户没指定某字段就不要编造，使用 null 或省略。',
@@ -430,6 +520,8 @@ function helpText(): string {
     '/draw <提示词>',
     '/画图 <提示词>',
     '/nai <提示词>',
+    '推荐格式: /画图 正面提示词: beach, sunset 角色1: raiden shogun 角色2: yae miko',
+    '角色1会自动追加默认角色词；角色2不会追加。',
     '也可以自然说: /画图 角色初音未来，seed 123，1024x1024，不要文字水印',
     '可选参数: --w 1024 --h 1024 --steps 28 --scale 5 --sampler k_dpmpp_2m_sde --seed 123 --neg 反向提示词',
     '想完全原样不让AI整理: /draw raw: 1girl, masterpiece',
@@ -486,7 +578,8 @@ export const naiDrawPlugin: Plugin = {
 
     try {
       const options = await parseWithAi(ctx, rawInput, parsedOptions);
-      ctx.replyQuote(`开画。${options.width}x${options.height}，steps=${options.steps}，sampler=${options.sampler}，seed=${options.seed ?? '随机'}。`);
+      const character1Note = hasCharacter1Suffix(options.prompt) ? '，角色1默认词=on' : '';
+      ctx.replyQuote(`开画。${options.width}x${options.height}，steps=${options.steps}，sampler=${options.sampler}，seed=${options.seed ?? '随机'}${character1Note}。`);
       const result = await generateImage(options);
       const message: MessageSegment[] = [
         { type: 'reply', data: { id: String(ctx.event.message_id) } },
