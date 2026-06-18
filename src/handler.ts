@@ -49,6 +49,7 @@ export class MessageHandler {
       log.warn(`config.bot_qq=${config.bot_qq} 但 OneBot self_id=${messageEvent.self_id}，请确认是否已切换到目标QQ号。`);
     }
     if (messageEvent.user_id === messageEvent.self_id) return;
+    if (config.blocked_user_ids.includes(messageEvent.user_id)) return;
 
     const isGroup = messageEvent.message_type === 'group';
     const isReplyToBot = isGroup

@@ -28,6 +28,7 @@ export interface BotConfig {
   command_prefix: string;
   admin_qq: number[];
   enabled_groups: number[];
+  blocked_user_ids: number[];
   /** Web管理后台监听端口，0或不设置则不启动 */
   web_admin_port?: number;
   ai: AIConfig;

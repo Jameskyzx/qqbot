@@ -9,6 +9,7 @@ export const CONFIG_VERSION = 20260609;
 
 type PlainObject = Record<string, unknown>;
 const log = createLogger('Config');
+const DEFAULT_BLOCKED_USER_IDS = [3359990357];
 
 const DEFAULT_AI_CONFIG: AIConfig = {
   api_url: '',
@@ -480,6 +481,10 @@ export function normalizeConfig(value: unknown): BotConfig {
     command_prefix: commandPrefix,
     admin_qq: parseEnvIntArray('WANJIER_ADMIN_QQ', asNumberArray(value.admin_qq)),
     enabled_groups: parseEnvIntArray('WANJIER_ENABLED_GROUPS', asNumberArray(value.enabled_groups)),
+    blocked_user_ids: parseEnvIntArray(
+      'WANJIER_BLOCKED_USER_IDS',
+      parseEnvIntArray('BLOCKED_USER_IDS', asNumberArray(value.blocked_user_ids).length ? asNumberArray(value.blocked_user_ids) : DEFAULT_BLOCKED_USER_IDS),
+    ),
     ai: normalizeAiConfig(value.ai),
   };
 }
@@ -534,6 +539,7 @@ function mergeMissingFields(raw: PlainObject, normalized: BotConfig): PlainObjec
     'login_check_api_timeout_ms',
     'bot_name',
     'command_prefix',
+    'blocked_user_ids',
   ] as const;
   for (const key of topFields) {
     if (!(key in result) && normalized[key as keyof BotConfig] !== undefined) {
