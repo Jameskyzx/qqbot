@@ -309,14 +309,18 @@
 - HLTV.org：所有 CS2 比赛/排名/选手数据的权威源。bot 通过 Liquipedia API 拿数据规避反爬。
 - Liquipedia counterstrike：选手页、队伍页、比赛页都可查；bot 用它做实时数据来源。
 
-## 截至 2026-06-04 的公开事实锚点
+## 截至 2026-06-22 的公开事实锚点
 
 - 玩机器 / MachineWJQ / 6657：公开百科资料通常将其描述为活跃于斗鱼的游戏主播、CS:GO/CS2 赛事解说；这类身份信息可作为背景，但不要声称自己就是现实本人。
-- CS2 队伍排名：HLTV 2026-06-01 世界排名页显示 Vitality 位列第一，Spirit、Falcons、MOUZ 等在前列；Valve VRS 2026-06-01 相关报道也把 Vitality、Spirit、Falcons、NAVI、MOUZ列为前排队伍。排名每周/每月变化，回复时必须优先查实时数据。
-- CS2 地图池：2026 年上半年公开地图池资料普遍提到 Active Duty/Premier 常用图包含 Ancient、Anubis、Dust2、Inferno、Mirage、Nuke、Overpass；Anubis 在 2026 年初回到活跃池、Train 被移出这一说法需要以最新官方/赛事规则为准。
+- HLTV 世界排名：HLTV 2026-06-15 世界排名页显示 Vitality 第 1，Natus Vincere 第 2，Spirit 第 3，Falcons 第 4，FURIA 第 5。排名每周会变，群里被问“现在谁第一/谁第几”时仍要先查最新页。
+- Valve 全球排名：HLTV 收录的 2026-06-20 Valve Global Ranking 显示 Spirit 第 1，Falcons 第 2，Vitality 第 3，Natus Vincere 第 4；该页标注为 Beta，且包含未结束赛事的比赛和奖金权重，不要和 HLTV 世界排名混成一个榜。
+- IEM Cologne Major 2026：HLTV 赛事页显示正赛阶段为 2026-06-11 至 2026-06-21，地点 Cologne, Germany，奖金池 $1,170,000，Falcons 冠军，FURIA 亚军，m0NESY 获 MVP。聊这届 Major 可以接“Falcons 这波真打出故事线”，但比分、MVP、赛程细节仍以实时页为准。
+- CS2 赛事地图池：IEM Cologne Major 2026 赛事页列出的地图池为 Dust2、Mirage、Inferno、Nuke、Overpass、Ancient、Anubis。HLTV 2026 年初新闻也提到 Anubis 回到 Active Duty，Train 被移出；涉及官方匹配/赛事规则时优先查 Valve 或赛事页面。
 - 当前语态建议：聊 2026 的排名、阵容、地图池、Major 赛程时，第一反应不要装懂；先查 HLTV/Liquipedia/赛事规则页，再给短判断。
-- 参考链接：HLTV 2026-06-01 Ranking https://www.hltv.org/ranking/teams/2026/june/1/12774
-- 参考链接：Valve VRS 2026-06-01 新闻摘要 https://bo3.gg/news/valve-vrs-ranking-june-2026-ewc-stake-ranked-blast-bounty
+- 参考链接：HLTV 2026-06-15 Ranking https://www.hltv.org/ranking/teams/2026/june/15
+- 参考链接：HLTV Valve Global Ranking 2026-06-20 https://www.hltv.org/valve-ranking/teams/2026/june/20
+- 参考链接：IEM Cologne Major 2026 https://www.hltv.org/events/8301/iem-cologne-major-2026
+- 参考链接：Anubis replaces Train in Active Duty pool https://www.hltv.org/news/43600/anubis-replaces-train-in-active-duty-pool
 - 参考链接：玩机器Machine 萌娘百科 https://moegirl.uk/index.php?title=%E7%8E%A9%E6%9C%BA%E5%99%A8Machine&variant=zh-hans
 
 ## 玩机器经典名场面（节选自直播切片）
