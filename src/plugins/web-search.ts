@@ -19,6 +19,7 @@ const searchCache: Map<string, CacheEntry> = new Map();
 const CACHE_DIR = path.resolve(__dirname, '..', '..', 'search_cache');
 const CACHE_FILE = path.join(CACHE_DIR, 'search-cache.json');
 const MAX_RESPONSE_BYTES = 768 * 1024;
+const MAX_REDIRECTS = 4;
 let maxCacheEntries = 200;
 let cacheHits = 0;
 let cacheMisses = 0;
@@ -133,7 +134,7 @@ function extractResultUrl(href: string): string {
   return '';
 }
 
-function httpsGet(url: string, timeoutMs: number): Promise<string> {
+function httpsGet(url: string, timeoutMs: number, redirects: number = 0): Promise<string> {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: string): void => {
@@ -150,6 +151,23 @@ function httpsGet(url: string, timeoutMs: number): Promise<string> {
     }, (res) => {
       let data = '';
       let totalBytes = 0;
+
+      if (
+        res.statusCode
+        && res.statusCode >= 300
+        && res.statusCode < 400
+        && res.headers.location
+        && redirects < MAX_REDIRECTS
+      ) {
+        res.resume();
+        try {
+          const nextUrl = new URL(res.headers.location, url).toString();
+          httpsGet(nextUrl, timeoutMs, redirects + 1).then(finish);
+        } catch {
+          finish('');
+        }
+        return;
+      }
 
       if (res.statusCode && res.statusCode >= 400) {
         finish('');
