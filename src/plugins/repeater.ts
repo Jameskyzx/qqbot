@@ -1,4 +1,6 @@
-import { MessageSegment, Plugin } from '../types';
+import { MessageSegment, Plugin, PluginContext } from '../types';
+import { createLogger } from '../logger';
+import { getImageDataUrl } from './image-cache';
 import { isKnowledgeTopic } from './knowledge-base';
 
 /**
@@ -20,6 +22,7 @@ interface RepeatState {
 
 const groupRepeatState: Map<number, RepeatState> = new Map();
 const MAX_GROUP_STATES = 500;
+const logger = createLogger('Repeater');
 
 function pruneStatesIfNeeded(): void {
   if (groupRepeatState.size < MAX_GROUP_STATES) return;
@@ -42,6 +45,165 @@ function includesAnyKeyword(text: string, keywords: string[] = []): boolean {
   if (!text || keywords.length === 0) return false;
   const lowerText = text.toLowerCase();
   return keywords.some((keyword) => keyword && lowerText.includes(keyword.toLowerCase()));
+}
+
+function uniqueSources(items: string[]): string[] {
+  return [...new Set(items.map((item) => item.trim()).filter(Boolean))];
+}
+
+function compactInlineBase64(value: string): string {
+  return value.replace(/\s+/g, '');
+}
+
+function dataUrlToBase64File(source: string): string {
+  const match = source.match(/^data:image\/[^;]+;base64,(.+)$/is);
+  if (!match) return '';
+  const compact = compactInlineBase64(match[1]);
+  return compact ? `base64://${compact}` : '';
+}
+
+function imageSegmentFromSendSource(source: string): MessageSegment | null {
+  const cleaned = source.trim();
+  if (!cleaned) return null;
+
+  if (/^data:image\/[^;]+;base64,/i.test(cleaned)) {
+    const file = dataUrlToBase64File(cleaned);
+    return file ? { type: 'image', data: { file } } : null;
+  }
+
+  if (cleaned.startsWith('base64://')) {
+    const compact = compactInlineBase64(cleaned.slice('base64://'.length));
+    return compact ? { type: 'image', data: { file: `base64://${compact}` } } : null;
+  }
+
+  if (/^https?:\/\//i.test(cleaned)) {
+    return { type: 'image', data: { file: cleaned, url: cleaned } };
+  }
+
+  if (cleaned.startsWith('file://')) {
+    return { type: 'image', data: { file: cleaned } };
+  }
+
+  if (/^[/\\]|^[a-zA-Z]:[\\/]/.test(cleaned)) {
+    return { type: 'image', data: { file: `file://${cleaned}` } };
+  }
+
+  return null;
+}
+
+function firstStringCandidate(items: unknown[]): string {
+  for (const item of items) {
+    if (typeof item === 'string' && item.trim()) return item.trim();
+  }
+  return '';
+}
+
+function apiBase64ImageSource(data: any): string {
+  const inline = firstStringCandidate([
+    data?.base64,
+    data?.b64,
+    data?.base64_file,
+    data?.file_base64,
+    data?.data?.base64,
+    data?.data?.b64,
+    data?.data?.base64_file,
+    data?.data?.file_base64,
+  ]);
+  if (!inline) return '';
+  if (inline.startsWith('data:image/')) return inline;
+  if (inline.startsWith('base64://')) return inline;
+  const compact = compactInlineBase64(inline);
+  if (compact.length < 80 || !/^[A-Za-z0-9+/_=-]+$/.test(compact)) return '';
+  return `base64://${compact}`;
+}
+
+function apiLocalImageSource(data: any): string {
+  const local = firstStringCandidate([
+    data?.file,
+    data?.path,
+    data?.file_path,
+    data?.data?.file,
+    data?.data?.path,
+    data?.data?.file_path,
+  ]);
+  if (!local || /^https?:\/\//i.test(local) || /^data:image\//i.test(local) || local.startsWith('base64://')) return '';
+  if (local.startsWith('file://')) return local;
+  return /^[/\\]|^[a-zA-Z]:[\\/]/.test(local) ? `file://${local}` : '';
+}
+
+function apiUrlImageSource(data: any): string {
+  return firstStringCandidate([
+    data?.url,
+    data?.file_url,
+    data?.data?.url,
+    data?.data?.file_url,
+  ]);
+}
+
+async function sourceToSendableImage(source: string): Promise<MessageSegment | null> {
+  const cleaned = source.trim();
+  if (!cleaned) return null;
+  if (/^(?:data:image\/|base64:\/\/)/i.test(cleaned)) return imageSegmentFromSendSource(cleaned);
+
+  try {
+    const dataUrl = await getImageDataUrl(cleaned);
+    const inline = dataUrl ? imageSegmentFromSendSource(dataUrl) : null;
+    if (inline) return inline;
+  } catch (err) {
+    logger.warn(`[Repeater] image cache resolve failed source=${cleaned.slice(0, 80)} err=${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return imageSegmentFromSendSource(cleaned);
+}
+
+async function resolveRepeatImageSegment(ctx: PluginContext, seg: MessageSegment): Promise<MessageSegment> {
+  if (seg.type !== 'image') return seg;
+  const file = String(seg.data.file || '').trim();
+  const url = String(seg.data.url || '').trim();
+
+  for (const source of uniqueSources([file, url])) {
+    try {
+      const res = await ctx.bot.callApiAsync('get_image', { file: source }, 6000);
+      const data = (res as any)?.data || res;
+
+      const inline = apiBase64ImageSource(data);
+      if (inline) {
+        const next = imageSegmentFromSendSource(inline);
+        if (next) return next;
+      }
+
+      const local = apiLocalImageSource(data);
+      if (local) {
+        const next = await sourceToSendableImage(local);
+        if (next) return next;
+      }
+
+      const resolvedUrl = apiUrlImageSource(data);
+      if (resolvedUrl) {
+        const next = await sourceToSendableImage(resolvedUrl);
+        if (next) return next;
+      }
+    } catch (err) {
+      logger.warn(`[Repeater] get_image failed source=${source.slice(0, 80)} err=${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  for (const source of uniqueSources([url, file])) {
+    const next = await sourceToSendableImage(source);
+    if (next) return next;
+  }
+
+  logger.warn(`[Repeater] image repeat fell back to original segment file=${file.slice(0, 80)}`);
+  return seg;
+}
+
+async function prepareRepeatPayload(ctx: PluginContext, payload: string | MessageSegment[]): Promise<string | MessageSegment[]> {
+  if (!Array.isArray(payload)) return payload;
+  const resolved: MessageSegment[] = [];
+  for (const seg of payload) {
+    resolved.push(seg.type === 'image' ? await resolveRepeatImageSegment(ctx, seg) : seg);
+  }
+  return resolved;
 }
 
 /**
@@ -111,7 +273,7 @@ export const repeaterPlugin: Plugin = {
   name: 'repeater',
   description: '复读机 - 群友复读时跟着复读',
 
-  handler: (ctx) => {
+  handler: async (ctx) => {
     if (!ctx.groupId) return false;
     // 强触发必须让 AI 插件接，不让复读机截胡。
     if (ctx.isAtBot || ctx.isReplyToBot) return false;
@@ -149,6 +311,7 @@ export const repeaterPlugin: Plugin = {
 
     // 相同消息，计数+1
     state.count++;
+    state.payload = fp.payload;
     state.updatedAt = Date.now();
 
     // 2人复读就跟（之前是3人才跟）
@@ -159,7 +322,7 @@ export const repeaterPlugin: Plugin = {
         const variant = maybeVariantRepeat(ctx.rawText);
         ctx.reply(variant);
       } else {
-        ctx.reply(fp.payload);
+        ctx.reply(await prepareRepeatPayload(ctx, state.payload));
       }
       return true;
     }
